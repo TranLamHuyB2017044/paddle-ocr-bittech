@@ -1,0 +1,14 @@
+flask
+flask-cors
+gunicorn
+paddleocr
+paddlepaddle
+opencv-python-headless
+Pillow
+numpy
+werkzeug
+torch
+transformers
+underthesea
+sentencepiece
+protobuf

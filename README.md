@@ -1,0 +1,116 @@
+# OCR & Legal Text Classification API
+
+Dự án API tích hợp **PaddleOCR** (nhận diện văn bản tiếng Việt) và **Transformers** (phân loại văn bản pháp lý), sẵn sàng deploy lên Railway.
+
+## 🚀 Hướng dẫn chạy nhanh (Local Development)
+
+Làm theo các bước sau để chạy dự án trên máy tính của bạn.
+
+### 1. Chuẩn bị môi trường
+
+Yêu cầu: Python 3.10 trở lên.
+
+**Bước 1: Tạo môi trường ảo (Virtual Environment)**
+
+```bash
+# Windows
+python -m venv venv
+
+# Linux/macOS
+python3 -m venv venv
+```
+
+**Bước 2: Kích hoạt môi trường ảo**
+
+```bash
+# Windows (Command Prompt)
+venv\Scripts\activate
+
+# Windows (PowerShell)
+venv\Scripts\Activate.ps1
+
+# Linux/macOS
+source venv/bin/activate
+```
+
+### 2. Cài đặt thư viện
+
+Sau khi kích hoạt môi trường ảo, chạy lệnh sau để cài đặt các thư viện cần thiết:
+
+```bash
+pip install -r requirements.txt
+```
+
+> ⚠️ **Lưu ý:** Quá trình này có thể mất 5-10 phút do phải tải PyTorch và các thư viện Deep Learning nặng.
+
+### 3. Chạy Server
+
+```bash
+python app.py
+```
+
+Server sẽ khởi động tại: `http://localhost:5000`
+
+> **Lần chạy đầu tiên:** Hệ thống sẽ tự động tải model `protonx-models/protonx-legal-tc` và PaddleOCR models. Vui lòng kiên nhẫn đợi.
+
+---
+
+## 📖 Sử dụng API
+
+### Endpoint: `POST /api/detect`
+
+Gửi file ảnh để nhận diện và phân loại văn bản.
+
+**Request (cURL):**
+
+```bash
+curl -X POST http://localhost:5000/api/detect \
+  -F "file=@path/to/your/image.jpg"
+```
+
+**Response (JSON):**
+
+```json
+{
+  "success": true,
+  "filename": "20231203_160000_image.jpg",
+  "ocr_results": [
+    {
+      "original_text": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      "ocr_confidence": 0.998,
+      "classified_text": "QUỐC HIỆU TIÊU NGỮ",
+      "classification_score": 0.985
+    }
+  ],
+  "id_card_info": {
+    "id_number": "001234567890",
+    "full_name": "NGUYỄN VĂN A",
+    "date_of_birth": "01/01/1990",
+    ...
+  }
+}
+```
+
+---
+
+## 🐳 Deploy lên Railway (Docker)
+
+Dự án đã được cấu hình sẵn Dockerfile để deploy.
+
+1. Đẩy code lên GitHub.
+2. Tạo project mới trên [Railway](https://railway.app/).
+3. Kết nối với repo GitHub của bạn.
+4. Railway sẽ tự động detect Dockerfile và build.
+
+**Lưu ý cấu hình Railway:**
+- RAM: Tối thiểu 2GB (do chạy model AI).
+- Timeout: Tăng lên 300s (5 phút) để tránh lỗi timeout khi tải model lần đầu.
+
+---
+
+## 📂 Cấu trúc dự án
+
+- `app.py`: Server chính (Flask).
+- `requirements.txt`: Các thư viện cần thiết.
+- `Dockerfile`: Cấu hình build cho Railway.
+- `uploads/`: Thư mục lưu ảnh tạm thời.
