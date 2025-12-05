@@ -12,3 +12,4 @@ transformers
 underthesea
 sentencepiece
 protobuf
+google-genai

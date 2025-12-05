@@ -1,0 +1,114 @@
+"""
+Configuration for CCCD OCR
+"""
+import os
+
+# ========== UPLOAD CONFIG ==========
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+# ========== MODEL CONFIG ==========
+MODEL_PATH = "protonx-models/protonx-legal-tc"
+
+# ========== OCR CONFIG ==========
+OCR_CONFIG = {
+    "lang": "vi",
+    "use_textline_orientation": False,
+    "use_doc_orientation_classify": False,
+    "use_doc_unwarping": False,
+}
+
+# ========== TEXT CLEANING CONFIG ==========
+# Từ khóa chung cần loại bỏ
+USELESS_KEYWORDS = [
+    # Tiêu đề quốc gia
+    "cộng hòa xã hội chủ nghĩa việt nam",
+    "cong hoa xa hoi chu nghia viet nam",
+    "cộng hoà",
+    "cong hoa",
+    "xã hội chủ nghĩa",
+    "xa hoi chu nghia",
+    "socialist republic",
+    "socialist",
+    "republic",
+    
+    # Khẩu hiệu
+    "độc lập tự do hạnh phúc",
+    "doc lap tu do hanh phuc",
+    "độc lập",
+    "doc lap",
+    "tự do",
+    "tu do",
+    "hạnh phúc",
+    "hanh phuc",
+    "independence",
+    "freedom",
+    "freedor",  # Lỗi OCR thường gặp
+    "happiness",
+    
+    # Loại giấy tờ
+    "căn cước công dân",
+    "can cuoc cong dan",
+    "căn cước",
+    "can cuoc",
+    "công dân",
+    "cn",
+    "dn",
+    "chứng minh nhân dân",
+    "chung minh nhan dan",
+    "chứng minh",
+    "chung minh",
+    "identity card",
+    "citizen identity",
+    "id card",
+    "cccd",
+    "cmnd",
+    
+    # Từ khóa tiếng Việt không dấu (OCR thường nhầm)
+    "cng ha",
+    "nghia vit nam",
+    "vit nam",
+    "viet nam",
+]
+
+# Từ khóa cho mặt sau (ngày tháng)
+DATE_KEYWORDS = [
+    "ngày", "tháng", "năm", 
+    "cấp", "cap",
+    "giá trị", "gia tri",
+    "hết hạn", "het han",
+    "có giá trị đến", "co gia tri den"
+]
+
+# Từ khóa cho mặt trước (Họ tên, Quê quán, Địa chỉ)
+FRONT_KEYWORDS = [
+    # Họ tên
+    "họ", "tên", "ho", "ten", "name", "full name",
+    # Quê quán
+    "quê", "quán", "que", "quan", "hometown", "origin",
+    # Địa chỉ / Nơi thường trú
+    "địa chỉ", "dia chi", "address",
+    "nơi", "noi", "thường trú", "thuong tru", "cư trú", "cu tru",
+    "residence", "place"
+]
+
+# ========== EXTRACTION CONFIG ==========
+# Từ khóa địa chỉ
+ADDRESS_KEYWORDS = [
+    "nơi cư trú", "cư trú", "nơi thuong tru", "thường trú",
+    "thuong tru", "place of residence", "residence"
+]
+
+# Từ khóa ngày hết hạn
+EXPIRY_LABEL_KEYWORDS = [
+    "có giá trị đến", "co gia tri den", "có giá tr đén"
+]
+
+# Từ khóa quê quán
+HOMETOWN_KEYWORDS = [
+    "quê quán", "quê quan", "quê", "que quan", "que",
+]
+
+# Giá trị mặc định
+DEFAULT_NATIONALITY = "Việt Nam"
+DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
