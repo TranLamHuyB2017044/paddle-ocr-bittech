@@ -170,57 +170,6 @@ def filter_useless_lines(lines):
 
 
 
-def clean_text(lines):
-    """Clean OCR bằng transformer từng dòng"""
-    start_time = time.time()
-    print(f"\n{'='*60}")
-    print(f"[CLEAN] 🧹 Bắt đầu làm sạch text")
-    print(f"[CLEAN] ⏰ Thời gian: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-    print(f"[CLEAN] 📝 Số dòng cần xử lý: {len(lines)}")
-    print(f"{'='*60}")
-    
-    cleaned = []
-    for idx, line in enumerate(lines, 1):
-        line_start = time.time()
-        print(f"\n[CLEAN] 🔄 Dòng {idx}/{len(lines)}: {line[:50]}...")
-        
-        inputs = tokenizer(
-            line, 
-            return_tensors="pt",
-            truncation=True, 
-            max_length=80  # ⚡ Giảm từ 160 → 80
-        ).to(device)
-
-        gen_start = time.time()
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=80,        # ⚡ Giảm từ 160 → 80
-            num_beams=3,              # ⚡ GIẢM TỪ 10 → 3 (tăng tốc 3x)
-            num_return_sequences=1,
-            early_stopping=True,
-            do_sample=False,          # ⚡ Tắt sampling để nhanh hơn
-            length_penalty=1.0        # ⚡ Không phạt độ dài
-        )
-        gen_elapsed = time.time() - gen_start
-
-        cleaned_line = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        cleaned.append(cleaned_line)
-        
-        line_elapsed = time.time() - line_start
-        print(f"[CLEAN] ✅ Kết quả: {cleaned_line[:50]}...")
-        print(f"[CLEAN] ⏱️  Thời gian generate: {gen_elapsed:.2f}s")
-        print(f"[CLEAN] ⏱️  Tổng thời gian dòng: {line_elapsed:.2f}s")
-
-    total_elapsed = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"[CLEAN] ✅ Hoàn thành làm sạch {len(lines)} dòng")
-    print(f"[CLEAN] ⏱️  Tổng thời gian: {total_elapsed:.2f}s")
-    print(f"[CLEAN] 📊 Trung bình: {total_elapsed/len(lines):.2f}s/dòng")
-    print(f"{'='*60}\n")
-    
-    return cleaned
-
-
 def selective_clean_text_back(lines):
     """
     CHỈ clean text cho các dòng chứa ngày tháng (mặt sau)
@@ -311,6 +260,103 @@ def selective_clean_text_back(lines):
     
     return cleaned
 
+
+def selective_clean_text_front(lines):
+    """
+    CHỈ clean text cho các dòng chứa Họ tên, Quê quán, Địa chỉ (mặt trước)
+    Các dòng khác giữ nguyên để tiết kiệm thời gian
+    """
+    start_time = time.time()
+    print(f"\n{'='*60}")
+    print(f"[CLEAN-SELECTIVE-FRONT] 🎯 Làm sạch có chọn lọc (Họ tên, Quê quán, Địa chỉ)")
+    print(f"[CLEAN-SELECTIVE-FRONT] ⏰ Thời gian: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+    print(f"[CLEAN-SELECTIVE-FRONT] 📝 Số dòng ban đầu: {len(lines)}")
+    print(f"{'='*60}")
+    
+    # ⚠️ Kiểm tra input rỗng
+    if len(lines) == 0:
+        print(f"[CLEAN-SELECTIVE-FRONT] ⚠️  CẢNH BÁO: Không có dòng text nào!")
+        print(f"{'='*60}\n")
+        return []
+    
+    # Từ khóa để nhận diện dòng cần clean
+    FRONT_KEYWORDS = [
+        # Họ tên
+        "họ", "tên", "ho", "ten", "name", "full name",
+        # Quê quán
+        "quê", "quán", "que", "quan", "hometown", "origin",
+        # Địa chỉ / Nơi thường trú
+        "địa chỉ", "dia chi", "address",
+        "nơi", "noi", "thường trú", "thuong tru", "cư trú", "cu tru",
+        "residence", "place"
+    ]
+    
+    cleaned = []
+    cleaned_count = 0
+    skipped_count = 0
+    
+    for idx, line in enumerate(lines, 1):
+        line_lower = line.lower()
+        
+        # Kiểm tra xem dòng này có chứa thông tin cần clean không
+        needs_cleaning = any(keyword in line_lower for keyword in FRONT_KEYWORDS)
+        
+        # Ngoài ra, clean các dòng ALL CAPS (có thể là tên)
+        if not needs_cleaning and line.strip().isupper() and len(line.strip()) > 3:
+            needs_cleaning = True
+        
+        if needs_cleaning:
+            # Clean dòng này
+            print(f"\n[CLEAN-SELECTIVE-FRONT] 🧹 Dòng {idx}/{len(lines)} - CẦN CLEAN")
+            print(f"[CLEAN-SELECTIVE-FRONT]    📥 TRƯỚC: '{line[:60]}'")
+            line_start = time.time()
+            
+            inputs = tokenizer(
+                line, 
+                return_tensors="pt",
+                truncation=True, 
+                max_length=80
+            ).to(device)
+
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=80,
+                num_beams=3,
+                num_return_sequences=1,
+                early_stopping=True,
+                do_sample=False,
+                length_penalty=1.0
+            )
+
+            cleaned_line = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            cleaned.append(cleaned_line)
+            cleaned_count += 1
+            
+            line_elapsed = time.time() - line_start
+            print(f"[CLEAN-SELECTIVE-FRONT]    📤 SAU:   '{cleaned_line[:60]}'")
+            print(f"[CLEAN-SELECTIVE-FRONT]    ⏱️  Thời gian: {line_elapsed:.2f}s")
+        else:
+            # Giữ nguyên dòng này
+            print(f"[CLEAN-SELECTIVE-FRONT] ⏭️  Dòng {idx}/{len(lines)} - BỎ QUA: '{line[:60]}'")
+            cleaned.append(line)
+            skipped_count += 1
+    
+    total_elapsed = time.time() - start_time
+    print(f"\n{'='*60}")
+    print(f"[CLEAN-SELECTIVE-FRONT] ✅ Hoàn thành")
+    print(f"[CLEAN-SELECTIVE-FRONT] 📊 Đã clean: {cleaned_count} dòng")
+    print(f"[CLEAN-SELECTIVE-FRONT] ⏭️  Đã bỏ qua: {skipped_count} dòng")
+    print(f"[CLEAN-SELECTIVE-FRONT] ⏱️  Tổng thời gian: {total_elapsed:.2f}s")
+    
+    # ⚠️ Tránh chia cho 0
+    if len(lines) > 0:
+        print(f"[CLEAN-SELECTIVE-FRONT] 💡 Tiết kiệm: {skipped_count / len(lines) * 100:.1f}%")
+    else:
+        print(f"[CLEAN-SELECTIVE-FRONT] ⚠️  Không có dòng nào để xử lý")
+    
+    print(f"{'='*60}\n")
+    
+    return cleaned
 
 # ===============================================================
 #                       EXTRACTION RULES
@@ -483,69 +529,78 @@ def extract_front(texts):
     # ==========================
     # 6. ĐỊA CHỈ 2 DÒNG (CHUẨN)
     # ==========================
+
+        # ==========================
+    # 6. ĐỊA CHỈ 2 DÒNG (CHUẨN)
+    # ==========================
     address_keywords = [
-        "nơi cư trú", "cư trú", "nơi thuong tru", "thường trú", 
-        "thuong tru", "place of residence", "residence"
+    "nơi cư trú", "cư trú", "nơi thuong tru", "thường trú",
+    "thuong tru", "place of residence", "residence"
     ]
 
-    expiry_keywords = [
-        "có giá trị đến", "co gia tri den",
-        "date of expiry", "expiry"
+    expiry_label_keywords = [
+        "có giá trị đến", "co gia tri den", "có giá tr đén"
     ]
+
+    info["address"] = ""
+    info["expiryDate"] = ""
+
+# --------------------------------------------------
+# 1) Tìm địa chỉ dòng 1 (sau dấu ":" nếu có)
+# --------------------------------------------------
+    address_line_1 = ""
+    address_index = -1
 
     for i, t in enumerate(texts):
         t_lower = t.lower()
 
-        # Nếu là label địa chỉ
         if any(k in t_lower for k in address_keywords):
+            address_index = i
 
-            # --- Strategy 1: same line ---
-            cleaned = re.sub(
-                r"(nơi cư trú|cư trú|nơi thường trú|thường trú|place of residence)[:\-\s]*",
-                "",
-                t,
-                flags=re.I
-            ).strip()
+            # lấy phần sau ':' nếu có
+            if ":" in t:
+                address_line_1 = t.split(":", 1)[1].strip()
+            else:
+                # không có ':' thì dùng luôn dòng này
+                address_line_1 = t.strip()
 
-            address = ""
-
-            # Nếu same line có sẵn địa chỉ → lấy luôn
-            if len(cleaned) > 5:
-                address = cleaned
-
-            # --- Strategy 2: địa chỉ nằm ở dòng tiếp theo ---
-            if not address and i + 1 < len(texts):
-                next_line = texts[i + 1].strip()
-
-                # Nếu next line KHÔNG PHẢI expiry → đây là địa chỉ dòng 2
-                if not any(exp in next_line.lower() for exp in expiry_keywords):
-                    address = next_line
-
-                    # Check thêm dòng thứ 3 nếu vẫn không phải expiry
-                    if i + 2 < len(texts):
-                        third_line = texts[i + 2].strip()
-                        if not any(exp in third_line.lower() for exp in expiry_keywords):
-                            # nhưng phải đảm bảo đúng địa chỉ, không phải text linh tinh
-                            if len(third_line) > 5:
-                                address += ", " + third_line
-
-            info["address"] = address
-            print(f"[EXTRACT] ✅ Address detected: {address}")
             break
 
-        # ==========================
-    # 7. Expiry date: "có giá trị đến"
-    # ==========================
-    expiry_regex = re.compile(
-        r"(?i)có\s+giá\s+trị\s+đến[:\s]*"
-        r"(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})"
-    )
+# --------------------------------------------------
+# 2) Tìm ngày hết hạn (expiry) — ngay sau dòng "có giá trị đến"
+# --------------------------------------------------
+    expiry_label_index = -1
 
-    for t in texts:
-        m = expiry_regex.search(t)
-        if m:
-            info["expiryDate"] = m.group(1)
+    for i, t in enumerate(texts):
+        t_lower = t.lower()
+
+        if any(k in t_lower for k in expiry_label_keywords):
+            expiry_label_index = i
+
+            # dòng sau là ngày hết hạn
+            if i + 1 < len(texts):
+                info["expiryDate"] = texts[i + 1].strip()
+
             break
+
+    # --------------------------------------------------
+    # 3) Địa chỉ dòng 2 = dòng sau "Date of expiry"
+    # --------------------------------------------------
+    address_line_2 = ""
+
+    for i, t in enumerate(texts):
+        if "date of expiry" in t.lower():
+            if i + 1 < len(texts):
+                address_line_2 = texts[i + 1].strip()
+            break
+
+    # --------------------------------------------------
+    # 4) Gộp địa chỉ (line1 + line2)
+    # --------------------------------------------------
+    if address_line_1 and address_line_2:
+        info["address"] = f"{address_line_1}, {address_line_2}"
+    else:
+        info["address"] = address_line_1 or address_line_2
 
     return info
 
@@ -654,7 +709,7 @@ def detect():
         # 🧹 Clean mặt trước (toàn bộ)
         step_start = time.time()
         print(f"[API] 🧹 Bước 7: Làm sạch mặt trước (toàn bộ)...")
-        clean_front = clean_text(filtered_front)
+        clean_front = selective_clean_text_front(filtered_front)
         clean_front_time = time.time() - step_start
         print(f"[API] ✅ Làm sạch mặt trước xong - {clean_front_time:.2f}s\n")
 
