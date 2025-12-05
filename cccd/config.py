@@ -2,6 +2,15 @@
 Configuration for CCCD OCR
 """
 import os
+from dotenv import load_dotenv
+
+# Load .env file from project root
+# config.py is in /cccd/, so .env is in ../.env
+basedir = os.path.abspath(os.path.dirname(__file__))
+root_dir = os.path.dirname(basedir)
+load_dotenv(os.path.join(root_dir, '.env'))
+
+
 
 # ========== UPLOAD CONFIG ==========
 UPLOAD_FOLDER = "uploads"
@@ -112,3 +121,6 @@ HOMETOWN_KEYWORDS = [
 # Giá trị mặc định
 DEFAULT_NATIONALITY = "Việt Nam"
 DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
+
+# ========== GEMINI CONFIG ==========
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

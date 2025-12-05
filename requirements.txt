@@ -13,3 +13,5 @@ underthesea
 sentencepiece
 protobuf
 google-genai
+pydantic
+python-dotenv

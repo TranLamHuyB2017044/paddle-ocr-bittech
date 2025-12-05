@@ -18,7 +18,7 @@ def extract_back(texts):
     """
     info = {
         "dateOfIssue": "",
-        "placeOfIssue": DEFAULT_PLACE_OF_ISSUE
+        "placeOfIssue": ""
     }
 
     full = " ".join(texts).lower()
@@ -37,4 +37,15 @@ def extract_back(texts):
             info["dateOfIssue"] = m.group(1)
             break
 
+    # ==========================
+    # 2. Nơi cấp
+    # ==========================
+    place_regex = re.compile(r"^(?=.*[A-ZÀ-ỸĐ])[A-ZÀ-ỸĐ\s]{3,}$")
+    
+    for t in texts:
+        m = place_regex.search(t)
+        if m:
+            info["placeOfIssue"] = m.group()
+            break
+    
     return info
