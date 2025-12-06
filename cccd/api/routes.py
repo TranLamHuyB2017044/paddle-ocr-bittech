@@ -12,7 +12,93 @@ from cccd.utils.text_cleaner import selective_clean_text_front, selective_clean_
 from cccd.extractors.front_extractor import extract_front
 from cccd.extractors.back_extractor import extract_back
 from cccd.extractors.gemini_extractor import gemini_extractor
+from cccd.utils.gemini_limiter import gemini_limiter
 
+
+
+def process_with_gemini(raw_front, raw_back, timer_info):
+    request_start = timer_info["start"]
+    ocr_front_time = timer_info["ocr_front"]
+    ocr_back_time = timer_info["ocr_back"]
+    
+    print("[API] 🤖 Dùng Gemini → bỏ qua toàn bộ bước lọc/clean/regex")
+    try:
+        raw_text = raw_front + raw_back
+        extraction_result = gemini_extractor.extract(raw_text)
+        
+        info = extraction_result.get("data", {})
+        metadata = extraction_result.get("metadata", {})
+
+        total_time = time.time() - request_start
+
+        print("[API] 🎉 Trả về kết quả Gemini\n")
+        return jsonify({
+            "statusCode": 200,
+            "message": "Success (Gemini)",
+            "data": info,
+            "debug": {
+                "total_time": f"{total_time:.2f}s",
+                "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
+                "gemini": True,
+                "gemini_metadata": metadata
+            }
+        })
+    except Exception as e:
+        print(f"[API] ⚠️ API Gemini Error: {e}")
+        gemini_limiter.record_error(e)
+        
+        if gemini_limiter.is_blocked():
+             print("[API] 🛑 Fallback to traditional due to RateLimit/Timeout.")
+             return None # Signal fallback
+        else:
+             print("[API] ❌ Critical Error (not rate limit). Returning error to user.")
+             raise e
+
+def process_traditional(raw_front, raw_back, timer_info):
+    request_start = timer_info["start"]
+    ocr_front_time = timer_info["ocr_front"]
+    ocr_back_time = timer_info["ocr_back"]
+
+    print("[API] 🧹 Dùng pipeline truyền thống (filter + clean + regex)\n")
+
+    # ------------------ BƯỚC 5: FILTER ----------------------
+    step_start = time.time()
+    filtered_front = filter_useless_lines(raw_front)
+    filtered_back = filter_useless_lines(raw_back)
+    filter_time = time.time() - step_start
+    print(f"[API]    🗑️ Filter xong - {filter_time:.2f}s\n")
+
+    # ------------------ BƯỚC 7: CLEAN ----------------------
+    step_start = time.time()
+    clean_front = selective_clean_text_front(filtered_front)
+    clean_back = selective_clean_text_back(filtered_back)
+    clean_time = time.time() - step_start
+    print(f"[API]    🧹 Clean xong - {clean_time:.2f}s\n")
+
+    # ------------------ BƯỚC 9: EXTRACT ----------------------
+    step_start = time.time()
+    info_front = extract_front(clean_front)
+    info_back = extract_back(clean_back)
+    extract_time = time.time() - step_start
+    print(f"[API]    📊 Extract xong - {extract_time:.2f}s\n")
+
+    # ------------------ TỔNG KẾT ----------------------
+    total_time = time.time() - request_start
+
+    print("[API] 🎉 Trả về kết quả kiểu truyền thống\n")
+    return jsonify({
+        "statusCode": 200,
+        "message": "Success",
+        "data": {**info_front, **info_back},
+        "debug": {
+            "total_time": f"{total_time:.2f}s",
+            "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
+            "filter_time": f"{filter_time:.2f}s",
+            "clean_time": f"{clean_time:.2f}s",
+            "extract_time": f"{extract_time:.2f}s",
+            "gemini": False
+        }
+    })
 
 def register_routes(app):
     """
@@ -42,10 +128,7 @@ def register_routes(app):
 
             f1 = request.files["front_image"]
             f2 = request.files["back_image"]
-
-            use_gemini = request.form.get("use_gemini", "false").lower() == "true"
-
-            print(f"[API]    ⚙️  use_gemini = {use_gemini}")
+            
             print(f"[API] ✅ Validation OK - {time.time() - step_start:.2f}s\n")
 
             # ==================== BƯỚC 2: LƯU FILE ====================
@@ -71,73 +154,24 @@ def register_routes(app):
             print(f"[API]    ⏳ OCR back : {ocr_back_time:.2f}s")
             print("[API] ✅ OCR xong\n")
 
-            # =========================================================
-            #       🚀 NHÁNH A — SỬ DỤNG GEMINI → BỎ QUA CLEANING
-            # =========================================================
-            if use_gemini:
-                print("[API] 🤖 Dùng Gemini → bỏ qua toàn bộ bước lọc/clean/regex")
+            timer_info = {
+                "start": request_start,
+                "ocr_front": ocr_front_time,
+                "ocr_back": ocr_back_time
+            }
 
-                raw_text = raw_front + raw_back
-                info = gemini_extractor.extract(raw_text)
+            # Check rate limiter first
+            should_skip_gemini = False
+            if gemini_limiter.is_blocked():
+                 print(f"[API] ⚠️ Gemini Limit/Fallback active. Remaining: {gemini_limiter.get_remaining_time():.0f}s. Fallback traditional.")
+                 should_skip_gemini = True
 
-                total_time = time.time() - request_start
-
-                print("[API] 🎉 Trả về kết quả Gemini\n")
-                return jsonify({
-                    "statusCode": 200,
-                    "message": "Success (Gemini)",
-                    "data": info,
-                    "debug": {
-                        "total_time": f"{total_time:.2f}s",
-                        "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
-                        "gemini": True
-                    }
-                })
-
-            # =========================================================
-            #       🚀 NHÁNH B — XỬ LÝ TRUYỀN THỐNG (LỌC → CLEAN → RULE)
-            # =========================================================
-
-            print("[API] 🧹 Dùng pipeline truyền thống (filter + clean + regex)\n")
-
-            # ------------------ BƯỚC 5: FILTER ----------------------
-            step_start = time.time()
-            filtered_front = filter_useless_lines(raw_front)
-            filtered_back = filter_useless_lines(raw_back)
-            filter_time = time.time() - step_start
-            print(f"[API]    🗑️ Filter xong - {filter_time:.2f}s\n")
-
-            # ------------------ BƯỚC 7: CLEAN ----------------------
-            step_start = time.time()
-            clean_front = selective_clean_text_front(filtered_front)
-            clean_back = selective_clean_text_back(filtered_back)
-            clean_time = time.time() - step_start
-            print(f"[API]    🧹 Clean xong - {clean_time:.2f}s\n")
-
-            # ------------------ BƯỚC 9: EXTRACT ----------------------
-            step_start = time.time()
-            info_front = extract_front(clean_front)
-            info_back = extract_back(clean_back)
-            extract_time = time.time() - step_start
-            print(f"[API]    📊 Extract xong - {extract_time:.2f}s\n")
-
-            # ------------------ TỔNG KẾT ----------------------
-            total_time = time.time() - request_start
-
-            print("[API] 🎉 Trả về kết quả kiểu truyền thống\n")
-            return jsonify({
-                "statusCode": 200,
-                "message": "Success",
-                "data": {**info_front, **info_back},
-                "debug": {
-                    "total_time": f"{total_time:.2f}s",
-                    "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
-                    "filter_time": f"{filter_time:.2f}s",
-                    "clean_time": f"{clean_time:.2f}s",
-                    "extract_time": f"{extract_time:.2f}s",
-                    "gemini": False
-                }
-            })
+            if not should_skip_gemini:
+                 response = process_with_gemini(raw_front, raw_back, timer_info)
+                 if response:
+                     return response
+            
+            return process_traditional(raw_front, raw_back, timer_info)
 
         except Exception as e:
             print("\n" + "!"*70)

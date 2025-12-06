@@ -34,7 +34,9 @@ Dựa trên văn bản/ảnh OCR được cung cấp, hãy lấy thông tin và 
 
 - dateOfIssue: Hãy tìm xem thông tin có ngày cấp hay không?
 
-- placeOfIssue: Hãy tìm xem thông tin nơi cấp hay không?
+- placeOfIssue: Hãy tìm xem thông tin nơi cấp hay không? nơi cấp nằm ở mặt sau của CCCD và thường viết in hóa hết ví dụ (CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI)
+
+- Các trường ngày tháng năm phải tuân theo định dạng DD-MM-YYYY.
 
 - info_type: Bạn hãy đọc và cho biết loại giấy tờ là gì trong các giấy tờ sau: GPLX (Giấy phép lái xe), CCCD (Căn cước công dân), HC (Hộ chiếu),...
 
@@ -48,13 +50,13 @@ Dựa trên văn bản/ảnh OCR được cung cấp, hãy lấy thông tin và 
 {
     "fullName": "NGUYỄN VĂN ANH TÚ",
     "number": "091234800078",
-    "birthday": "1990-12-31",
+    "birthday": "31-12-1990",
     "gender": "Nam",
     "nationality": "Việt Nam",
     "hometown": "An Giang",
     "address": "KV1, P. Hưng Phú, TP. Cần Thơ",
-    "expiryDate": "2030-12-31",
-    "dateOfIssue": "2020-12-31",
+    "expiryDate": "31-12-2030",
+    "dateOfIssue": "31-12-2020",
     "placeOfIssue": "An Giang",
     "info_type": "cccd"
 }

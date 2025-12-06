@@ -6,6 +6,7 @@ import os
 import json
 from typing import Optional
 from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 from cccd.config import GEMINI_API_KEY
 
@@ -49,50 +50,63 @@ class GeminiExtractor:
         """
         if not self.client:
             print("[GEMINI] ❌ No client available. Check API Key.")
-            return {}
+            return {"data": {}, "metadata": {}}
 
+        # Prepare content
+        text_block = "\n".join(text_lines)
+        
+        # Read prompt from file
+        prompt_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'read_cccd.md')
         try:
-            # Prepare content
-            text_block = "\n".join(text_lines)
+            with open(prompt_file_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
             
-            # Read prompt from file
-            prompt_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'read_cccd.md')
-            try:
-                with open(prompt_file_path, 'r', encoding='utf-8') as f:
-                    prompt_template = f.read()
-                
-                # Append input text to the prompt since the file might not have a placeholder
-                prompt = f"{prompt_template}\n\nINPUT DATA:\n{text_block}"
-                print("[GEMINI] 📝 Prompt:\n", prompt)
-            except Exception as e:
-                print(f"[GEMINI] ⚠️  Could not read prompt file: {e}. Using fallback.")
-                return {}
-
-            # Generate content with structured output
-            print("[GEMINI] 🚀 Sending request to Gemini (Structured)...")
-            response = self.client.models.generate_content(
-                model="gemini-2.0-flash", 
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": CCCD,
-                },
-            )
-            
-            # Parse and validate response
-            if response.parsed:
-                 # Convert to dict
-                data = response.parsed.model_dump(mode='json')
-                print(f"[GEMINI] ✅ Extraction successful: {data}")
-                return data
-            else:
-                # Retry or handle raw text if schema failed (fallback mechanism could be added here)
-                print(f"[GEMINI] ❌ No parsed data received.")
-                return {}
-
+            # Append input text to the prompt since the file might not have a placeholder
+            prompt = f"{prompt_template}\n\nINPUT DATA:\n{text_block}"
+            print("[GEMINI] 📝 Prompt:\n", prompt)
         except Exception as e:
-            print(f"[GEMINI] ❌ Extraction failed: {e}")
-            return {}
+            print(f"[GEMINI] ⚠️  Could not read prompt file: {e}. Using fallback.")
+            return {"data": {}, "metadata": {}}
+
+        # Generate content with structured output
+        print("[GEMINI] 🚀 Sending request to Gemini (Structured)...")
+        response = self.client.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                response_mime_type="application/json",
+                response_schema=CCCD,
+                maxOutputTokens = 2048,
+                thinkingConfig = types.ThinkingConfig(
+                    thinkingBudget = 0,
+                )
+            ),
+        )
+        
+        # Parse and validate response
+        if response.parsed:
+             # Convert to dict
+            data = response.parsed.model_dump(mode='json')
+
+            # Extract metadata
+            metadata = {}
+            if response.usage_metadata:
+                metadata = {
+                    "prompt_token_count": response.usage_metadata.prompt_token_count,
+                    "candidates_token_count": response.usage_metadata.candidates_token_count,
+                    "total_token_count": response.usage_metadata.total_token_count,
+                }
+
+            print(f"[GEMINI] ✅ Extraction successful: {data}")
+            return {
+                "data": data,
+                "metadata": metadata
+            }
+        else:
+            # Retry or handle raw text if schema failed (fallback mechanism could be added here)
+            print(f"[GEMINI] ❌ No parsed data received.")
+            return {"data": {}, "metadata": {}}
 
 # Global instance
 gemini_extractor = GeminiExtractor()
