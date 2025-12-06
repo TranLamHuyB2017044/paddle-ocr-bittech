@@ -14,13 +14,13 @@ from cccd.config import GEMINI_API_KEY
 class CCCD(BaseModel):
     fullName: Optional[str] = Field(description="Fullname/Họ và tên")
     idNumber: Optional[str] = Field(description="Số/Number/No")
-    dob: Optional[str] = Field(description="Date of birth (YYYY-MM-DD)")
+    dob: Optional[str] = Field(description="Date of birth (DD-MM-YYYY)")
     gender: Optional[str] = Field(description="Gender (Nam/Nữ)")
     nationality: Optional[str] = Field(description="Nationality")
     hometown: Optional[str] = Field(description="Place of origin/Quê quán")
     address: Optional[str] = Field(description="Address/Nơi thường trú")
-    expiryDate: Optional[str] = Field(description="Date of expiry")
-    dateOfIssue: Optional[str] = Field(description="Date of issue")
+    expiryDate: Optional[str] = Field(description="Date of expiry (DD-MM-YYYY)")
+    dateOfIssue: Optional[str] = Field(description="Date of issue (DD-MM-YYYY)")
     placeOfIssue: Optional[str] = Field(description="Place of issue")
     info_type: Optional[str] = Field(description="Type of document (CCCD, GPLX, HC...)")
 
@@ -88,7 +88,6 @@ class GeminiExtractor:
         if response.parsed:
              # Convert to dict
             data = response.parsed.model_dump(mode='json')
-
             # Extract metadata
             metadata = {}
             if response.usage_metadata:
