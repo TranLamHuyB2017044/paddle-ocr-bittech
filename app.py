@@ -20,15 +20,18 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # ==================== LOAD MODELS ====================
-print("="*70)
-print("🚀 KHỞI ĐỘNG CCCD OCR API")
-print("="*70)
+from cccd.utils.logger import Log
+
+# ==================== LOAD MODELS ====================
+Log.info("="*70)
+Log.info("🚀 KHỞI ĐỘNG CCCD OCR API")
+Log.info("="*70)
 
 # Models sẽ được load tự động khi import model_loader
-print(f"✅ Models đã sẵn sàng!")
-print(f"📁 Upload folder: {UPLOAD_FOLDER}")
-print("="*70)
-print()
+Log.info(f"✅ Models đã sẵn sàng!")
+Log.info(f"📁 Upload folder: {UPLOAD_FOLDER}")
+Log.info("="*70)
+
 
 # ==================== REGISTER ROUTES ====================
 register_routes(app)

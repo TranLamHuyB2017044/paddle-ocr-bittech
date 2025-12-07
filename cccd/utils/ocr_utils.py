@@ -5,6 +5,7 @@ Các hàm tiện ích cho OCR extraction
 import time
 from datetime import datetime
 from cccd.models.model_loader import model_loader
+from cccd.utils.logger import Log
 
 
 def ocr_extract(image_path):
@@ -18,9 +19,7 @@ def ocr_extract(image_path):
         tuple: (list of text lines, list of confidence scores)
     """
     start_time = time.time()
-    print(f"\n{'='*60}")
-    print(f"[OCR] 🔍 Bắt đầu OCR: {image_path}")
-    print(f"[OCR] ⏰ Thời gian: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+    Log.info(f"[OCR] 🔍 Bắt đầu OCR: {image_path}")
     
     # Sử dụng OCR từ model_loader
     result = model_loader.ocr.predict(image_path)
@@ -28,24 +27,18 @@ def ocr_extract(image_path):
     for block in result:
         elapsed = time.time() - start_time
         num_lines = len(block["rec_texts"])
-        print(f"[OCR] ✅ Hoàn thành OCR")
-        print(f"[OCR] 📝 Số dòng text: {num_lines}")
-        print(f"[OCR] ⏱️  Thời gian: {elapsed:.2f}s")
+        Log.info(f"[OCR] ✅ Hoàn thành OCR. Số dòng: {num_lines}. Thời gian: {elapsed:.2f}s")
         
-        # 📋 LOG CHI TIẾT: Hiển thị từng dòng text + confidence
-        print(f"\n{'─'*60}")
-        print(f"[OCR] 📋 CHI TIẾT TEXT DETECT:")
-        print(f"{'─'*60}")
+        # 📋 LOG CHI TIẾT
+        Log.debug(f"[OCR] 📋 CHI TIẾT TEXT DETECT:")
         for i, (text, score) in enumerate(zip(block["rec_texts"], block["rec_scores"]), 1):
             confidence = score * 100
             emoji = "✅" if confidence >= 80 else "⚠️" if confidence >= 60 else "❌"
-            print(f"[OCR] {emoji} [{i:2d}] [{confidence:5.1f}%] {text[:70]}")
-        print(f"{'─'*60}\n")
+            Log.debug(f"[OCR] {emoji} [{i:2d}] [{confidence:5.1f}%] {text[:70]}")
         
-        print(f"{'='*60}\n")
         return block["rec_texts"], block["rec_scores"]
     
-    print(f"[OCR] ⚠️  Không tìm thấy text")
+    Log.warning(f"[OCR] ⚠️  Không tìm thấy text")
     return [], []
 
 
@@ -61,14 +54,11 @@ def filter_useless_lines(lines):
     """
     from cccd.config import USELESS_KEYWORDS
     
-    print(f"\n{'='*60}")
-    print(f"[FILTER] 🗑️  Bắt đầu lọc text không cần thiết")
-    print(f"[FILTER] 📝 Số dòng ban đầu: {len(lines)}")
+    Log.info(f"[FILTER] 🗑️  Bắt đầu lọc text không cần thiết. Số dòng: {len(lines)}")
     
     # ⚠️ Kiểm tra input rỗng
     if len(lines) == 0:
-        print(f"[FILTER] ⚠️  CẢNH BÁO: Không có dòng text nào từ OCR!")
-        print(f"{'='*60}\n")
+        Log.warning(f"[FILTER] ⚠️  CẢNH BÁO: Không có dòng text nào từ OCR!")
         return []
     
     filtered = []
@@ -93,14 +83,11 @@ def filter_useless_lines(lines):
                 break
         
         if is_useless:
-            print(f"[FILTER] ❌ Loại bỏ (từ khóa '{matched_keyword}'): '{line[:60]}'")
+            Log.debug(f"[FILTER] ❌ Loại bỏ (từ khóa '{matched_keyword}'): '{line[:60]}'")
         else:
             filtered.append(line)
-            print(f"[FILTER] ✅ Giữ lại: '{line[:60]}'")
+            Log.debug(f"[FILTER] ✅ Giữ lại: '{line[:60]}'")
     
-    print(f"\n[FILTER] 📊 Kết quả:")
-    print(f"[FILTER]    Đã loại bỏ: {removed_count} dòng")
-    print(f"[FILTER]    Còn lại: {len(filtered)} dòng")
-    print(f"{'='*60}\n")
+    Log.info(f"[FILTER] 📊 Kết quả: Loại bỏ {removed_count} dòng, Còn lại {len(filtered)} dòng")
     
     return filtered

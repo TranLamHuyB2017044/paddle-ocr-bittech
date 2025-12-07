@@ -9,6 +9,7 @@ from cccd.config import (
     EXPIRY_LABEL_KEYWORDS,
     HOMETOWN_KEYWORDS
 )
+from cccd.utils.logger import Log
 
 
 def clean_label(text):
@@ -72,7 +73,7 @@ def extract_front(texts):
                 # Validate: Phải là ALL CAPS và có ít nhất 3 ký tự
                 if name_regex.match(next_line):
                     info["fullName"] = next_line
-                    print(f"[EXTRACT] ✅ Họ tên (label + next line): '{next_line}'")
+                    Log.debug(f"[EXTRACT] ✅ Họ tên (label + next line): '{next_line}'")
                     break
     
     # CHIẾN LƯỢC 2: Tìm dòng chứa "Họ và tên: NGUYỄN VĂN A" (cùng dòng)
@@ -85,7 +86,7 @@ def extract_front(texts):
                 # Validate: Phải là ALL CAPS
                 if cleaned and name_regex.match(cleaned):
                     info["fullName"] = cleaned
-                    print(f"[EXTRACT] ✅ Họ tên (same line): '{cleaned}'")
+                    Log.debug(f"[EXTRACT] ✅ Họ tên (same line): '{cleaned}'")
                     break
     
     # CHIẾN LƯỢC 3: Tìm dòng ALL CAPS (fallback - ưu tiên dòng dài)
@@ -104,7 +105,7 @@ def extract_front(texts):
         # Chọn dòng dài nhất (thường là tên đầy đủ)
         if candidates:
             info["fullName"] = max(candidates, key=len)
-            print(f"[EXTRACT] ✅ Họ tên (ALL CAPS fallback): '{info['fullName']}'")
+            Log.debug(f"[EXTRACT] ✅ Họ tên (ALL CAPS fallback): '{info['fullName']}'")
 
     # ==========================
     # 3. Ngày sinh (DOB)
@@ -159,7 +160,7 @@ def extract_front(texts):
                 candidate = texts[i + 1].strip()
                 if len(candidate) > 3:  # minimal content validation
                     info["hometown"] = candidate
-                    print(f"[EXTRACT] ✅ Hometown (next line): {candidate}")
+                    Log.debug(f"[EXTRACT] ✅ Hometown (next line): {candidate}")
                     break
 
     # Strategy 2: Same line (e.g. 'Quê quán: Nam Định')
@@ -172,7 +173,7 @@ def extract_front(texts):
                     cleaned = re.sub(rf"{k}\s*[:\-]*\s*", "", t, flags=re.I).strip()
                     if len(cleaned) > 3:
                         info["hometown"] = cleaned
-                        print(f"[EXTRACT] ✅ Hometown (same line): {cleaned}")
+                        Log.debug(f"[EXTRACT] ✅ Hometown (same line): {cleaned}")
                         break
             if info["hometown"]:
                 break
@@ -183,7 +184,7 @@ def extract_front(texts):
             t_l = t.lower()
             if t_l.startswith("que ") or t_l.startswith("quequan") or "que quan" in t_l:
                 info["hometown"] = t.split(":")[-1].strip()
-                print(f"[EXTRACT] 🟡 Hometown (fallback guess): {info['hometown']}")
+                Log.debug(f"[EXTRACT] 🟡 Hometown (fallback guess): {info['hometown']}")
                 break
 
     # ==========================

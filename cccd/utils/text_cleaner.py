@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from cccd.models.model_loader import model_loader
 from cccd.config import DATE_KEYWORDS, FRONT_KEYWORDS
+from cccd.utils.logger import Log
 
 
 def selective_clean_text_back(lines):
@@ -20,16 +21,11 @@ def selective_clean_text_back(lines):
         list: Danh sách các dòng text đã được làm sạch
     """
     start_time = time.time()
-    print(f"\n{'='*60}")
-    print(f"[CLEAN-SELECTIVE] 🎯 Làm sạch có chọn lọc (chỉ ngày tháng)")
-    print(f"[CLEAN-SELECTIVE] ⏰ Thời gian: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-    print(f"[CLEAN-SELECTIVE] 📝 Số dòng ban đầu: {len(lines)}")
-    print(f"{'='*60}")
+    Log.info(f"[CLEAN-SELECTIVE] 🎯 Làm sạch có chọn lọc (chỉ ngày tháng). Số dòng: {len(lines)}")
     
     # ⚠️ Kiểm tra input rỗng
     if len(lines) == 0:
-        print(f"[CLEAN-SELECTIVE] ⚠️  CẢNH BÁO: Không có dòng text nào!")
-        print(f"{'='*60}\n")
+        Log.warning(f"[CLEAN-SELECTIVE] ⚠️  CẢNH BÁO: Không có dòng text nào!")
         return []
     
     cleaned = []
@@ -44,8 +40,7 @@ def selective_clean_text_back(lines):
         
         if needs_cleaning:
             # Clean dòng này
-            print(f"\n[CLEAN-SELECTIVE] 🧹 Dòng {idx}/{len(lines)} - CẦN CLEAN")
-            print(f"[CLEAN-SELECTIVE]    📥 TRƯỚC: '{line[:60]}'")
+            Log.debug(f"[CLEAN-SELECTIVE] 🧹 Dòng {idx}/{len(lines)} - CẦN CLEAN. TRƯỚC: '{line[:60]}'")
             line_start = time.time()
             
             inputs = model_loader.tokenizer(
@@ -70,28 +65,22 @@ def selective_clean_text_back(lines):
             cleaned_count += 1
             
             line_elapsed = time.time() - line_start
-            print(f"[CLEAN-SELECTIVE]    📤 SAU:   '{cleaned_line[:60]}'")
-            print(f"[CLEAN-SELECTIVE]    ⏱️  Thời gian: {line_elapsed:.2f}s")
+            Log.debug(f"[CLEAN-SELECTIVE]    📤 SAU:   '{cleaned_line[:60]}'. Thời gian: {line_elapsed:.2f}s")
         else:
             # Giữ nguyên dòng này
-            print(f"[CLEAN-SELECTIVE] ⏭️  Dòng {idx}/{len(lines)} - BỎ QUA: '{line[:60]}'")
+
+            Log.debug(f"[CLEAN-SELECTIVE] ⏭️  Dòng {idx}/{len(lines)} - BỎ QUA: '{line[:60]}'")
             cleaned.append(line)
             skipped_count += 1
     
     total_elapsed = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"[CLEAN-SELECTIVE] ✅ Hoàn thành")
-    print(f"[CLEAN-SELECTIVE] 📊 Đã clean: {cleaned_count} dòng")
-    print(f"[CLEAN-SELECTIVE] ⏭️  Đã bỏ qua: {skipped_count} dòng")
-    print(f"[CLEAN-SELECTIVE] ⏱️  Tổng thời gian: {total_elapsed:.2f}s")
     
     # ⚠️ Tránh chia cho 0
     if len(lines) > 0:
-        print(f"[CLEAN-SELECTIVE] 💡 Tiết kiệm: {skipped_count / len(lines) * 100:.1f}%")
+        saving_pct = skipped_count / len(lines) * 100
+        Log.info(f"[CLEAN-SELECTIVE] ✅ Hoàn thành. Clean: {cleaned_count}, Bỏ qua: {skipped_count}, Tiết kiệm: {saving_pct:.1f}%. Tổng thời gian: {total_elapsed:.2f}s")
     else:
-        print(f"[CLEAN-SELECTIVE] ⚠️  Không có dòng nào để xử lý")
-    
-    print(f"{'='*60}\n")
+        Log.warning(f"[CLEAN-SELECTIVE] ⚠️  Không có dòng nào để xử lý")
     
     return cleaned
 
@@ -108,16 +97,11 @@ def selective_clean_text_front(lines):
         list: Danh sách các dòng text đã được làm sạch
     """
     start_time = time.time()
-    print(f"\n{'='*60}")
-    print(f"[CLEAN-SELECTIVE-FRONT] 🎯 Làm sạch có chọn lọc (Họ tên, Quê quán, Địa chỉ)")
-    print(f"[CLEAN-SELECTIVE-FRONT] ⏰ Thời gian: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-    print(f"[CLEAN-SELECTIVE-FRONT] 📝 Số dòng ban đầu: {len(lines)}")
-    print(f"{'='*60}")
+    Log.info(f"[CLEAN-SELECTIVE-FRONT] 🎯 Làm sạch có chọn lọc (Họ tên, Quê quán, Địa chỉ). Số dòng: {len(lines)}")
     
     # ⚠️ Kiểm tra input rỗng
     if len(lines) == 0:
-        print(f"[CLEAN-SELECTIVE-FRONT] ⚠️  CẢNH BÁO: Không có dòng text nào!")
-        print(f"{'='*60}\n")
+        Log.warning(f"[CLEAN-SELECTIVE-FRONT] ⚠️  CẢNH BÁO: Không có dòng text nào!")
         return []
     
     cleaned = []
@@ -136,8 +120,8 @@ def selective_clean_text_front(lines):
         
         if needs_cleaning:
             # Clean dòng này
-            print(f"\n[CLEAN-SELECTIVE-FRONT] 🧹 Dòng {idx}/{len(lines)} - CẦN CLEAN")
-            print(f"[CLEAN-SELECTIVE-FRONT]    📥 TRƯỚC: '{line[:60]}'")
+
+            Log.debug(f"[CLEAN-SELECTIVE-FRONT] 🧹 Dòng {idx}/{len(lines)} - CẦN CLEAN. TRƯỚC: '{line[:60]}'")
             line_start = time.time()
             
             inputs = model_loader.tokenizer(
@@ -162,27 +146,20 @@ def selective_clean_text_front(lines):
             cleaned_count += 1
             
             line_elapsed = time.time() - line_start
-            print(f"[CLEAN-SELECTIVE-FRONT]    📤 SAU:   '{cleaned_line[:60]}'")
-            print(f"[CLEAN-SELECTIVE-FRONT]    ⏱️  Thời gian: {line_elapsed:.2f}s")
+
+            Log.debug(f"[CLEAN-SELECTIVE-FRONT]    📤 SAU:   '{cleaned_line[:60]}'. Thời gian: {line_elapsed:.2f}s")
         else:
             # Giữ nguyên dòng này
-            print(f"[CLEAN-SELECTIVE-FRONT] ⏭️  Dòng {idx}/{len(lines)} - BỎ QUA: '{line[:60]}'")
+            Log.debug(f"[CLEAN-SELECTIVE-FRONT] ⏭️  Dòng {idx}/{len(lines)} - BỎ QUA: '{line[:60]}'")
             cleaned.append(line)
             skipped_count += 1
     
     total_elapsed = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"[CLEAN-SELECTIVE-FRONT] ✅ Hoàn thành")
-    print(f"[CLEAN-SELECTIVE-FRONT] 📊 Đã clean: {cleaned_count} dòng")
-    print(f"[CLEAN-SELECTIVE-FRONT] ⏭️  Đã bỏ qua: {skipped_count} dòng")
-    print(f"[CLEAN-SELECTIVE-FRONT] ⏱️  Tổng thời gian: {total_elapsed:.2f}s")
-    
     # ⚠️ Tránh chia cho 0
     if len(lines) > 0:
-        print(f"[CLEAN-SELECTIVE-FRONT] 💡 Tiết kiệm: {skipped_count / len(lines) * 100:.1f}%")
+        saving_pct = skipped_count / len(lines) * 100
+        Log.info(f"[CLEAN-SELECTIVE-FRONT] ✅ Hoàn thành. Clean: {cleaned_count}, Bỏ qua: {skipped_count}, Tiết kiệm: {saving_pct:.1f}%. Tổng thời gian: {total_elapsed:.2f}s")
     else:
-        print(f"[CLEAN-SELECTIVE-FRONT] ⚠️  Không có dòng nào để xử lý")
-    
-    print(f"{'='*60}\n")
+        Log.warning(f"[CLEAN-SELECTIVE-FRONT] ⚠️  Không có dòng nào để xử lý")
     
     return cleaned

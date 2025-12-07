@@ -9,6 +9,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 from cccd.config import GEMINI_API_KEY
+from cccd.utils.logger import Log
 
 # Define Pydantic Models matching read_cccd.md
 class CCCD(BaseModel):
@@ -27,15 +28,15 @@ class CCCD(BaseModel):
 class GeminiExtractor:
     def __init__(self):
         if not GEMINI_API_KEY:
-            print("[GEMINI] ⚠️  Warning: GEMINI_API_KEY is not set. Check .env file.")
+            Log.warning("[GEMINI] ⚠️  Warning: GEMINI_API_KEY is not set. Check .env file.")
             self.client = None
         else:
             try:
                 # Initialize Google GenAI Client
                 self.client = genai.Client(api_key=GEMINI_API_KEY)
-                print("[GEMINI] ✅ Gemini Client initialized successfully.")
+                Log.info("[GEMINI] ✅ Gemini Client initialized successfully.")
             except Exception as e:
-                print(f"[GEMINI] ❌ Error configuring Gemini Client: {e}")
+                Log.error(f"[GEMINI] ❌ Error configuring Gemini Client: {e}")
                 self.client = None
 
     def extract(self, text_lines):
@@ -49,7 +50,7 @@ class GeminiExtractor:
             dict: JSON extracted data or empty dict if failed
         """
         if not self.client:
-            print("[GEMINI] ❌ No client available. Check API Key.")
+            Log.error("[GEMINI] ❌ No client available. Check API Key.")
             return {"data": {}, "metadata": {}}
 
         # Prepare content
@@ -63,15 +64,15 @@ class GeminiExtractor:
             
             # Append input text to the prompt since the file might not have a placeholder
             prompt = f"{prompt_template}\n\nINPUT DATA:\n{text_block}"
-            print("[GEMINI] 📝 Prompt:\n", prompt)
+            Log.debug(f"[GEMINI] 📝 Prompt:\n{prompt}")
         except Exception as e:
-            print(f"[GEMINI] ⚠️  Could not read prompt file: {e}. Using fallback.")
+            Log.warning(f"[GEMINI] ⚠️  Could not read prompt file: {e}. Using fallback.")
             return {"data": {}, "metadata": {}}
 
         # Generate content with structured output
-        print("[GEMINI] 🚀 Sending request to Gemini (Structured)...")
+        Log.info("[GEMINI] 🚀 Sending request to Gemini (Structured)...")
         response = self.client.models.generate_content(
-            model="gemini-2.0-flash", 
+            model="gemini-2.5-flash", 
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.1,
@@ -97,14 +98,14 @@ class GeminiExtractor:
                     "total_token_count": response.usage_metadata.total_token_count,
                 }
 
-            print(f"[GEMINI] ✅ Extraction successful: {data}")
+            Log.info(f"[GEMINI] ✅ Extraction successful: {data}")
             return {
                 "data": data,
                 "metadata": metadata
             }
         else:
             # Retry or handle raw text if schema failed (fallback mechanism could be added here)
-            print(f"[GEMINI] ❌ No parsed data received.")
+            Log.error(f"[GEMINI] ❌ No parsed data received.")
             return {"data": {}, "metadata": {}}
 
 # Global instance

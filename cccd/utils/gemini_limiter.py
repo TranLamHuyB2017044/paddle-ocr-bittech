@@ -2,6 +2,8 @@
 import time
 from datetime import datetime, timedelta
 
+from cccd.utils.logger import Log
+
 class GeminiRateLimiter:
     _instance = None
     
@@ -37,17 +39,17 @@ class GeminiRateLimiter:
         if "429" in error_str or "quota" in error_str or "too many requests" in error_str:
             # Cooldown 5 minutes for quota issues
             self.blocked_until = datetime.now() + timedelta(minutes=5)
-            print(f"[LIMITER] 🛑 Detected 429/Quota. Gemini blocked until {self.blocked_until.strftime('%H:%M:%S')}")
+            Log.warning(f"[LIMITER] 🛑 Detected 429/Quota. Gemini blocked until {self.blocked_until.strftime('%H:%M:%S')}")
             
         # Timeout
         elif "timeout" in error_str or "deadline" in error_str:
             # Short cooldown 1 minute for timeouts
             self.blocked_until = datetime.now() + timedelta(minutes=1)
-            print(f"[LIMITER] ⏰ Detected Timeout. Gemini blocked until {self.blocked_until.strftime('%H:%M:%S')}")
+            Log.warning(f"[LIMITER] ⏰ Detected Timeout. Gemini blocked until {self.blocked_until.strftime('%H:%M:%S')}")
             
         else:
             # 400 or other errors -> No cooldown
-            print(f"[LIMITER] ⚠️ Other error ({error_str}). No cooldown.")
+            Log.error(f"[LIMITER] ⚠️ Other error ({error_str}). No cooldown.")
             self.blocked_until = None
 
 gemini_limiter = GeminiRateLimiter()
