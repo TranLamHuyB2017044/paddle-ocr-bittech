@@ -21,6 +21,7 @@ MODEL_PATH = "protonx-models/protonx-legal-tc"
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
+    "lang": "en",
     "use_textline_orientation": False,
     "use_doc_orientation_classify": False,
     "use_doc_unwarping": False,
