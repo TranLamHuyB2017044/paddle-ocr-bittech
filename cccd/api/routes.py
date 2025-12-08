@@ -109,6 +109,10 @@ def register_routes(app):
         app: Flask application instance
     """
     
+    @app.route("/", methods=["GET"])
+    def health_check():
+        return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
+
     @app.route("/api/detect", methods=["POST"])
     def detect():
         request_start = time.time()
