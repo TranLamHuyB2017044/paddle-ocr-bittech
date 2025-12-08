@@ -20,16 +20,16 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def save_uploaded_files(front_file, back_file):
+def save_uploaded_files(front_file=None, back_file=None):
     """
     Lưu các file upload với timestamp
     
     Args:
-        front_file: File ảnh mặt trước
-        back_file: File ảnh mặt sau
+        front_file: File ảnh mặt trước (optional)
+        back_file: File ảnh mặt sau (optional)
         
     Returns:
-        tuple: (path_front, path_back)
+        tuple: (path_front, path_back) - Path có thể là None nếu không có file
     """
     # Tạo thư mục nếu chưa có
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -37,12 +37,17 @@ def save_uploaded_files(front_file, back_file):
     # Tạo timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Tạo đường dẫn
-    path_front = os.path.join(UPLOAD_FOLDER, f"{timestamp}_front.jpg")
-    path_back = os.path.join(UPLOAD_FOLDER, f"{timestamp}_back.jpg")
+    path_front = None
+    path_back = None
     
-    # Lưu file
-    front_file.save(path_front)
-    back_file.save(path_back)
+    # Lưu file mặt trước nếu có
+    if front_file:
+        path_front = os.path.join(UPLOAD_FOLDER, f"{timestamp}_front.jpg")
+        front_file.save(path_front)
+        
+    # Lưu file mặt sau nếu có
+    if back_file:
+        path_back = os.path.join(UPLOAD_FOLDER, f"{timestamp}_back.jpg")
+        back_file.save(path_back)
     
     return path_front, path_back

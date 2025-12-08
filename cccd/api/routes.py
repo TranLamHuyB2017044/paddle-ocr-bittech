@@ -141,35 +141,54 @@ def register_routes(app):
             p1 = None
             p2 = None
 
-            if "front_image" not in request.files or "back_image" not in request.files:
-                return jsonify({"statusCode": 400, "message": "Thiếu file"}), 400
 
-            f1 = request.files["front_image"]
-            f2 = request.files["back_image"]
+            raw_front = []
+            raw_back = []
+            ocr_front_time = 0
+            ocr_back_time = 0
+
+            # 🆕 CHECK: RAW TEXT INPUT (Bypass OCR)
+            raw_text_input = request.form.get("raw_text")
+
+            if raw_text_input:
+                Log.info("[API] 📝 Nhận diện 'raw_text' -> Bỏ qua OCR, xử lý trực tiếp.")
+                # Tách chuỗi thành list các dòng
+                raw_front = [line.strip() for line in raw_text_input.strip().split('\n') if line.strip()]
+                Log.info(f"[API]    📝 Input lines: {len(raw_front)}")
             
-            Log.info(f"[API] ✅ Validation OK - {time.time() - step_start:.2f}s")
+            else:
+                # 📷 FILE UPLOAD FLOW
+                if "first_image" not in request.files and "second_image" not in request.files:
+                    return jsonify({"statusCode": 400, "message": "Cần ít nhất 1 file (first_image hoặc second_image) hoặc field 'raw_text'"}), 400
 
-            # ==================== BƯỚC 2: LƯU FILE ====================
-            step_start = time.time()
-            Log.info("[API] 💾 Bước 2: Lưu file...")
-            p1, p2 = save_uploaded_files(f1, f2)
-            Log.info(f"[API]    📁 Front: {p1}")
-            Log.info(f"[API]    📁 Back: {p2}")
-            Log.info(f"[API] ✅ Lưu file xong - {time.time() - step_start:.2f}s")
+                f1 = request.files.get("first_image")
+                f2 = request.files.get("second_image")
+                
+                Log.info(f"[API] ✅ Validation OK - {time.time() - step_start:.2f}s")
 
-            # ==================== BƯỚC 3: OCR HAI MẶT ====================
-            Log.info("[API] 🔍 Bước 3: OCR hai mặt...")
+                # ==================== BƯỚC 2: LƯU FILE ====================
+                step_start = time.time()
+                Log.info("[API] 💾 Bước 2: Lưu file...")
+                p1, p2 = save_uploaded_files(f1, f2)
+                if p1: Log.info(f"[API]    📁 Front: {p1}")
+                if p2: Log.info(f"[API]    📁 Back: {p2}")
+                Log.info(f"[API] ✅ Lưu file xong - {time.time() - step_start:.2f}s")
 
-            t = time.time()
-            raw_front, _ = ocr_extract(p1)
-            ocr_front_time = time.time() - t
+                # ==================== BƯỚC 3: OCR HAI MẶT ====================
+                Log.info("[API] 🔍 Bước 3: OCR...")
 
-            t = time.time()
-            raw_back, _ = ocr_extract(p2)
-            ocr_back_time = time.time() - t
+                if p1:
+                    t = time.time()
+                    raw_front, _ = ocr_extract(p1)
+                    ocr_front_time = time.time() - t
+                    Log.info(f"[API]    ⏳ OCR front: {ocr_front_time:.2f}s")
 
-            Log.info(f"[API]    ⏳ OCR front: {ocr_front_time:.2f}s")
-            Log.info(f"[API]    ⏳ OCR back : {ocr_back_time:.2f}s")
+                if p2:
+                    t = time.time()
+                    raw_back, _ = ocr_extract(p2)
+                    ocr_back_time = time.time() - t
+                    Log.info(f"[API]    ⏳ OCR back : {ocr_back_time:.2f}s")
+
             Log.info("[API] ✅ OCR xong")
 
             Log.info("-" * 30)
