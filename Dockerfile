@@ -50,4 +50,4 @@ EXPOSE $PORT
 # Start command
 # Using 1 worker to save RAM (Paddle/Torch models are heavy). 
 # Increase threads for concurrency.
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 1 --timeout 120 --access-logfile - --error-logfile - app:app
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 1  --access-logfile - --error-logfile - app:app
