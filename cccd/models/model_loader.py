@@ -42,8 +42,8 @@ class ModelLoader:
         
         # Load tokenizer và model
         Log.info(f"🤖 Loading AI model from {MODEL_PATH}...")
-        self._tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
-        self._model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_PATH, local_files_only=True).to(self._device)
+        self._tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+        self._model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_PATH).to(self._device)
         self._model.eval()
         
         Log.info("✅ Tất cả models đã được load thành công!")
