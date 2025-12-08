@@ -21,13 +21,13 @@ MODEL_PATH = "protonx-models/protonx-legal-tc"
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
-    "lang": "en",
+    "lang": "vi",
     "use_textline_orientation": False,
     "use_doc_orientation_classify": False,
     "use_doc_unwarping": False,
     "enable_mkldnn": False,
     "det_limit_side_len": 960,
-    "ocr_version": "PP-OCRv4",
+    "ocr_version": "PP-OCRv3",
 }
 
 # ========== TEXT CLEANING CONFIG ==========
