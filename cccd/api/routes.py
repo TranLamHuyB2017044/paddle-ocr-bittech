@@ -42,7 +42,11 @@ def process_with_gemini(raw_front, raw_back, timer_info):
                 "total_time": f"{total_time:.2f}s",
                 "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
                 "gemini": True,
-                "gemini_metadata": metadata
+                "gemini_metadata": metadata,
+                "ocr_raw": {
+                    "front": raw_front,
+                    "back": raw_back
+                }
             }
         })
     except Exception as e:
@@ -98,7 +102,12 @@ def process_traditional(raw_front, raw_back, timer_info):
             "filter_time": f"{filter_time:.2f}s",
             "clean_time": f"{clean_time:.2f}s",
             "extract_time": f"{extract_time:.2f}s",
-            "gemini": False
+            "extract_time": f"{extract_time:.2f}s",
+            "gemini": False,
+            "ocr_raw": {
+                "front": raw_front,
+                "back": raw_back
+            }
         }
     })
 
