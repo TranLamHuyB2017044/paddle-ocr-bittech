@@ -17,7 +17,9 @@ UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 # ========== MODEL CONFIG ==========
-MODEL_PATH = "protonx-models/protonx-legal-tc"
+# MODEL_PATH = "protonx-models/protonx-legal-tc" # Old online path
+# Model is located in cccd/local-protonx-model/protonx-legal-tc
+MODEL_PATH = os.path.join(basedir, "local-protonx-model", "protonx-legal-tc")
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
