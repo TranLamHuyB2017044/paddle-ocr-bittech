@@ -3,6 +3,7 @@ API Routes
 Định nghĩa các API endpoints cho CCCD OCR
 """
 import time
+import os
 from datetime import datetime
 from flask import request, jsonify
 
@@ -127,6 +128,9 @@ def register_routes(app):
             # ==================== BƯỚC 1: VALIDATE ====================
             step_start = time.time()
             Log.info("[API] 📋 Bước 1: Validate request...")
+            
+            p1 = None
+            p2 = None
 
             if "front_image" not in request.files or "back_image" not in request.files:
                 return jsonify({"statusCode": 400, "message": "Thiếu file"}), 400
@@ -188,4 +192,20 @@ def register_routes(app):
                 "message": "Lỗi server",
                 "error": str(e)
             }), 500
+        
+        finally:
+            # Cleanup uploaded files
+            if p1 and os.path.exists(p1):
+                try:
+                    os.remove(p1)
+                    Log.info(f"[CLEANUP] 🗑️ Deleted {p1}")
+                except Exception as e:
+                    Log.error(f"[CLEANUP] ⚠️ Failed to delete {p1}: {e}")
+            
+            if p2 and os.path.exists(p2):
+                try:
+                    os.remove(p2)
+                    Log.info(f"[CLEANUP] 🗑️ Deleted {p2}")
+                except Exception as e:
+                    Log.error(f"[CLEANUP] ⚠️ Failed to delete {p2}: {e}")
 
