@@ -26,6 +26,8 @@ OCR_CONFIG = {
     "use_doc_orientation_classify": False,
     "use_doc_unwarping": False,
     "enable_mkldnn": False,
+    "det_limit_side_len": 960,
+    "ocr_version": "PP-OCRv4",
 }
 
 # ========== TEXT CLEANING CONFIG ==========
