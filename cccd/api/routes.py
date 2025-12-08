@@ -172,6 +172,17 @@ def register_routes(app):
             Log.info(f"[API]    ⏳ OCR back : {ocr_back_time:.2f}s")
             Log.info("[API] ✅ OCR xong")
 
+            Log.info("-" * 30)
+            Log.info(f"[API] 📝 RAW OCR FRONT ({len(raw_front)} lines):")
+            for line in raw_front:
+                Log.info(f"   > {line}")
+            
+            Log.info("-" * 30)
+            Log.info(f"[API] 📝 RAW OCR BACK ({len(raw_back)} lines):")
+            for line in raw_back:
+                Log.info(f"   > {line}")
+            Log.info("-" * 30)
+
             timer_info = {
                 "start": request_start,
                 "ocr_front": ocr_front_time,
