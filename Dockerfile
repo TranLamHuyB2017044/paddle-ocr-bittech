@@ -7,7 +7,9 @@ WORKDIR /app
 # Set environment variables to optimize Python for containers
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=5000
+    PORT=5000 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1
 
 # Install system dependencies required for OpenCV and PaddleOCR
 # libgl1-mesa-glx: for OpenCV

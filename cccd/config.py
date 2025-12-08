@@ -25,6 +25,7 @@ OCR_CONFIG = {
     "use_textline_orientation": False,
     "use_doc_orientation_classify": False,
     "use_doc_unwarping": False,
+    "enable_mkldnn": False,
 }
 
 # ========== TEXT CLEANING CONFIG ==========
