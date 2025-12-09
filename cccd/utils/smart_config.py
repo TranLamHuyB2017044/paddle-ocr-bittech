@@ -1,137 +1,112 @@
 from cccd.utils.smart_extractor import SmartExtractor
 from cccd.models.schemas import IdCard, DriverLicense, Invoice, Document
-from cccd.config import (
-    DATE_KEYWORDS,
-    FRONT_KEYWORDS,
-    ADDRESS_KEYWORDS,
-    EXPIRY_LABEL_KEYWORDS,
-    HOMETOWN_KEYWORDS
-)
 
 # ==================== ID CARD (CCCD) CONFIG ====================
 CCCD_CONFIG = {
     "idNumber": {
-        "keywords": ["số", "id no", "no.", "số cccd", "số định danh"],
-        "keywords_threshold": 0.92,            # tăng ngưỡng để tránh match sai chữ "số"
-        "value_regex": r"\b\d{9,12}\b",
-        "extraction_mode": "same_line"
+        "keywords": ["số", "so", "id no", "no.", "số đd cn", "S/No"],
+        "keywords_threshold": 0.9,
+        "value_regex": r"^\d{9,12}$",
+        "extraction_mode": "next_line"
     },
-
     "fullName": {
-        "keywords": FRONT_KEYWORDS, # Use imported keywords
-        "keywords_threshold": 0.75,
-        "value_regex": r"[A-ZÀ-Ỹ ]{3,}",
+        "keywords": ["họ và tên", "họ tên", "full name"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"^[A-ZÀ-Ỹ ]{2,}$", 
         "extraction_mode": "next_line"
     },
-
     "dob": {
-        "keywords": ["ngày sinh", "date of birth", "dob"] + DATE_KEYWORDS,
+        "keywords": ["ngày, tháng, năm sinh", "ngày sinh", "date of birth", "dob"],
         "keywords_threshold": 0.7,
-        "value_regex": r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "extraction_mode": "auto"
+    },
+    "gender": {
+        "keywords": ["giới tính", "sex", "gender"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"^(Nam|Nữ|Male|Female)$",
+        "extraction_mode": "auto"
+    },
+    "nationality": {
+        "keywords": ["quốc tịch", "nationality"],
+        "keywords_threshold": 0.8,
+        "value_regex": None,
+        "extraction_mode": "auto"
+    },
+    "hometown": {
+        "keywords": ["quê quán", "place of origin"],
+        "keywords_threshold": 0.8,
+        "value_regex": None,
         "extraction_mode": "next_line"
     },
-
-    "gender": {
-        "keywords": ["giới tính", "gender", "sex"],
-        "keywords_threshold": 0.7,
-        "value_regex": r"(nam|nữ|male|female)",
-        "extraction_mode": "auto"
-    },
-
-    "nationality": {
-        "keywords": ["quốc tịch", "nationality", "viet nam", "vit nam"],
-        "keywords_threshold": 0.7,
-        "value_regex": None,
-        "extraction_mode": "auto"
-    },
-
-    "hometown": {
-        "keywords": HOMETOWN_KEYWORDS,
-        "keywords_threshold": 0.7,
-        "value_regex": None,
-        "extraction_mode": "multiline",       # ⭐ cho phép nối nhiều dòng
-        "max_lines": 3                        # tối đa 3 dòng
-    },
-
     "address": {
-        "keywords": ADDRESS_KEYWORDS,
-        "keywords_threshold": 0.75,
+        "keywords": ["nơi thường trú", "place of residence"],
+        "keywords_threshold": 0.8,
         "value_regex": None,
-        "extraction_mode": "multiline",       # ⭐
-        "max_lines": 3
+        "extraction_mode": "next_line"
     },
-
     "expiryDate": {
-        "keywords": EXPIRY_LABEL_KEYWORDS + ["date of expiry", "expires"],
-        "keywords_threshold": 0.7,
-        "value_regex": r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",
+        "keywords": ["có giá trị đến", "date of expiry", "giá trị đến"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
         "extraction_mode": "auto"
     },
-
     "dateOfIssue": {
-        "keywords": ["ngày cấp", "date of issue"] + DATE_KEYWORDS,
+        "keywords": ["ngày, tháng, năm", "ngày cấp", "date of issue"], # Often on back side
         "keywords_threshold": 0.7,
-        "value_regex": r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
         "extraction_mode": "auto"
     },
-
     "placeOfIssue": {
-        "keywords": ["cục trưởng", "director", "place of issue"],
+        "keywords": ["cục trưởng", "director"], # Heuristic for place of issue anchor
         "keywords_threshold": 0.7,
         "value_regex": None,
-        "extraction_mode": "same_line"
+        "extraction_mode": "same_line" # Or next_line depending on layout
     }
 }
-
 
 # ==================== DRIVER LICENSE CONFIG ====================
 DRIVER_LICENSE_CONFIG = {
     "idNumber": {
-        "keywords": ["số", "no", "id no", "driver no"],
-        "keywords_threshold": 0.9,
-        "value_regex": r"\b\d{9,12}\b",
+        "keywords": ["số", "no."],
+        "keywords_threshold": 0.8,
+        "value_regex": r"^\d+$",
         "extraction_mode": "same_line"
     },
-
     "fullName": {
         "keywords": ["họ tên", "full name"],
-        "keywords_threshold": 0.75,
-        "value_regex": r"[A-ZÀ-Ỹ ]{3,}",
+        "keywords_threshold": 0.8,
+        "value_regex": r"^[A-ZÀ-Ỹ ]{2,}$",
         "extraction_mode": "next_line"
     },
-
-    "nationality": {
-        "keywords": ["quốc tịch", "nationality", "vit nam"],
-        "keywords_threshold": 0.7,
-        "value_regex": None,
-        "extraction_mode": "auto"
-    },
-
     "dob": {
         "keywords": ["ngày sinh", "date of birth"],
-        "keywords_threshold": 0.7,
-        "value_regex": r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",
-        "extraction_mode": "next_line"
-    },
-
-    "rank": {
-        "keywords": ["hạng", "class", "a1", "b1", "b2", "c", "d"],
-        "keywords_threshold": 0.7,
-        "value_regex": r"[A-Z][0-9]?",
-        "extraction_mode": "same_line"
-    },
-
-    "expiryDate": {
-        "keywords": ["có giá trị đến", "expires"],
-        "keywords_threshold": 0.7,
-        "value_regex": r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",
+        "keywords_threshold": 0.8,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
         "extraction_mode": "auto"
     },
-
+    "rank": { # Mapped to 'class' via alias in schema or direct key
+        "keywords": ["hạng", "class"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"^[A-Z][0-9]?$",
+        "extraction_mode": "same_line"
+    },
+    "address": {
+        "keywords": ["nơi cư trú", "address"],
+        "keywords_threshold": 0.8,
+        "value_regex": None,
+        "extraction_mode": "next_line"
+    },
+    "expiryDate": {
+        "keywords": ["có giá trị đến", "expires"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "extraction_mode": "auto"
+    },
     "dateOfIssue": {
-        "keywords": ["ngày cấp", "date of issue"],
+        "keywords": ["ngày", "date"], # Often combined
         "keywords_threshold": 0.7,
-        "value_regex": r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
         "extraction_mode": "auto"
     }
 }
