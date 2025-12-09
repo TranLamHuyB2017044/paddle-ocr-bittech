@@ -10,20 +10,15 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from cccd.config import GEMINI_API_KEY
 from cccd.utils.logger import Log
+from cccd.models.schemas import IdCard, DriverLicense, Invoice, Document
 
-# Define Pydantic Models matching read_cccd.md
-class CCCD(BaseModel):
-    fullName: Optional[str] = Field(description="Fullname/Họ và tên")
-    idNumber: Optional[str] = Field(description="Số/Number/No")
-    dob: Optional[str] = Field(description="Date of birth (DD-MM-YYYY)")
-    gender: Optional[str] = Field(description="Gender (Nam/Nữ)")
-    nationality: Optional[str] = Field(description="Nationality")
-    hometown: Optional[str] = Field(description="Place of origin/Quê quán")
-    address: Optional[str] = Field(description="Address/Nơi thường trú")
-    expiryDate: Optional[str] = Field(description="Date of expiry (DD-MM-YYYY)")
-    dateOfIssue: Optional[str] = Field(description="Date of issue (DD-MM-YYYY)")
-    placeOfIssue: Optional[str] = Field(description="Place of issue")
-    info_type: Optional[str] = Field(description="Type of document (CCCD, GPLX, HC...)")
+# Map doc_type string to Pydantic model
+SCHEMA_MAP = {
+    "idCard": IdCard,
+    "driverLicense": DriverLicense,
+    "invoice": Invoice,
+    "document": Document
+}
 
 class GeminiExtractor:
     def __init__(self):
@@ -39,12 +34,13 @@ class GeminiExtractor:
                 Log.error(f"[GEMINI] ❌ Error configuring Gemini Client: {e}")
                 self.client = None
 
-    def extract(self, text_lines):
+    def extract(self, text_lines, doc_type):
         """
         Extract Information using Gemini with Structured Output
         
         Args:
             text_lines: List of OCR text lines
+            doc_type: Type of document (enum: idCard, driverLicense, invoice, document)
             
         Returns:
             dict: JSON extracted data or empty dict if failed
@@ -56,39 +52,70 @@ class GeminiExtractor:
         # Prepare content
         text_block = "\n".join(text_lines)
         
-        # Read prompt from file
-        prompt_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'read_cccd.md')
+        # Read prompt from file based on doc_type
+        # Default prompt directory
+        prompt_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts')
+        prompt_file = f"{doc_type}.md"
+        prompt_path = os.path.join(prompt_dir, prompt_file)
+
+        if not os.path.exists(prompt_path):
+             Log.error(f"[GEMINI] ❌ Prompt file not found: {prompt_path}")
+             return {"data": {}, "metadata": {}}
+
         try:
-            with open(prompt_file_path, 'r', encoding='utf-8') as f:
+            with open(prompt_path, 'r', encoding='utf-8') as f:
                 prompt_template = f.read()
             
-            # Append input text to the prompt since the file might not have a placeholder
+            # Append input text to the prompt
             prompt = f"{prompt_template}\n\nINPUT DATA:\n{text_block}"
-            Log.debug(f"[GEMINI] 📝 Prompt:\n{prompt}")
+            Log.debug(f"[GEMINI] 📝 Prompt loaded for {doc_type}")
         except Exception as e:
-            Log.warning(f"[GEMINI] ⚠️  Could not read prompt file: {e}. Using fallback.")
+            Log.warning(f"[GEMINI] ⚠️  Could not read prompt file: {e}.")
             return {"data": {}, "metadata": {}}
 
+        # Configure Generation
+        response_schema = SCHEMA_MAP.get(doc_type)
+
         # Generate content with structured output
-        Log.info("[GEMINI] 🚀 Sending request to Gemini (Structured)...")
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash", 
-            contents=prompt,
-            config=types.GenerateContentConfig(
+        Log.info(f"[GEMINI] 🚀 Sending request to Gemini ({doc_type})...")
+        try:
+            config = types.GenerateContentConfig(
                 temperature=0.1,
                 response_mime_type="application/json",
-                response_schema=CCCD,
-                maxOutputTokens = 2048,
-                thinkingConfig = types.ThinkingConfig(
-                    thinkingBudget = 0,
-                )
-            ),
-        )
-        
-        # Parse and validate response
-        if response.parsed:
-             # Convert to dict
-            data = response.parsed.model_dump(mode='json')
+                response_schema=response_schema,
+                maxOutputTokens = 2048
+            )
+            
+            # Add thinking config only for idCard (optimization)
+            if doc_type == "idCard":
+                 config.thinking_config = types.ThinkingConfig(thinking_budget=1024) 
+
+            response = self.client.models.generate_content(
+                model="gemini-2.5-flash", 
+                contents=prompt,
+                config=config,
+            )
+            
+            # Parse and validate response
+            data = {}
+            if response.parsed:
+                 # Convert to dict using by_alias=True to handle 'class' field map
+                data = response.parsed.model_dump(mode='json', by_alias=True)
+            
+            # Fallback text parsing
+            if not data and response.text:
+                try:
+                    import json
+                    # Remove markdown code blocks if present
+                    clean_text = response.text.strip()
+                    if clean_text.startswith("```json"):
+                        clean_text = clean_text[7:]
+                    if clean_text.endswith("```"):
+                        clean_text = clean_text[:-3]
+                    data = json.loads(clean_text)
+                except Exception as e:
+                    Log.warning(f"[GEMINI] ⚠️ Check parsed failed, text clean failed: {e}")
+
             # Extract metadata
             metadata = {}
             if response.usage_metadata:
@@ -98,14 +125,18 @@ class GeminiExtractor:
                     "total_token_count": response.usage_metadata.total_token_count,
                 }
 
-            Log.info(f"[GEMINI] ✅ Extraction successful: {data}")
-            return {
-                "data": data,
-                "metadata": metadata
-            }
-        else:
-            # Retry or handle raw text if schema failed (fallback mechanism could be added here)
-            Log.error(f"[GEMINI] ❌ No parsed data received.")
+            if data:
+                Log.info(f"[GEMINI] ✅ Extraction successful.")
+                return {
+                    "data": data,
+                    "metadata": metadata
+                }
+            else:
+                Log.error(f"[GEMINI] ❌ No parsed data available.")
+                return {"data": {}, "metadata": {}}
+
+        except Exception as e:
+            Log.error(f"[GEMINI] ❌ Generation Error: {e}")
             return {"data": {}, "metadata": {}}
 
 # Global instance

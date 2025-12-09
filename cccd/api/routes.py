@@ -18,15 +18,18 @@ from cccd.utils.logger import Log
 
 
 
-def process_with_gemini(raw_front, raw_back, timer_info):
+ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document'}
+MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB limit
+
+def process_with_gemini(raw_front, raw_back, timer_info, doc_type):
     request_start = timer_info["start"]
     ocr_front_time = timer_info["ocr_front"]
     ocr_back_time = timer_info["ocr_back"]
     
-    Log.info("[API] 🤖 Dùng Gemini → bỏ qua toàn bộ bước lọc/clean/regex")
+    Log.info(f"[API] 🤖 Dùng Gemini ({doc_type}) → bỏ qua toàn bộ bước lọc/clean/regex")
     try:
         raw_text = raw_front + raw_back
-        extraction_result = gemini_extractor.extract(raw_text)
+        extraction_result = gemini_extractor.extract(raw_text, doc_type=doc_type)
         
         info = extraction_result.get("data", {})
         metadata = extraction_result.get("metadata", {})
@@ -42,6 +45,7 @@ def process_with_gemini(raw_front, raw_back, timer_info):
                 "total_time": f"{total_time:.2f}s",
                 "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
                 "gemini": True,
+                "doc_type": doc_type,
                 "gemini_metadata": metadata,
                 "ocr_raw": {
                     "front": raw_front,
@@ -111,6 +115,26 @@ def process_traditional(raw_front, raw_back, timer_info):
         }
     })
 
+def validate_request_params(req):
+    """
+    Validate request parameters and files
+    """
+    # 1. Check content length
+    if req.content_length and req.content_length > MAX_CONTENT_LENGTH:
+        return None, jsonify({"statusCode": 413, "message": f"File quá lớn. Giới hạn {MAX_CONTENT_LENGTH/1024/1024}MB"}), 413
+
+    # 2. Check doc_type
+    doc_type = req.form.get("type")
+    
+    if not doc_type:
+        # Enforce strict requirement as per user request: "type bắt buộc trong enum đó"
+        return None, jsonify({"statusCode": 400, "message": "Missing 'type' parameter. Required one of: idCard, driverLicense, invoice, document"}), 400
+
+    if doc_type not in ALLOWED_DOC_TYPES:
+         return None, jsonify({"statusCode": 400, "message": f"Loại giấy tờ không hợp lệ. Cho phép: {ALLOWED_DOC_TYPES}"}), 400
+
+    return doc_type, None, None
+
 def register_routes(app):
     """
     Đăng ký các routes cho Flask app
@@ -126,6 +150,8 @@ def register_routes(app):
     @app.route("/api/detect", methods=["POST"])
     def detect():
         request_start = time.time()
+        p1 = None
+        p2 = None
 
         Log.info("\n" + "#"*70)
         Log.info("#"*70)
@@ -138,9 +164,11 @@ def register_routes(app):
             step_start = time.time()
             Log.info("[API] 📋 Bước 1: Validate request...")
             
-            p1 = None
-            p2 = None
-
+            # Validate params
+            doc_type, error_resp, status_code = validate_request_params(request)
+            if error_resp:
+                Log.error(f"[API] ❌ Validation Failed: {error_resp.json}")
+                return error_resp, status_code
 
             raw_front = []
             raw_back = []
@@ -164,7 +192,7 @@ def register_routes(app):
                 f1 = request.files.get("first_image")
                 f2 = request.files.get("second_image")
                 
-                Log.info(f"[API] ✅ Validation OK - {time.time() - step_start:.2f}s")
+                Log.info(f"[API] ✅ Validation OK (Type: {doc_type}) - {time.time() - step_start:.2f}s")
 
                 # ==================== BƯỚC 2: LƯU FILE ====================
                 step_start = time.time()
@@ -215,9 +243,14 @@ def register_routes(app):
                  should_skip_gemini = True
 
             if not should_skip_gemini:
-                 response = process_with_gemini(raw_front, raw_back, timer_info)
+                 # Pass doc_type to gemini
+                 response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type)
                  if response:
                      return response
+            
+            # If doc_type is NOT idCard, traditional might not work as it is tailored for idCard.
+            if doc_type != "idCard":
+                 Log.warning(f"[API] ⚠️ Traditional pipeline is designed for idCard (CCCD). It may fail for {doc_type}.")
             
             return process_traditional(raw_front, raw_back, timer_info)
 
