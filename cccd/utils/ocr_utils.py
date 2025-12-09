@@ -7,39 +7,63 @@ from datetime import datetime
 from cccd.models.model_loader import model_loader
 from cccd.utils.logger import Log
 
+import cv2
+
+def preprocess_for_ocr(path):
+    img = cv2.imread(path)
+    if img is None:
+        Log.error(f"[PREPROCESS] ❌ Cannot read image: {path}")
+        return path # Return original path if resize fails
+        
+    h, w = img.shape[:2]
+
+    # Resize logic: Downscale if largest side > 1280
+    max_side = 1280
+    if max(h, w) > max_side:
+        scale = max_side / max(h, w)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        Log.info(f"[PREPROCESS] 📉 Resized {w}x{h} -> {new_w}x{new_h}")
+
+    # Use a safe temporary filename
+    processed_path = path.replace(".jpg", "_small.jpg") # Simple temp method
+    # Ensure we don't accidentally overwrite something important or fail on format
+    try:
+        cv2.imwrite(processed_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+        return processed_path
+    except Exception as e:
+        Log.error(f"[PREPROCESS] ⚠️ Failed to save temp image: {e}")
+        return path
 
 def ocr_extract(image_path):
     """
-    Trích xuất text từ ảnh sử dụng OCR
-    
-    Args:
-        image_path: Đường dẫn đến file ảnh
-        
-    Returns:
-        tuple: (list of text lines, list of confidence scores)
+    Trích xuất text từ ảnh sử dụng OCR với preprocessing
     """
-    start_time = time.time()
+
+    start = time.time()
     Log.info(f"[OCR] 🔍 Bắt đầu OCR: {image_path}")
-    
-    # Sử dụng OCR từ model_loader
-    result = model_loader.ocr.predict(image_path)
-    
-    for block in result:
-        elapsed = time.time() - start_time
-        num_lines = len(block["rec_texts"])
-        Log.info(f"[OCR] ✅ Hoàn thành OCR. Số dòng: {num_lines}. Thời gian: {elapsed:.2f}s")
-        
-        # 📋 LOG CHI TIẾT
-        Log.debug(f"[OCR] 📋 CHI TIẾT TEXT DETECT:")
-        for i, (text, score) in enumerate(zip(block["rec_texts"], block["rec_scores"]), 1):
-            confidence = score * 100
-            emoji = "✅" if confidence >= 80 else "⚠️" if confidence >= 60 else "❌"
-            Log.debug(f"[OCR] {emoji} [{i:2d}] [{confidence:5.1f}%] {text[:70]}")
-        
-        return block["rec_texts"], block["rec_scores"]
-    
-    Log.warning(f"[OCR] ⚠️  Không tìm thấy text")
-    return [], []
+
+    # Resize trước khi OCR
+    small_path = preprocess_for_ocr(image_path)
+
+    # Gọi OCR
+    result = model_loader.ocr.predict(small_path)
+
+    if not result:
+        Log.warning("[OCR] ⚠️ Không tìm thấy text")
+        return [], []
+
+    block = result[0]
+    texts = block["rec_texts"]
+    scores = block["rec_scores"]
+
+    Log.info(
+        f"[OCR] ✅ OCR xong. Lines: {len(texts)}. "
+        f"Thời gian: {time.time() - start:.2f}s"
+    )
+
+    return texts, scores
 
 
 def filter_useless_lines(lines):
@@ -53,6 +77,7 @@ def filter_useless_lines(lines):
         list: Danh sách các dòng text đã được lọc
     """
     from cccd.config import USELESS_KEYWORDS
+    from rapidfuzz import fuzz
     
     Log.info(f"[FILTER] 🗑️  Bắt đầu lọc text không cần thiết. Số dòng: {len(lines)}")
     
@@ -67,26 +92,41 @@ def filter_useless_lines(lines):
     for line in lines:
         line_lower = line.lower().strip()
         
-        # Bỏ qua dòng rỗng
-        if not line_lower:
+        # Bỏ qua dòng rỗng hoặc quá ngắn
+        if len(line_lower) < 2:
             continue
         
         # Kiểm tra xem có chứa từ khóa không cần thiết không
         is_useless = False
         matched_keyword = ""
         
+        # 1. Check exact/partial match (Faster)
         for keyword in USELESS_KEYWORDS:
-            if keyword in line_lower:
-                is_useless = True
-                matched_keyword = keyword
-                removed_count += 1
-                break
+             if keyword in line_lower:
+                 is_useless = True
+                 matched_keyword = keyword
+                 break
         
+        # 2. Check Fuzzy match (Slower but catches OCR errors)
+        if not is_useless:
+            for keyword in USELESS_KEYWORDS:
+                # Nếu từ khóa quá ngắn, fuzzy rất dễ sai -> skip
+                if len(keyword) < 4: continue
+                
+                # Check tỷ lệ trùng khớp (partial_ratio)
+                # Tỷ lệ > 85% coi như là trùng
+                score = fuzz.partial_ratio(keyword, line_lower)
+                if score >= 85:
+                    is_useless = True
+                    matched_keyword = f"{keyword} (fuzzy {score:.0f}%)"
+                    break
+
         if is_useless:
-            Log.debug(f"[FILTER] ❌ Loại bỏ (từ khóa '{matched_keyword}'): '{line[:60]}'")
+            Log.debug(f"[FILTER] ❌ Loại bỏ: '{line[:50]}...' [Match: {matched_keyword}]")
+            removed_count += 1
         else:
             filtered.append(line)
-            Log.debug(f"[FILTER] ✅ Giữ lại: '{line[:60]}'")
+            # Log.debug(f"[FILTER] ✅ Giữ lại: '{line[:50]}...'")
     
     Log.info(f"[FILTER] 📊 Kết quả: Loại bỏ {removed_count} dòng, Còn lại {len(filtered)} dòng")
     

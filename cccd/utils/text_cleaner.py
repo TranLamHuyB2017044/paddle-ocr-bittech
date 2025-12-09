@@ -9,157 +9,47 @@ from cccd.config import DATE_KEYWORDS, FRONT_KEYWORDS
 from cccd.utils.logger import Log
 
 
-def selective_clean_text_back(lines):
+def clean_text_basic(line):
     """
-    CHỈ clean text cho các dòng chứa ngày tháng (mặt sau)
-    Các dòng khác giữ nguyên để tiết kiệm thời gian
-    
-    Args:
-        lines: Danh sách các dòng text
-        
-    Returns:
-        list: Danh sách các dòng text đã được làm sạch
+    Hàm clean text cơ bản sử dụng model AI
+    Làm sạch 1 dòng text duy nhất.
     """
-    start_time = time.time()
-    Log.info(f"[CLEAN-SELECTIVE] 🎯 Làm sạch có chọn lọc (chỉ ngày tháng). Số dòng: {len(lines)}")
-    
-    # ⚠️ Kiểm tra input rỗng
-    if len(lines) == 0:
-        Log.warning(f"[CLEAN-SELECTIVE] ⚠️  CẢNH BÁO: Không có dòng text nào!")
-        return []
-    
-    cleaned = []
-    cleaned_count = 0
-    skipped_count = 0
-    
-    for idx, line in enumerate(lines, 1):
-        line_lower = line.lower()
-        
-        # Kiểm tra xem dòng này có chứa thông tin ngày tháng không
-        needs_cleaning = any(keyword in line_lower for keyword in DATE_KEYWORDS)
-        
-        if needs_cleaning:
-            # Clean dòng này
-            Log.debug(f"[CLEAN-SELECTIVE] 🧹 Dòng {idx}/{len(lines)} - CẦN CLEAN. TRƯỚC: '{line[:60]}'")
-            line_start = time.time()
-            
-            inputs = model_loader.tokenizer(
-                line, 
-                return_tensors="pt",
-                truncation=True, 
-                max_length=80
-            ).to(model_loader.device)
+    if not line or not line.strip():
+        return ""
 
-            outputs = model_loader.model.generate(
-                **inputs,
-                max_new_tokens=80,
-                num_beams=3,
-                num_return_sequences=1,
-                early_stopping=True,
-                do_sample=False,
-                length_penalty=1.0
-            )
+    inputs = model_loader.tokenizer(
+        line, 
+        return_tensors="pt",
+        truncation=True, 
+        max_length=80 # Increased slightly for safety
+    ).to(model_loader.device)
 
-            cleaned_line = model_loader.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            cleaned.append(cleaned_line)
-            cleaned_count += 1
-            
-            line_elapsed = time.time() - line_start
-            Log.debug(f"[CLEAN-SELECTIVE]    📤 SAU:   '{cleaned_line[:60]}'. Thời gian: {line_elapsed:.2f}s")
-        else:
-            # Giữ nguyên dòng này
+    outputs = model_loader.model.generate(
+        **inputs,
+        max_new_tokens=80,
+        num_beams=3,
+        num_return_sequences=1,
+        early_stopping=True,
+        do_sample=False,
+        length_penalty=1.0
+    )
 
-            Log.debug(f"[CLEAN-SELECTIVE] ⏭️  Dòng {idx}/{len(lines)} - BỎ QUA: '{line[:60]}'")
-            cleaned.append(line)
-            skipped_count += 1
-    
-    total_elapsed = time.time() - start_time
-    
-    # ⚠️ Tránh chia cho 0
-    if len(lines) > 0:
-        saving_pct = skipped_count / len(lines) * 100
-        Log.info(f"[CLEAN-SELECTIVE] ✅ Hoàn thành. Clean: {cleaned_count}, Bỏ qua: {skipped_count}, Tiết kiệm: {saving_pct:.1f}%. Tổng thời gian: {total_elapsed:.2f}s")
-    else:
-        Log.warning(f"[CLEAN-SELECTIVE] ⚠️  Không có dòng nào để xử lý")
-    
-    return cleaned
+    cleaned_line = model_loader.tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return cleaned_line
 
-
-def selective_clean_text_front(lines):
+def clean_text_lines(lines):
     """
-    CHỈ clean text cho các dòng chứa Họ tên, Quê quán, Địa chỉ (mặt trước)
-    Các dòng khác giữ nguyên để tiết kiệm thời gian
-    
-    Args:
-        lines: Danh sách các dòng text
-        
-    Returns:
-        list: Danh sách các dòng text đã được làm sạch
+    Clean toàn bộ danh sách các dòng text
+    Không phân biệt mặt trước/sau hay loại giấy tờ.
     """
     start_time = time.time()
-    Log.info(f"[CLEAN-SELECTIVE-FRONT] 🎯 Làm sạch có chọn lọc (Họ tên, Quê quán, Địa chỉ). Số dòng: {len(lines)}")
+    Log.info(f"[CLEAN] 🧹 Bắt đầu clean {len(lines)} dòng...")
     
-    # ⚠️ Kiểm tra input rỗng
-    if len(lines) == 0:
-        Log.warning(f"[CLEAN-SELECTIVE-FRONT] ⚠️  CẢNH BÁO: Không có dòng text nào!")
-        return []
-    
-    cleaned = []
-    cleaned_count = 0
-    skipped_count = 0
-    
-    for idx, line in enumerate(lines, 1):
-        line_lower = line.lower()
+    cleaned_lines = []
+    for i, line in enumerate(lines):
+        cl = clean_text_basic(line)
+        cleaned_lines.append(cl)
         
-        # Kiểm tra xem dòng này có chứa thông tin cần clean không
-        needs_cleaning = any(keyword in line_lower for keyword in FRONT_KEYWORDS)
-        
-        # Ngoài ra, clean các dòng ALL CAPS (có thể là tên)
-        if not needs_cleaning and line.strip().isupper() and len(line.strip()) > 3:
-            needs_cleaning = True
-        
-        if needs_cleaning:
-            # Clean dòng này
-
-            Log.debug(f"[CLEAN-SELECTIVE-FRONT] 🧹 Dòng {idx}/{len(lines)} - CẦN CLEAN. TRƯỚC: '{line[:60]}'")
-            line_start = time.time()
-            
-            inputs = model_loader.tokenizer(
-                line, 
-                return_tensors="pt",
-                truncation=True, 
-                max_length=80
-            ).to(model_loader.device)
-
-            outputs = model_loader.model.generate(
-                **inputs,
-                max_new_tokens=80,
-                num_beams=3,
-                num_return_sequences=1,
-                early_stopping=True,
-                do_sample=False,
-                length_penalty=1.0
-            )
-
-            cleaned_line = model_loader.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            cleaned.append(cleaned_line)
-            cleaned_count += 1
-            
-            line_elapsed = time.time() - line_start
-
-            Log.debug(f"[CLEAN-SELECTIVE-FRONT]    📤 SAU:   '{cleaned_line[:60]}'. Thời gian: {line_elapsed:.2f}s")
-        else:
-            # Giữ nguyên dòng này
-            Log.debug(f"[CLEAN-SELECTIVE-FRONT] ⏭️  Dòng {idx}/{len(lines)} - BỎ QUA: '{line[:60]}'")
-            cleaned.append(line)
-            skipped_count += 1
-    
-    total_elapsed = time.time() - start_time
-    # ⚠️ Tránh chia cho 0
-    if len(lines) > 0:
-        saving_pct = skipped_count / len(lines) * 100
-        Log.info(f"[CLEAN-SELECTIVE-FRONT] ✅ Hoàn thành. Clean: {cleaned_count}, Bỏ qua: {skipped_count}, Tiết kiệm: {saving_pct:.1f}%. Tổng thời gian: {total_elapsed:.2f}s")
-    else:
-        Log.warning(f"[CLEAN-SELECTIVE-FRONT] ⚠️  Không có dòng nào để xử lý")
-    
-    return cleaned
+    elapsed = time.time() - start_time
+    Log.info(f"[CLEAN] ✅ Clean xong {len(lines)} dòng trong {elapsed:.2f}s")
+    return cleaned_lines

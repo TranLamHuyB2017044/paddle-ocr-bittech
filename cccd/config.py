@@ -27,6 +27,7 @@ OCR_CONFIG = {
     "use_textline_orientation": False,
     "use_doc_orientation_classify": False,
     "use_doc_unwarping": False,
+    
 }
 
 # ========== TEXT CLEANING CONFIG ==========
@@ -42,16 +43,29 @@ USELESS_KEYWORDS = [
     "socialist republic",
     "socialist",
     "republic",
+    "GIÂY PHÉP LÁIXE",
+    "GIÂY PHÉP LÁIXE/DRIVER'S LICENSE",
+    "GIAY PHÉP LÁI XE",
+    "CNG HA X HI CH NGHA VIT NAM",
+    "GIAY PHÉP LÁI XE",
+    "Giấy phép",
+    "Giấy phép lái xe",
+    
+    
     
     # Khẩu hiệu
     "độc lập tự do hạnh phúc",
     "doc lap tu do hanh phuc",
+    "Đc lp - Tư do - Hanh phúc",
+    "Đc lp - T do - Hnh phúc",
     "độc lập",
     "doc lap",
     "tự do",
+    "t - do",
     "tu do",
     "hạnh phúc",
     "hanh phuc",
+    "Hnh phúc",
     "independence",
     "freedom",
     "freedor",  # Lỗi OCR thường gặp
@@ -75,11 +89,7 @@ USELESS_KEYWORDS = [
     "cccd",
     "cmnd",
     
-    # Từ khóa tiếng Việt không dấu (OCR thường nhầm)
-    "cng ha",
-    "nghia vit nam",
-    "vit nam",
-    "viet nam",
+
 ]
 
 # Từ khóa cho mặt sau (ngày tháng)

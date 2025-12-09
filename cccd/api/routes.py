@@ -9,9 +9,7 @@ from flask import request, jsonify
 
 from cccd.utils.file_utils import allowed_file, save_uploaded_files
 from cccd.utils.ocr_utils import ocr_extract, filter_useless_lines
-from cccd.utils.text_cleaner import selective_clean_text_front, selective_clean_text_back
-from cccd.extractors.front_extractor import extract_front
-from cccd.extractors.back_extractor import extract_back
+from cccd.utils.text_cleaner import clean_text_lines
 from cccd.extractors.gemini_extractor import gemini_extractor
 from cccd.utils.gemini_limiter import gemini_limiter
 from cccd.utils.logger import Log
@@ -64,12 +62,16 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type):
              Log.error("[API] ❌ Critical Error (not rate limit). Returning error to user.")
              raise e
 
-def process_traditional(raw_front, raw_back, timer_info):
+def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard"):
     request_start = timer_info["start"]
     ocr_front_time = timer_info["ocr_front"]
     ocr_back_time = timer_info["ocr_back"]
 
-    Log.info("[API] 🧹 Dùng pipeline truyền thống (filter + clean + regex)")
+    Log.info(f"[API] 🧹 Dùng pipeline truyền thống (filter + clean + regex + Smart) cho loại: {doc_type}")
+
+    # Check inputs (can be empty lists)
+    if not isinstance(raw_front, list): raw_front = []
+    if not isinstance(raw_back, list): raw_back = []
 
     # ------------------ BƯỚC 5: FILTER ----------------------
     step_start = time.time()
@@ -78,19 +80,35 @@ def process_traditional(raw_front, raw_back, timer_info):
     filter_time = time.time() - step_start
     Log.info(f"[API]    🗑️ Filter xong - {filter_time:.2f}s")
 
-    # ------------------ BƯỚC 7: CLEAN ----------------------
+    # ------------------ BƯỚC 8: CLEANING ----------------------
     step_start = time.time()
-    clean_front = selective_clean_text_front(filtered_front)
-    clean_back = selective_clean_text_back(filtered_back)
+    # Unified cleaning for all lines
+    clean_front = clean_text_lines(filtered_front)
+    clean_back = clean_text_lines(filtered_back)
+    
     clean_time = time.time() - step_start
     Log.info(f"[API]    🧹 Clean xong - {clean_time:.2f}s")
 
     # ------------------ BƯỚC 9: EXTRACT ----------------------
     step_start = time.time()
-    info_front = extract_front(clean_front)
-    info_back = extract_back(clean_back)
+    
+    info_extracted = {}
+    combined_lines = clean_front + clean_back
+    
+    
+    # 🆕 Generic Smart Extraction for ALL types
+    from cccd.utils.smart_config import smart_extract
+    
+    # Unified Approach: 
+    # Combine lines from both sides and extract whatever fields are found.
+    # We no longer distinguish between front/back specific extractors.
+    # SmartExtractor scans the entire text corpus for keywords.
+    
+    info_extracted = smart_extract(combined_lines, doc_type)
+    
     extract_time = time.time() - step_start
-    Log.info(f"[API]    📊 Extract xong - {extract_time:.2f}s")
+    Log.info(f"[API]    📊 Extract xong ({doc_type}) - {extract_time:.2f}s")
+    Log.debug(f"[API]    📝 Result: {info_extracted}")
 
     # ------------------ TỔNG KẾT ----------------------
     total_time = time.time() - request_start
@@ -99,18 +117,22 @@ def process_traditional(raw_front, raw_back, timer_info):
     return jsonify({
         "statusCode": 200,
         "message": "Success",
-        "data": {**info_front, **info_back},
+        "data": info_extracted,
         "debug": {
             "total_time": f"{total_time:.2f}s",
             "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
-            "filter_time": f"{filter_time:.2f}s",
+            # "filter_time": f"{filter_time:.2f}s",
             "clean_time": f"{clean_time:.2f}s",
             "extract_time": f"{extract_time:.2f}s",
-            "extract_time": f"{extract_time:.2f}s",
             "gemini": False,
+            "doc_type": doc_type,
             "ocr_raw": {
                 "front": raw_front,
                 "back": raw_back
+            },
+            "cleaned_lines": {
+                "front": clean_front,
+                "back": clean_back
             }
         }
     })
@@ -146,6 +168,106 @@ def register_routes(app):
     @app.route("/", methods=["GET"])
     def health_check():
         return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
+
+    @app.route("/api/traditional", methods=["POST"])
+    def detect_traditional():
+        request_start = time.time()
+        p1 = None
+        p2 = None
+
+        Log.info("\n" + "#"*70)
+        Log.info("###  🚀 TRADITIONAL TEST REQUEST")
+        Log.info(f"###  ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+        Log.info("#"*70 + "\n")
+
+        try:
+            # ==================== BƯỚC 1: VALIDATE ====================
+            step_start = time.time()
+            Log.info("[API-TRAD] 📋 Bước 1: Validate request...")
+            
+            # Validate params
+            doc_type, error_resp, status_code = validate_request_params(request)
+            if error_resp:
+                Log.error(f"[API-TRAD] ❌ Validation Failed: {error_resp.json}")
+                return error_resp, status_code
+
+            raw_front = []
+            raw_back = []
+            ocr_front_time = 0
+            ocr_back_time = 0
+
+            # 🆕 CHECK: RAW TEXT INPUT (Bypass OCR)
+            raw_text_input = request.form.get("raw_text")
+
+            if raw_text_input:
+                Log.info("[API-TRAD] 📝 Nhận diện 'raw_text' -> Bỏ qua OCR, xử lý trực tiếp.")
+                raw_front = [line.strip() for line in raw_text_input.strip().split('\\n') if line.strip()]
+                Log.info(f"[API-TRAD]    📝 Input lines: {len(raw_front)}")
+            
+            else:
+                # 📷 FILE UPLOAD FLOW
+                if "first_image" not in request.files and "second_image" not in request.files:
+                    return jsonify({"statusCode": 400, "message": "Cần ít nhất 1 file (first_image hoặc second_image) hoặc field 'raw_text'"}), 400
+
+                f1 = request.files.get("first_image")
+                f2 = request.files.get("second_image")
+                
+                Log.info(f"[API-TRAD] ✅ Validation OK (Type: {doc_type}) - {time.time() - step_start:.2f}s")
+
+                # ==================== BƯỚC 2: LƯU FILE ====================
+                step_start = time.time()
+                Log.info("[API-TRAD] 💾 Bước 2: Lưu file...")
+                p1, p2 = save_uploaded_files(f1, f2)
+                if p1: Log.info(f"[API-TRAD]    📁 Front: {p1}")
+                if p2: Log.info(f"[API-TRAD]    📁 Back: {p2}")
+                Log.info(f"[API-TRAD] ✅ Lưu file xong - {time.time() - step_start:.2f}s")
+
+                # ==================== BƯỚC 3: OCR HAI MẶT ====================
+                Log.info("[API-TRAD] 🔍 Bước 3: OCR...")
+
+                if p1:
+                    t = time.time()
+                    raw_front, _ = ocr_extract(p1)
+                    ocr_front_time = time.time() - t
+                    Log.info(f"[API-TRAD]    ⏳ OCR front: {ocr_front_time:.2f}s")
+
+                if p2:
+                    t = time.time()
+                    raw_back, _ = ocr_extract(p2)
+                    ocr_back_time = time.time() - t
+                    Log.info(f"[API-TRAD]    ⏳ OCR back : {ocr_back_time:.2f}s")
+
+            Log.info("[API-TRAD] ✅ OCR xong")
+            
+            timer_info = {
+                "start": request_start,
+                "ocr_front": ocr_front_time,
+                "ocr_back": ocr_back_time
+            }
+
+            # FORCE TRADITIONAL FLOW
+            return process_traditional(raw_front, raw_back, timer_info, doc_type=doc_type)
+
+        except Exception as e:
+            Log.error("\n" + "!"*70)
+            Log.error(f"[API-TRAD] ❌ LỖI: {str(e)}")
+            Log.error("!"*70 + "\n")
+
+            return jsonify({
+                "statusCode": 500,
+                "message": "Lỗi server",
+                "error": str(e)
+            }), 500
+        
+        finally:
+            # Cleanup uploaded files
+            if p1 and os.path.exists(p1):
+                try: os.remove(p1)
+                except: pass
+            
+            if p2 and os.path.exists(p2):
+                try: os.remove(p2)
+                except: pass
 
     @app.route("/api/detect", methods=["POST"])
     def detect():
@@ -252,7 +374,7 @@ def register_routes(app):
             if doc_type != "idCard":
                  Log.warning(f"[API] ⚠️ Traditional pipeline is designed for idCard (CCCD). It may fail for {doc_type}.")
             
-            return process_traditional(raw_front, raw_back, timer_info)
+            return process_traditional(raw_front, raw_back, timer_info, doc_type=doc_type)
 
         except Exception as e:
             Log.error("\n" + "!"*70)
