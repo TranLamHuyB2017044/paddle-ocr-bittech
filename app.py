@@ -19,6 +19,10 @@ CORS(app)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+# Ensure JSON response keys are NOT sorted (preserve order)
+app.json.sort_keys = False
+app.config['JSON_SORT_KEYS'] = False
+
 # ==================== LOAD MODELS ====================
 from cccd.utils.logger import Log
 

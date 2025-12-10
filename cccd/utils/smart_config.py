@@ -1,19 +1,21 @@
 from cccd.utils.smart_extractor import SmartExtractor
 from cccd.models.schemas import IdCard, DriverLicense, Invoice, Document
+from cccd.config import COMMON_COUNTRIES_REGEX
 
 # ==================== ID CARD (CCCD) CONFIG ====================
 CCCD_CONFIG = {
     "idNumber": {
         "keywords": ["số", "so", "id no", "no.", "số đd cn", "S/No"],
         "keywords_threshold": 0.9,
-        "value_regex": r"^\d{9,12}$",
-        "extraction_mode": "next_line"
+        "value_regex": r"\d{9,12}",
+        "extraction_mode": "next_line",
+        "global_regex": True
     },
     "fullName": {
         "keywords": ["họ và tên", "họ tên", "full name"],
         "keywords_threshold": 0.8,
         "value_regex": r"^[A-ZÀ-Ỹ ]{2,}$", 
-        "extraction_mode": "next_line"
+        "extraction_mode": "auto"
     },
     "dob": {
         "keywords": ["ngày, tháng, năm sinh", "ngày sinh", "date of birth", "dob"],
@@ -30,20 +32,23 @@ CCCD_CONFIG = {
     "nationality": {
         "keywords": ["quốc tịch", "nationality"],
         "keywords_threshold": 0.8,
-        "value_regex": None,
-        "extraction_mode": "auto"
+        "value_regex": COMMON_COUNTRIES_REGEX,
+        "extraction_mode": "auto",
+        "global_regex": True
     },
     "hometown": {
         "keywords": ["quê quán", "place of origin"],
         "keywords_threshold": 0.8,
         "value_regex": None,
-        "extraction_mode": "next_line"
+        "extraction_mode": "multiline",
+        "max_lines": 2
     },
     "address": {
         "keywords": ["nơi thường trú", "place of residence"],
         "keywords_threshold": 0.8,
         "value_regex": None,
-        "extraction_mode": "next_line"
+        "extraction_mode": "multiline",
+        "max_lines": 2
     },
     "expiryDate": {
         "keywords": ["có giá trị đến", "date of expiry", "giá trị đến"],
@@ -90,6 +95,13 @@ DRIVER_LICENSE_CONFIG = {
         "keywords_threshold": 0.8,
         "value_regex": r"^[A-Z][0-9]?$",
         "extraction_mode": "same_line"
+    },
+    "nationality": {
+        "keywords": ["quốc tịch", "nationality"],
+        "keywords_threshold": 0.8,
+        "value_regex": COMMON_COUNTRIES_REGEX,
+        "extraction_mode": "auto",
+        "global_regex": True
     },
     "address": {
         "keywords": ["nơi cư trú", "address"],

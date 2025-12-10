@@ -21,12 +21,12 @@ def clean_text_basic(line):
         line, 
         return_tensors="pt",
         truncation=True, 
-        max_length=80 # Increased slightly for safety
+        max_length=50 # Increased slightly for safety
     ).to(model_loader.device)
 
     outputs = model_loader.model.generate(
         **inputs,
-        max_new_tokens=80,
+        max_new_tokens=50,
         num_beams=3,
         num_return_sequences=1,
         early_stopping=True,

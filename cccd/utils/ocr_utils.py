@@ -17,8 +17,8 @@ def preprocess_for_ocr(path):
         
     h, w = img.shape[:2]
 
-    # Resize logic: Downscale if largest side > 1280
-    max_side = 1280
+    # Resize logic: Downscale if largest side > 960 (Balance speed/accuracy)
+    max_side = 960
     if max(h, w) > max_side:
         scale = max_side / max(h, w)
         new_w = int(w * scale)
@@ -26,14 +26,13 @@ def preprocess_for_ocr(path):
         img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
         Log.info(f"[PREPROCESS] 📉 Resized {w}x{h} -> {new_w}x{new_h}")
 
-    # Use a safe temporary filename
-    processed_path = path.replace(".jpg", "_small.jpg") # Simple temp method
-    # Ensure we don't accidentally overwrite something important or fail on format
+    # Overwrite original file to save space and simplify cleanup
+    # (Since we don't need the high-res original for OCR)
     try:
-        cv2.imwrite(processed_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-        return processed_path
+        cv2.imwrite(path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+        return path
     except Exception as e:
-        Log.error(f"[PREPROCESS] ⚠️ Failed to save temp image: {e}")
+        Log.error(f"[PREPROCESS] ⚠️ Failed to overwrite image: {e}")
         return path
 
 def ocr_extract(image_path):

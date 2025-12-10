@@ -11,6 +11,8 @@ from cccd.utils.file_utils import allowed_file, save_uploaded_files
 from cccd.utils.ocr_utils import ocr_extract, filter_useless_lines
 from cccd.utils.text_cleaner import clean_text_lines
 from cccd.extractors.gemini_extractor import gemini_extractor
+from cccd.utils.smart_config import smart_extract
+from cccd.utils.post_cleaner import PostCleaner
 from cccd.utils.gemini_limiter import gemini_limiter
 from cccd.utils.logger import Log
 
@@ -67,7 +69,7 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard"):
     ocr_front_time = timer_info["ocr_front"]
     ocr_back_time = timer_info["ocr_back"]
 
-    Log.info(f"[API] 🧹 Dùng pipeline truyền thống (filter + clean + regex + Smart) cho loại: {doc_type}")
+    Log.info(f"[API] 🧹 Dùng pipeline truyền thống (Hybrid) cho loại: {doc_type}")
 
     # Check inputs (can be empty lists)
     if not isinstance(raw_front, list): raw_front = []
@@ -89,22 +91,37 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard"):
     clean_time = time.time() - step_start
     Log.info(f"[API]    🧹 Clean xong - {clean_time:.2f}s")
 
-    # ------------------ BƯỚC 9: EXTRACT ----------------------
+    # ------------------ BƯỚC 9: EXTRACT (HYBRID FLOW) ----------------------
     step_start = time.time()
+    extract_result = {}
     
-    info_extracted = {}
-    combined_lines = clean_front + clean_back
+    # Priority Strategy:
+    # Smart Regex (Rule-based) - Safe fallback & good for specific formats
     
+    # Init empty results
+    res_front = {}
+    res_back = {}
+
+    Log.info("[API] 🧠 Strategy: Smart Regex (Rule-based)...")
+    res_front = smart_extract(clean_front, doc_type=doc_type)
+    res_back = smart_extract(clean_back, doc_type=doc_type)
+
     
-    # 🆕 Generic Smart Extraction for ALL types
-    from cccd.utils.smart_config import smart_extract
+    extract_result = res_back.copy()
     
-    # Unified Approach: 
-    # Combine lines from both sides and extract whatever fields are found.
-    # We no longer distinguish between front/back specific extractors.
-    # SmartExtractor scans the entire text corpus for keywords.
+    front_priority_fields = ["idNumber", "fullName", "dob", "gender", "nationality", "hometown", "address"]
     
-    info_extracted = smart_extract(combined_lines, doc_type)
+    for k, v in res_front.items():
+        if k in front_priority_fields:
+            extract_result[k] = v
+        else:
+            # For other fields (expiryDate), prefer Front if exists, else keep Back
+            if v: extract_result[k] = v
+            # If front doesn't have it, we keep what's in Back
+
+    extract_result = PostCleaner.clean(extract_result, doc_type)
+    
+    info_extracted = extract_result
     
     extract_time = time.time() - step_start
     Log.info(f"[API]    📊 Extract xong ({doc_type}) - {extract_time:.2f}s")
@@ -191,10 +208,14 @@ def register_routes(app):
                 Log.error(f"[API-TRAD] ❌ Validation Failed: {error_resp.json}")
                 return error_resp, status_code
 
+            raw_boxes_front = []
+            raw_boxes_back = []
+            
+            # Initialize variables
             raw_front = []
             raw_back = []
-            ocr_front_time = 0
-            ocr_back_time = 0
+            ocr_front_time = 0.0
+            ocr_back_time = 0.0
 
             # 🆕 CHECK: RAW TEXT INPUT (Bypass OCR)
             raw_text_input = request.form.get("raw_text")
@@ -246,7 +267,11 @@ def register_routes(app):
             }
 
             # FORCE TRADITIONAL FLOW
-            return process_traditional(raw_front, raw_back, timer_info, doc_type=doc_type)
+            return process_traditional(
+                raw_front, raw_back, 
+                timer_info, 
+                doc_type=doc_type, 
+            )
 
         except Exception as e:
             Log.error("\n" + "!"*70)
@@ -262,12 +287,18 @@ def register_routes(app):
         finally:
             # Cleanup uploaded files
             if p1 and os.path.exists(p1):
-                try: os.remove(p1)
-                except: pass
+                try:
+                    os.remove(p1)
+                    Log.info(f"[CLEANUP] 🗑️ Deleted {p1}")
+                except Exception as e:
+                    Log.error(f"[CLEANUP] ⚠️ Failed to delete {p1}: {e}")
             
             if p2 and os.path.exists(p2):
-                try: os.remove(p2)
-                except: pass
+                try:
+                    os.remove(p2)
+                    Log.info(f"[CLEANUP] 🗑️ Deleted {p2}")
+                except Exception as e:
+                    Log.error(f"[CLEANUP] ⚠️ Failed to delete {p2}: {e}")
 
     @app.route("/api/detect", methods=["POST"])
     def detect():
@@ -292,10 +323,11 @@ def register_routes(app):
                 Log.error(f"[API] ❌ Validation Failed: {error_resp.json}")
                 return error_resp, status_code
 
+            # Initialize variables
             raw_front = []
             raw_back = []
-            ocr_front_time = 0
-            ocr_back_time = 0
+            ocr_front_time = 0.0
+            ocr_back_time = 0.0
 
             # 🆕 CHECK: RAW TEXT INPUT (Bypass OCR)
             raw_text_input = request.form.get("raw_text")
@@ -374,7 +406,13 @@ def register_routes(app):
             if doc_type != "idCard":
                  Log.warning(f"[API] ⚠️ Traditional pipeline is designed for idCard (CCCD). It may fail for {doc_type}.")
             
-            return process_traditional(raw_front, raw_back, timer_info, doc_type=doc_type)
+            
+
+            return process_traditional(
+                raw_front, raw_back, 
+                timer_info, 
+                doc_type=doc_type,
+            )
 
         except Exception as e:
             Log.error("\n" + "!"*70)

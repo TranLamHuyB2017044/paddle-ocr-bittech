@@ -16,6 +16,10 @@ class SmartExtractor:
         }
         """
         self.config = config
+        # Pre-collect all keywords to use as stop-words for multiline extraction
+        self.all_keywords = []
+        for f, rules in config.items():
+            self.all_keywords.extend(rules.get("keywords", []))
 
     # ----------------------------------------------------------
     #                      KEYWORD MATCH
@@ -36,17 +40,32 @@ class SmartExtractor:
     # ----------------------------------------------------------
     #                    MULTILINE EXTRACTION
     # ----------------------------------------------------------
-    def _extract_multiline(self, lines, start_index, max_lines=3):
+    def _extract_multiline(self, lines, start_index, max_lines=3, stop_keywords=None):
         """
         Lấy text từ nhiều dòng tiếp theo, nối thành 1 chuỗi.
-        Dừng nếu gặp dòng trống.
+        Dừng nếu gặp dòng trống HOẶC dòng chứa keyword khác.
         """
         collected = []
+        if stop_keywords is None: stop_keywords = []
 
         for j in range(start_index + 1, min(start_index + 1 + max_lines, len(lines))):
             line = lines[j].strip()
             if line == "":
                 break
+                
+            # Check stop keywords (fuzzy or exact)
+            is_stop = False
+            line_lower = line.lower()
+            for kw in stop_keywords:
+                # Simple check: keyword in line (sufficient for stop condition)
+                # But ensure keyword is long enough to be significant
+                if len(kw) > 3 and kw.lower() in line_lower:
+                    is_stop = True
+                    break
+            
+            if is_stop:
+                break
+                
             collected.append(line)
 
         return " ".join(collected).strip()
@@ -133,6 +152,10 @@ class SmartExtractor:
         for i, line in enumerate(lines):
 
             for field, rules in self.config.items():
+                # 🛑 OPTIMIZATION: Nếu đã extract được rồi thì bỏ qua (Lấy giá trị đầu tiên tìm thấy)
+                if result[field] is not None:
+                    continue
+
                 keywords = rules.get("keywords", [])
                 threshold = rules.get("keywords_threshold", 0.7)
                 value_regex = rules.get("value_regex")
@@ -152,13 +175,47 @@ class SmartExtractor:
 
                 elif mode == "multiline":
                     max_lines = rules.get("max_lines", 3)
-                    extracted = self._extract_multiline(lines, i, max_lines)
+                    # Use all known keywords as blockers
+                    extracted = self._extract_multiline(lines, i, max_lines, stop_keywords=self.all_keywords)
 
                 else:  # auto
                     extracted = self._extract_auto(lines, i, value_regex)
 
                 # Save value
                 if extracted:
-                    result[field] = extracted
+                    # 🛡️ SANITY CHECK: Ensure extracted value is not another field's label
+                    # Example: Nationality extracted as "Quê quán / Place of origin:"
+                    is_valid = True
+                    extracted_lower = extracted.lower()
+                    for kw in self.all_keywords:
+                        if len(kw) > 4 and kw in extracted_lower:
+                            # Nếu giá trị chứa từ khóa của field khác (hoặc chính nó)
+                            # -> Có thể là bắt nhầm tiêu đề
+                            # Exception: Trừ trường hợp giá trị chứa từ khóa NHƯNG là địa chỉ dài? 
+                            # (Ít xảy ra với keyword chuẩn như "ngày sinh", "họ và tên")
+                            is_valid = False
+                            break
+                    
+                    if is_valid:
+                        result[field] = extracted
+
+                    if is_valid:
+                        result[field] = extracted
+
+        # ----------------------------------------------------------
+        # 3️⃣ GLOBAL REGEX FALLBACK (Cho trường hợp keyword bị miss/lệch dòng)
+        # ----------------------------------------------------------
+        full_text = "\n".join(lines)
+        for field, rules in self.config.items():
+            # Chỉ tìm nếu chưa có kết quả
+            if result[field] is None:
+                value_regex = rules.get("value_regex")
+                is_global = rules.get("global_regex", False)
+                
+                if is_global and value_regex:
+                    # Tìm regex trên toàn bộ văn bản (hỗ trợ multiline cho ^$)
+                    match = re.search(value_regex, full_text, re.MULTILINE | re.IGNORECASE)
+                    if match:
+                        result[field] = match.group(0).strip()
 
         return result

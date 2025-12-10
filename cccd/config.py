@@ -34,8 +34,8 @@ OCR_CONFIG = {
 # Từ khóa chung cần loại bỏ
 USELESS_KEYWORDS = [
     # Tiêu đề quốc gia
-    "cộng hòa xã hội chủ nghĩa việt nam",
-    "cong hoa xa hoi chu nghia viet nam",
+    "cộng hòa xã hội chủ nghĩa",
+    "cong hoa xa hoi chu nghia",
     "cộng hoà",
     "cong hoa",
     "xã hội chủ nghĩa",
@@ -46,7 +46,7 @@ USELESS_KEYWORDS = [
     "GIÂY PHÉP LÁIXE",
     "GIÂY PHÉP LÁIXE/DRIVER'S LICENSE",
     "GIAY PHÉP LÁI XE",
-    "CNG HA X HI CH NGHA VIT NAM",
+    "CNG HA X HI CH NGHA",
     "GIAY PHÉP LÁI XE",
     "Giấy phép",
     "Giấy phép lái xe",
@@ -129,6 +129,9 @@ EXPIRY_LABEL_KEYWORDS = [
 HOMETOWN_KEYWORDS = [
     "quê quán", "quê quan", "quê", "que quan", "que",
 ]
+
+# ========== GENERIC REGEX ==========
+COMMON_COUNTRIES_REGEX = r"Việt Nam|Trung Quốc|Lào|Campuchia|Thái Lan|Myanmar|Malaysia|Singapore|Indonesia|Philippines|Brunei|Đông Timor|Hàn Quốc|Triều Tiên|Nhật Bản|Mông Cổ|Đài Loan|Ấn Độ|Nga|Mỹ|Hoa Kỳ|Anh|Pháp|Đức|Ý|Tây Ban Nha|Bồ Đào Nha|Úc|Canada|Brasil|Argentina|Nam Phi|Ai Cập"
 
 # Giá trị mặc định
 DEFAULT_NATIONALITY = "Việt Nam"

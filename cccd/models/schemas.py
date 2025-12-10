@@ -17,6 +17,7 @@ class DriverLicense(BaseModel):
     fullName: Optional[str] = Field(description="Họ và tên")
     idNumber: Optional[str] = Field(description="Số giấy phép lái xe")
     dob: Optional[str] = Field(description="Ngày sinh (DD-MM-YYYY)")
+    nationality: Optional[str] = Field(description="Nationality")
     rank: Optional[str] = Field(alias="class", description="Hạng bằng (A1, A2, B1, B2...)")
     expiryDate: Optional[str] = Field(description="Ngày hết hạn (DD-MM-YYYY)")
     dateOfIssue: Optional[str] = Field(description="Ngày cấp (DD-MM-YYYY)")

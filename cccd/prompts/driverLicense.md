@@ -6,6 +6,7 @@ Trích xuất các thông tin sau từ Giấy phép lái xe:
 - fullName: Họ và tên
 - idNumber: Số giấy phép lái xe
 - dob: Ngày sinh
+- nationality: Quốc tịch
 - class: Hạng bằng (A1, A2, B1, B2...)
 - expiryDate: Ngày hết hạn
 - dateOfIssue: Ngày cấp
