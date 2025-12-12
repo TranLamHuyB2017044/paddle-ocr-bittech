@@ -16,3 +16,8 @@ google-genai
 pydantic
 python-dotenv
 rapidfuzz
+google-api-python-client
+google-auth
+gspread
+google-auth-httplib2
+google-auth-oauthlib

@@ -40,6 +40,11 @@ Log.info("="*70)
 # ==================== REGISTER ROUTES ====================
 register_routes(app)
 
+from cccd.api.sheet_routes import sheet_bp
+from cccd.api.auth_routes import auth_bp
+app.register_blueprint(sheet_bp)
+app.register_blueprint(auth_bp)
+
 # ==================== RUN APP ====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
