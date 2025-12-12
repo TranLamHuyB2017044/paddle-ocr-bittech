@@ -1,8 +1,9 @@
 
 from flask import Blueprint, request, jsonify
-from cccd.services.google_sheets import google_sheet_service
-from cccd.services.oauth_service import oauth_service
+from cccd.services.oauth_service import oauth_service, drivescope
+from cccd.services.token_service import token_service
 from cccd.utils.logger import Log
+from google.oauth2.credentials import Credentials
 
 sheet_bp = Blueprint('sheet_bp', __name__)
 
@@ -21,41 +22,68 @@ def save_to_sheet():
         data = request.json
         ocr_data = data.get("data")
         doc_type = data.get("doc_type", "document")
-
-        # 1. Attempt to get Email from Token (Authorization Header)
-        email = None
+        
+        email = data.get("email")
+        token = None
+        
+        # 1. Check Authorization Header (Preferred)
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
-            try:
-                user_info = oauth_service.get_user_info_from_token(token)
-                email = user_info.get("email")
-                Log.info(f"[API] 🔑 Authenticated via Token: {email}")
-            except Exception as e:
-                Log.warning(f"[API] ⚠️ Invalid Token provided: {e}")
+            # Try to get email from token if not provided in body
+            if not email:
+                try:
+                    user_info = oauth_service.get_user_info_from_token(token)
+                    email = user_info.get("email")
+                except:
+                    pass
 
-        # 2. Fallback to Body Email
         if not email:
-            email = data.get("email")
-        
-        if not email or not ocr_data:
-            return jsonify({"statusCode": 400, "message": "Missing email or data (requires Auth Token or 'email' in body)"}), 400
+             return jsonify({"statusCode": 400, "message": "Missing email or valid token"}), 400
 
-        # Delegate to service
-        # 1. Get or Create Sheet
-        spreadsheet_id = google_sheet_service.get_or_create_sheet(email)
+        # 2. Reconstruct Credentials
+        creds = None
         
-        # 2. Append Data
-        google_sheet_service.append_data(spreadsheet_id, ocr_data, doc_type)
+        # Attempt A: Use provided Access Token (if it has permissions)
+        if token:
+            creds = Credentials(token=token)
+            # Check if this token works for Drive? 
+            # Ideally we check scopes, but `Credentials` object doesn't verify until used.
+            # However, if this is just a login token (email/profile), it won't work for Drive.
+            # So looking up stored tokens is safer if the frontend isn't sending a "drive-scoped" token explicitly.
         
-        sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
+        # Attempt B: Look up stored Drive tokens for this user
+        stored_tokens = token_service.get_user_tokens(email)
+        if stored_tokens:
+            Log.info(f"[API] 🔄 Found stored tokens for {email}")
+            creds = Credentials(
+                token=stored_tokens.get("token"),
+                refresh_token=stored_tokens.get("refresh_token"),
+                token_uri=stored_tokens.get("token_uri"),
+                client_id=stored_tokens.get("client_id"),
+                client_secret=stored_tokens.get("client_secret"),
+                scopes=stored_tokens.get("scopes")
+            )
+        
+        if not creds:
+             return jsonify({"statusCode": 403, "message": "User has not connected Drive. Please link account first."}), 403
+
+        # 3. Perform Actions using User Credentials
+        # Get/Create Sheet
+        sheet_info = oauth_service.get_or_create_sheet(creds, email)
+        spreadsheet_id = sheet_info['spreadsheet_id']
+        sheet_url = sheet_info['sheet_url']
+        
+        # Append Data
+        updated_cells = oauth_service.append_data(creds, spreadsheet_id, ocr_data, doc_type)
         
         return jsonify({
             "statusCode": 200,
-            "message": "Data saved successfully",
+            "message": "Data saved successfully to User Drive",
             "data": {
                 "sheet_url": sheet_url,
-                "spreadsheet_id": spreadsheet_id
+                "spreadsheet_id": spreadsheet_id,
+                "updated_cells": updated_cells
             }
         })
 

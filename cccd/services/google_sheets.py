@@ -60,24 +60,24 @@ class GoogleSheetService:
         if user_email in db:
             return db[user_email]
 
-        # 1. Create Sheet using Drive API
-        file_metadata = {
-            "name": f"OCR Data - {user_email}",
-            "mimeType": "application/vnd.google-apps.spreadsheet"
+        # 1. Create Sheet using Sheets API
+        sheet_metadata = {
+            'properties': {
+                'title': f"OCR Data - {user_email}"
+            }
         }
 
         try:
-            file = self.drive_service.files().create(
-                body=file_metadata,
-                fields="id" 
+            spreadsheet = self.sheets_service.spreadsheets().create(
+                body=sheet_metadata,
+                fields='spreadsheetId'
             ).execute()
             
-            Log.info(f"[GoogleSheet] 🆕 Created Sheet ID: {file.get('id')}")
+            sheet_id = spreadsheet.get('spreadsheetId')
+            Log.info(f"[GoogleSheet] 🆕 Created Sheet ID: {sheet_id}")
         except Exception as e:
             Log.error(f"[GoogleSheet] ❌ Failed to create sheet: {e}")
             raise e
-
-        sheet_id = file.get("id")
 
         # 2. Share with user
         self._share_file(sheet_id, user_email)
@@ -128,7 +128,7 @@ class GoogleSheetService:
 
     def _init_header(self, spreadsheet_id):
         """Writes the header row."""
-        headers = ["Type", "Full Name", "ID Number", "DOB", "Address", "Hometown", "Date"]
+        headers = ["ID Number", "Full Name",  "DOB", "Address", "Hometown", "Date of Issue", "Date of Expiry", "Place of Issue"]
         body = {
             "values": [headers]
         }
@@ -145,13 +145,14 @@ class GoogleSheetService:
         
         # Common fields attempt
         row = [
-            doc_type,
-            data.get("fullName", ""),
             data.get("idNumber", ""),
+            data.get("fullName", ""),
             data.get("dob", ""),
             data.get("address", ""),
             data.get("hometown", ""), # Cần thêm field này vào nếu chưa có
-            data.get("dateOfIssue", "")
+            data.get("dateOfIssue", ""),
+            data.get("dateOfExpiry", ""),
+            data.get("placeOfIssue", "")
         ]
         
         body = {

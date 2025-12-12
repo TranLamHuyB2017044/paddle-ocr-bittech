@@ -11,20 +11,34 @@ from cccd.utils.logger import Log
 CLIENT_SECRETS_FILE = "client_secret.json"
 
 # Updates these scopes to allow driving file creation
+# Updates these scopes to allow driving file creation
 SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "openid"
 ]
 
+# Separate scope list for Drive Connect as requested
+DRIVE_SCOPES = SCOPES + [
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "openid",
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/spreadsheets',
+]
+drivescope = DRIVE_SCOPES
+
 class OAuthService:
     def __init__(self):
         self.base_sheet_name = "Document_Data_Storage"
 
-    def exchange_code_for_credentials(self, auth_code, redirect_uri):
+    def exchange_code_for_credentials(self, auth_code, redirect_uri, scopes=None):
         
         if not os.path.exists(CLIENT_SECRETS_FILE):
              raise FileNotFoundError(f"Missing {CLIENT_SECRETS_FILE}. Please download it from Google Cloud Console.")
+
+        # Default to basic SCOPES if not provided
+        target_scopes = scopes if scopes else SCOPES
 
         try:
             # Log để debug redirect_uri mismatch
@@ -32,7 +46,7 @@ class OAuthService:
             
             # Tạo OAuth flow từ client_secret.json
             # Nếu redirect_uri là None hoặc rỗng, một số flow native có thể chấp nhận
-            kwargs = {"scopes": SCOPES}
+            kwargs = {"scopes": target_scopes}
             if redirect_uri:
                 kwargs["redirect_uri"] = redirect_uri
 
@@ -48,6 +62,20 @@ class OAuthService:
             
             Log.info(f"[OAuth] ✅ Successfully exchanged code for credentials")
             Log.info(f"[OAuth] 📝 Token expires in: {credentials.expiry if hasattr(credentials, 'expiry') else 'N/A'}")
+            
+            # Check for Drive permissions
+            # Note: scopes might be a set or list.
+            current_scopes = set(credentials.scopes) if credentials.scopes else set()
+            drive_scope = "https://www.googleapis.com/auth/drive.file"
+            sheet_scope = "https://www.googleapis.com/auth/spreadsheets"
+            
+            # Simple check: If they have drive OR sheet, we consider it "connected" for our purpose, 
+            # though ideally we need both or just drive.
+            has_drive = drive_scope in current_scopes and sheet_scope in current_scopes
+            
+            # Attach dynamic attribute to be used by caller
+            credentials.has_drive_permissions = has_drive
+            Log.info(f"[OAuth] 📂 Drive Permissions Granted: {has_drive}")
             
             return credentials
             
@@ -128,15 +156,56 @@ class OAuthService:
             raise e
 
     def _init_header(self, sheets_service, spreadsheet_id):
-        headers = ["Type", "Full Name", "ID Number", "DOB", "Address", "Hometown", "Date", "Created At"]
+        headers = ["ID Number", "Full Name", "DOB", "Address", "Hometown", "Date of Issue", "Date of Expiry", "Place of Issue", "Created At"]
         body = {
             "values": [headers]
         }
         sheets_service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range="Sheet1!A1",
+            range="A1",
             valueInputOption="RAW",
             body=body
         ).execute()
+
+    def append_data(self, credentials, spreadsheet_id, data, doc_type):
+        """Appends a row of data using user credentials."""
+        try:
+            service = build('sheets', 'v4', credentials=credentials)
+            
+            # Normalize data based on doc_type (matching user schema)
+            row = [
+                data.get("idNumber", ""),
+                data.get("fullName", ""),
+                data.get("dob", ""),
+                data.get("gender", ""),
+                data.get("nationality", ""),
+                data.get("address", ""),
+                data.get("hometown", ""),
+                data.get("dateOfIssue", ""),
+                data.get("expiryDate", ""),
+                data.get("placeOfIssue", "")
+            ]
+            
+            # Add timestamp
+            from datetime import datetime
+            row.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+            body = {
+                "values": [row]
+            }
+
+            result = service.spreadsheets().values().append(
+                spreadsheetId=spreadsheet_id,
+                range="A1",
+                valueInputOption="USER_ENTERED",
+                body=body
+            ).execute()
+
+            Log.info(f"[OAuth] 📝 Appended data to sheet {spreadsheet_id}")
+            return result.get("updates", {}).get("updatedCells")
+
+        except Exception as e:
+            Log.error(f"[OAuth] ❌ Failed to append data: {e}")
+            raise e
 
 oauth_service = OAuthService()
