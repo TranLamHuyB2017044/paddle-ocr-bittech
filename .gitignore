@@ -183,3 +183,6 @@ cython_debug/
 # Google Service Account & Local DB
 service_account.json
 user_sheets_map.json
+user_tokens.json
+client_secret.json
+
