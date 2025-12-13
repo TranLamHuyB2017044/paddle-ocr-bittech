@@ -50,10 +50,41 @@ class OAuthService:
             if redirect_uri:
                 kwargs["redirect_uri"] = redirect_uri
 
-            flow = Flow.from_client_secrets_file(
-                CLIENT_SECRETS_FILE,
-                **kwargs
-            )
+            # Check for Environment Variables first (Production)
+            client_id = os.getenv("GOOGLE_CLIENT_ID")
+            client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+
+            if client_id and client_secret:
+                Log.info("[OAuth] 🌍 Loading Google Credentials from Environment Variables")
+                client_config = {
+                    "web": {
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    }
+                }
+                project_id = os.getenv("GOOGLE_PROJECT_ID")
+                if project_id:
+                    client_config["web"]["project_id"] = project_id
+
+                flow = Flow.from_client_config(
+                    client_config,
+                    **kwargs
+                )
+            elif os.path.exists(CLIENT_SECRETS_FILE):
+                # Fallback to local file (Development)
+                Log.info(f"[OAuth] 📂 Loading Google Credentials from {CLIENT_SECRETS_FILE}")
+                flow = Flow.from_client_secrets_file(
+                    CLIENT_SECRETS_FILE,
+                    **kwargs
+                )
+            else:
+                raise FileNotFoundError(
+                    f"Missing {CLIENT_SECRETS_FILE} or GOOGLE_CLIENT_ID/SECRET env vars. "
+                    "Please Configure Google OAuth credentials."
+                )
             
             # Exchange authorization code → credentials
             Log.info(f"[OAuth] 🔄 Exchanging code for credentials...")
