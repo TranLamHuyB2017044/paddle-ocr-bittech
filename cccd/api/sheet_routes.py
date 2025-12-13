@@ -41,18 +41,10 @@ def save_to_sheet():
         if not email:
              return jsonify({"statusCode": 400, "message": "Missing email or valid token"}), 400
 
-        # 2. Reconstruct Credentials
+        # 2. Reconstruct Credentials (Prioritize Stored Drive Tokens)
         creds = None
         
-        # Attempt A: Use provided Access Token (if it has permissions)
-        if token:
-            creds = Credentials(token=token)
-            # Check if this token works for Drive? 
-            # Ideally we check scopes, but `Credentials` object doesn't verify until used.
-            # However, if this is just a login token (email/profile), it won't work for Drive.
-            # So looking up stored tokens is safer if the frontend isn't sending a "drive-scoped" token explicitly.
-        
-        # Attempt B: Look up stored Drive tokens for this user
+        # Look up stored Drive tokens for this user
         stored_tokens = token_service.get_user_tokens(email)
         if stored_tokens:
             Log.info(f"[API] 🔄 Found stored tokens for {email}")
@@ -64,9 +56,14 @@ def save_to_sheet():
                 client_secret=stored_tokens.get("client_secret"),
                 scopes=stored_tokens.get("scopes")
             )
+        else:
+             Log.warning(f"[API] ⚠️ No stored Drive tokens found for {email}")
         
         if not creds:
-             return jsonify({"statusCode": 403, "message": "User has not connected Drive. Please link account first."}), 403
+             return jsonify({
+                 "statusCode": 403, 
+                 "message": "User has not connected Drive. Please link your Google Drive account first."
+             }), 403
 
         # 3. Perform Actions using User Credentials
         # Get/Create Sheet
