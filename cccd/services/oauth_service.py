@@ -34,9 +34,6 @@ class OAuthService:
 
     def exchange_code_for_credentials(self, auth_code, redirect_uri, scopes=None):
         
-        if not os.path.exists(CLIENT_SECRETS_FILE):
-             raise FileNotFoundError(f"Missing {CLIENT_SECRETS_FILE}. Please download it from Google Cloud Console.")
-
         # Default to basic SCOPES if not provided
         target_scopes = scopes if scopes else SCOPES
 
