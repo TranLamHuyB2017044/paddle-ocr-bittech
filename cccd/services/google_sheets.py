@@ -19,68 +19,51 @@ class GoogleSheetService:
         self.sheets_service = None
         self.drive_service = None
         
+        # Simple JSON DB to map email -> sheet_id
+        # Format: {"user@email.com": "spreadsheet_id"}
+        self.db_file = "user_sheets_map.json"
+        
         self.authenticate()
 
     def authenticate(self):
-        """Authenticates using the service account file or environment variable."""
+        """Authenticates using the service account file."""
+        if not os.path.exists(self.service_account_file):
+            Log.error(f"[GoogleSheet] ❌ Missing service account file: {self.service_account_file}")
+            return
+
         try:
-            # 1. Try Environment Variable (Production)
-            sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-            if sa_json:
-                try:
-                    info = json.loads(sa_json)
-                    self.creds = service_account.Credentials.from_service_account_info(
-                        info, scopes=SCOPES
-                    )
-                    Log.info("[GoogleSheet] 🌍 Authenticated via GOOGLE_SERVICE_ACCOUNT_JSON Env Var")
-                except json.JSONDecodeError:
-                     Log.error("[GoogleSheet] ❌ Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON")
-            
-            # 2. Try Local File (Development)
-            elif os.path.exists(self.service_account_file):
-                self.creds = service_account.Credentials.from_service_account_file(
-                    self.service_account_file, scopes=SCOPES
-                )
-                Log.info(f"[GoogleSheet] 📂 Authenticated via File: {self.service_account_file}")
-            
-            else:
-                Log.warning(f"[GoogleSheet] ⚠️ No service account credentials found ({self.service_account_file} or Env Var).")
-                return
-
-            if self.creds:
-                self.sheets_service = build("sheets", "v4", credentials=self.creds)
-                self.drive_service = build("drive", "v3", credentials=self.creds)
-                Log.info("[GoogleSheet] ✅ Service initialized successfully.")
-
+            self.creds = service_account.Credentials.from_service_account_file(
+                self.service_account_file, scopes=SCOPES
+            )
+            self.sheets_service = build("sheets", "v4", credentials=self.creds)
+            self.drive_service = build("drive", "v3", credentials=self.creds)
+            Log.info("[GoogleSheet] ✅ Authenticated successfully.")
         except Exception as e:
             Log.error(f"[GoogleSheet] ❌ Authentication failed: {e}")
 
-    def get_or_create_sheet(self, user_email):
-        if not self.drive_service or not self.sheets_service:
-            Log.error("[GoogleSheet] ❌ Service not authenticated.")
-            return None
-
-        sheet_title = f"OCR Data - {user_email}"
-
-        # 1. Search for existing sheet by name
+    def _load_db(self):
+        if not os.path.exists(self.db_file):
+            return {}
         try:
-            query = f"name = '{sheet_title}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
-            results = self.drive_service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
-            files = results.get('files', [])
+            with open(self.db_file, "r") as f:
+                return json.load(f)
+        except:
+            return {}
 
-            if files:
-                sheet_id = files[0]['id']
-                Log.info(f"[GoogleSheet] ✅ Found existing sheet for {user_email}: {sheet_id}")
-                return sheet_id
+    def _save_db(self, data):
+        with open(self.db_file, "w") as f:
+            json.dump(data, f, indent=2)
 
-        except Exception as e:
-            Log.error(f"[GoogleSheet] ⚠️ Error searching for files: {e}")
-            # Continue to create if search fails? Or raise? Better to try creating.
+    def get_or_create_sheet(self, user_email):
+        db = self._load_db()
 
-        # 2. Create Sheet using Sheets API
+        if user_email in db:
+            return db[user_email]
+
+        # 1. Create Sheet using Sheets API
         sheet_metadata = {
             'properties': {
-                'title': sheet_title
+                'title': f"OCR Data - {user_email}"
             }
         }
 
@@ -92,16 +75,38 @@ class GoogleSheetService:
             
             sheet_id = spreadsheet.get('spreadsheetId')
             Log.info(f"[GoogleSheet] 🆕 Created Sheet ID: {sheet_id}")
-
-            # 3. Share with user
-            self._share_file(sheet_id, user_email)
-            
-            # 4. Init header
-            self._init_header(sheet_id)
-
-            return sheet_id
         except Exception as e:
             Log.error(f"[GoogleSheet] ❌ Failed to create sheet: {e}")
+            raise e
+
+        # 2. Share with user
+        self._share_file(sheet_id, user_email)
+        
+        # (Optional) Transfer ownership if needed, but service account must have permission
+        # self._transfer_ownership(sheet_id, user_email)
+
+        # 3. Init header
+        self._init_header(sheet_id)
+
+        # 4. Save mapping
+        db[user_email] = sheet_id
+        self._save_db(db)
+
+        return sheet_id
+
+    def _transfer_ownership(self, file_id, email):
+        try:
+            self.drive_service.permissions().create(
+                fileId=file_id,
+                body={
+                    "role": "owner",
+                    "type": "user",
+                    "emailAddress": email
+                },
+                transferOwnership=True
+            ).execute()
+        except Exception as e:
+            Log.error(f"[GoogleSheet] ⚠️ Failed to transfer ownership: {e}")
             raise e
 
     def _share_file(self, file_id, email):
