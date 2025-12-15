@@ -2,7 +2,7 @@
 import time
 from datetime import datetime, timedelta
 
-from cccd.utils.logger import Log
+from app.utils.logger import Log
 
 class GeminiRateLimiter:
     _instance = None

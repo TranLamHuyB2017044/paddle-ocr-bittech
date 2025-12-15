@@ -7,14 +7,14 @@ import os
 from datetime import datetime
 from flask import request, jsonify
 
-from cccd.utils.file_utils import allowed_file, save_uploaded_files
-from cccd.utils.ocr_utils import ocr_extract, filter_useless_lines
-from cccd.utils.text_cleaner import clean_text_lines
-from cccd.extractors.gemini_extractor import gemini_extractor
-from cccd.utils.smart_config import smart_extract
-from cccd.utils.post_cleaner import PostCleaner
-from cccd.utils.gemini_limiter import gemini_limiter
-from cccd.utils.logger import Log
+from app.utils.file_utils import allowed_file, save_uploaded_files
+from app.utils.ocr_utils import ocr_extract, filter_useless_lines
+from app.utils.text_cleaner import clean_text_lines
+from app.extractors.gemini_extractor import gemini_extractor
+from app.utils.smart_config import smart_extract
+from app.utils.post_cleaner import PostCleaner
+from app.utils.gemini_limiter import gemini_limiter
+from app.utils.logger import Log
 
 
 

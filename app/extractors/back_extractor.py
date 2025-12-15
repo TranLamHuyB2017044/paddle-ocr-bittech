@@ -3,7 +3,7 @@ Back Extractor
 Trích xuất thông tin từ mặt sau CCCD
 """
 import re
-from cccd.config import DEFAULT_PLACE_OF_ISSUE
+from app.config import DEFAULT_PLACE_OF_ISSUE
 
 
 def extract_back(texts):

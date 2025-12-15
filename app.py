@@ -6,25 +6,28 @@ from flask import Flask
 from flask_cors import CORS
 import os
 
-from cccd.config import UPLOAD_FOLDER
-from cccd.api.routes import register_routes
-from cccd.models.model_loader import model_loader
+import app.config as config
+from app.api.routes import register_routes
+from app.models.model_loader import model_loader
 
 
 # ==================== FLASK APP SETUP ====================
 app = Flask(__name__)
 CORS(app)
 
+# Initialize MongoDB Connection
+from app.database import mongo
+
 # Tạo thư mục upload
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
 
 # Ensure JSON response keys are NOT sorted (preserve order)
 app.json.sort_keys = False
 app.config['JSON_SORT_KEYS'] = False
 
 # ==================== LOAD MODELS ====================
-from cccd.utils.logger import Log
+from app.utils.logger import Log
 
 # ==================== LOAD MODELS ====================
 Log.info("="*70)
@@ -33,15 +36,15 @@ Log.info("="*70)
 
 # Models sẽ được load tự động khi import model_loader
 Log.info(f"✅ Models đã sẵn sàng!")
-Log.info(f"📁 Upload folder: {UPLOAD_FOLDER}")
+Log.info(f"📁 Upload folder: {config.UPLOAD_FOLDER}")
 Log.info("="*70)
 
 
 # ==================== REGISTER ROUTES ====================
 register_routes(app)
 
-from cccd.api.sheet_routes import sheet_bp
-from cccd.api.auth_routes import auth_bp
+from app.api.sheet_routes import sheet_bp
+from app.api.auth_routes import auth_bp
 app.register_blueprint(sheet_bp)
 app.register_blueprint(auth_bp)
 

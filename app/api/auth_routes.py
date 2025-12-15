@@ -1,10 +1,127 @@
 
-from flask import Blueprint, request, jsonify
-from cccd.services.oauth_service import oauth_service
-from cccd.services.token_service import token_service
-from cccd.utils.logger import Log
+from flask import Blueprint, request, jsonify, g
+from app.services.oauth_service import oauth_service
+from app.services.token_service import token_service
+from app.services.auth_service_mongo import auth_service
+from app.utils.auth_middleware import require_auth
+from app.utils.logger import Log
 
 auth_bp = Blueprint('auth_bp', __name__)
+
+# ==================== AUTHENTICATION ROUTES (JWT) ====================
+
+@auth_bp.route('/api/auth/register', methods=['POST'])
+def register():
+    try:
+        data = request.json
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        fullname = data.get('fullname')
+        phone = data.get('phone')
+        
+        if not email or not password or not username:
+            return jsonify({"statusCode": 400, "message": "Email, password and username are required"}), 400
+            
+        user_id = auth_service.register(username, email, password, fullname, phone)
+        
+        return jsonify({
+            "statusCode": 201,
+            "message": "User registered successfully",
+            "data": {"user_id": user_id}
+        }), 201
+    except ValueError as e:
+        return jsonify({"statusCode": 400, "message": str(e)}), 400
+    except Exception as e:
+        Log.error(f"[Auth] Register failed: {e}")
+        return jsonify({"statusCode": 500, "message": "Internal Server Error"}), 500
+
+@auth_bp.route('/api/auth/login', methods=['POST'])
+def login():
+    try:
+        data = request.json
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({"statusCode": 400, "message": "Username and password are required"}), 400
+            
+        # Get Client Info
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        device_id = request.headers.get('X-Device-ID') # Client must send this header
+        ip = request.remote_addr
+        
+        result = auth_service.login(username, password, user_agent, ip, device_id)
+        
+        return jsonify({
+            "statusCode": 200,
+            "message": "Login successful",
+            "data": result
+        })
+    except ValueError as e:
+        return jsonify({"statusCode": 401, "message": str(e)}), 401
+    except Exception as e:
+        Log.error(f"[Auth] Login failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@auth_bp.route('/api/auth/refresh', methods=['POST'])
+def refresh():
+    try:
+        data = request.json
+        refresh_token = data.get('refresh_token')
+        
+        if not refresh_token:
+            return jsonify({"statusCode": 400, "message": "Refresh token is required"}), 400
+            
+        result = auth_service.reduce_refresh_token(refresh_token)
+        
+        return jsonify({
+            "statusCode": 200,
+            "message": "Token refreshed",
+            "data": result
+        })
+    except ValueError as e:
+        return jsonify({"statusCode": 401, "message": str(e)}), 401
+    except Exception as e:
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@auth_bp.route('/api/auth/logout', methods=['POST'])
+def logout():
+    try:
+        data = request.json
+        refresh_token = data.get('refresh_token')
+        if refresh_token:
+            auth_service.logout(refresh_token)
+            
+        return jsonify({
+            "statusCode": 200,
+            "message": "Logged out successfully"
+        })
+    except Exception as e:
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@auth_bp.route('/api/auth/me', methods=['GET'])
+@require_auth
+def get_me():
+    """Example of a protected route"""
+    try:
+        from app.repositories.users_repository import users_repo
+        user = users_repo.find_by_id(g.user_id)
+        if not user:
+             return jsonify({"statusCode": 404, "message": "User not found"}), 404
+             
+        # Remove Sensitive Data
+        user.pop("password", None)
+        user["_id"] = str(user["_id"])
+        
+        return jsonify({
+            "statusCode": 200,
+            "data": user
+        })
+    except Exception as e:
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+# ==================== GOOGLE AUTH ROUTES (KEEPING EXISTING) ====================
 
 @auth_bp.route('/api/auth/google-login', methods=['POST'])
 def google_login():
@@ -78,7 +195,7 @@ def google_drive_connect():
         Log.info(f"[Auth] 🔗 Drive Connect: Exchanging code with redirect_uri: {redirect_uri}")
         
         # 1. Exchange Code with Drive Scopes
-        from cccd.services.oauth_service import DRIVE_SCOPES
+        from app.services.oauth_service import DRIVE_SCOPES
         credentials = oauth_service.exchange_code_for_credentials(auth_code, redirect_uri, scopes=DRIVE_SCOPES)
         
         # 2. Get User Info

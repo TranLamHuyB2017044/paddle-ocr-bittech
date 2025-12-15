@@ -3,13 +3,13 @@ Front Extractor
 Trích xuất thông tin từ mặt trước CCCD
 """
 import re
-from cccd.config import (
+from app.config import (
     DEFAULT_NATIONALITY,
     ADDRESS_KEYWORDS,
     EXPIRY_LABEL_KEYWORDS,
     HOMETOWN_KEYWORDS
 )
-from cccd.utils.logger import Log
+from app.utils.logger import Log
 
 
 def clean_label(text):

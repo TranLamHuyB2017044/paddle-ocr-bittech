@@ -4,9 +4,9 @@ Làm sạch text sử dụng AI model
 """
 import time
 from datetime import datetime
-from cccd.models.model_loader import model_loader
-from cccd.config import DATE_KEYWORDS, FRONT_KEYWORDS
-from cccd.utils.logger import Log
+from app.models.model_loader import model_loader
+from app.config import DATE_KEYWORDS, FRONT_KEYWORDS
+from app.utils.logger import Log
 
 
 def clean_text_basic(line):

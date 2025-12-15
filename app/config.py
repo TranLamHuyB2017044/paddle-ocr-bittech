@@ -139,3 +139,12 @@ DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CH�
 
 # ========== GEMINI CONFIG ==========
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# ========== MONGODB CONFIG ==========
+MONGODB_URI = os.getenv("MONGODB_URI", "")
+
+# ========== JWT CONFIG ==========
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-key-change-me")
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 7

@@ -1,8 +1,8 @@
 
 from flask import Blueprint, request, jsonify
-from cccd.services.oauth_service import oauth_service, drivescope
-from cccd.services.token_service import token_service
-from cccd.utils.logger import Log
+from app.services.oauth_service import oauth_service, drivescope
+from app.services.token_service import token_service
+from app.utils.logger import Log
 from google.oauth2.credentials import Credentials
 
 sheet_bp = Blueprint('sheet_bp', __name__)

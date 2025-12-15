@@ -8,9 +8,9 @@ from typing import Optional
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
-from cccd.config import GEMINI_API_KEY
-from cccd.utils.logger import Log
-from cccd.models.schemas import IdCard, DriverLicense, Invoice, Document
+from app.config import GEMINI_API_KEY
+from app.utils.logger import Log
+from app.models.schemas import IdCard, DriverLicense, Invoice, Document
 
 # Map doc_type string to Pydantic model
 SCHEMA_MAP = {
