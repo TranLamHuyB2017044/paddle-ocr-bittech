@@ -13,6 +13,8 @@ class AuthService:
     def register(self, username, email, password, fullname=None, phone=None):
         if users_repo.find_by_username(username):
             raise ValueError("Username already exists")
+        if users_repo.find_by_email(email):
+            raise ValueError("Email already exists")
             
         # 2. Tạo user mới
         user = User(
@@ -69,28 +71,57 @@ class AuthService:
         }
 
     def reduce_refresh_token(self, old_refresh_token):
-        """Dùng refresh token cũ để lấy access token mới"""
-        # 1. Hash token gửi lên
-        token_hash = hash_token(old_refresh_token)
+        """
+        Refresh Token Rotation:
+        - Validate old token
+        - Revoke old token (session)
+        - Create NEW session with NEW refresh token
+        - Return both new Access & Refresh tokens
+        """
+        # 1. Hash token cũ
+        old_hash = hash_token(old_refresh_token)
         
-        # 2. Tìm session
-        session_data = auth_repo.find_by_hash(token_hash)
+        # 2. Tìm session cũ
+        session_data = auth_repo.find_by_hash(old_hash)
         if not session_data:
+            # Có thể log warning security ở đây (Token Reuse Detection)
             raise ValueError("Invalid refresh token")
             
         session = AuthSession(**session_data)
         
         # 3. Validate
         if session.revoked:
-            raise ValueError("Session revoked")
+             # Token Reuse Detected! Nên revoke toàn bộ session của user này để bảo mật
+             # auth_repo.revoke_all_user_sessions(session.user_id)
+             raise ValueError("Session revoked (Token reused?)")
+             
         if session.expires_at < datetime.now():
             raise ValueError("Refresh token expired")
             
-        # 4. Cấp Access Token mới
+        # 4. Revoke token Cũ (Rotation)
+        auth_repo.revoke_session(old_hash)
+        
+        # 5. Tạo Token Mới
         new_access_token = create_access_token(session.user_id)
+        new_refresh_token = create_refresh_token()
+        new_refresh_hash = hash_token(new_refresh_token)
+        
+        # Giữ nguyên thông tin thiết bị, chỉ update thời gian hết hạn mới
+        new_expires_at = datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        
+        new_session = AuthSession(
+            user_id=session.user_id,
+            refresh_token_hash=new_refresh_hash,
+            user_agent=session.user_agent,
+            device_id=session.device_id,
+            ip=session.ip,
+            expires_at=new_expires_at
+        )
+        auth_repo.create_session(new_session)
         
         return {
-            "access_token": new_access_token
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token
         }
 
     def logout(self, refresh_token):
