@@ -6,6 +6,7 @@ import time
 import os
 from datetime import datetime
 from flask import request, jsonify
+from app.utils.auth_middleware import require_auth
 
 from app.utils.file_utils import allowed_file, save_uploaded_files
 from app.utils.ocr_utils import ocr_extract, filter_useless_lines
@@ -187,6 +188,7 @@ def register_routes(app):
         return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
 
     @app.route("/api/traditional", methods=["POST"])
+    @require_auth
     def detect_traditional():
         request_start = time.time()
         p1 = None
@@ -301,6 +303,7 @@ def register_routes(app):
                     Log.error(f"[CLEANUP] ⚠️ Failed to delete {p2}: {e}")
 
     @app.route("/api/detect", methods=["POST"])
+    @require_auth
     def detect():
         request_start = time.time()
         p1 = None
