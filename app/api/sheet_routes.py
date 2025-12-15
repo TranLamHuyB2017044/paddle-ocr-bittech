@@ -67,7 +67,7 @@ def save_to_sheet():
 
         # 3. Perform Actions using User Credentials
         # Get/Create Sheet
-        sheet_info = oauth_service.get_or_create_sheet(creds, email)
+        sheet_info = oauth_service.get_or_create_sheet(creds, email, doc_type)
         spreadsheet_id = sheet_info['spreadsheet_id']
         sheet_url = sheet_info['sheet_url']
         
@@ -89,40 +89,3 @@ def save_to_sheet():
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
-@sheet_bp.route('/api/update-sheet', methods=['POST'])
-def update_sheet():
-    """
-    Test Route: Updates an existing sheet directly by ID.
-    Body:
-    {
-        "spreadsheet_id": "1A2B3C...",
-        "doc_type": "idCard",
-        "data": { ... }
-    }
-    """
-    try:
-        data = request.json
-        spreadsheet_id = data.get("spreadsheet_id")
-        ocr_data = data.get("data")
-        doc_type = data.get("doc_type", "document")
-        
-        if not spreadsheet_id or not ocr_data:
-            return jsonify({"statusCode": 400, "message": "Missing spreadsheet_id or data"}), 400
-
-        # Delegate to service: Append Data Directly
-        updated_cells = google_sheet_service.append_data(spreadsheet_id, ocr_data, doc_type)
-        
-        sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
-        
-        return jsonify({
-            "statusCode": 200,
-            "message": "Sheet updated successfully",
-            "data": {
-                "sheet_url": sheet_url,
-                "updated_cells": updated_cells
-            }
-        })
-
-    except Exception as e:
-        Log.error(f"[API] ❌ Failed to update sheet: {e}")
-        return jsonify({"statusCode": 500, "message": str(e)}), 500

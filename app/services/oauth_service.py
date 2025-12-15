@@ -30,7 +30,28 @@ drivescope = DRIVE_SCOPES
 
 class OAuthService:
     def __init__(self):
-        self.base_sheet_name = "Document_Data_Storage"
+        self.doc_config = {
+            "idCard": {
+                "sheet_name": "cccd_data",
+                "headers": ["ID Number", "Full Name", "Ngày sinh", "Gender", "Nationality", "Address", "Hometown", "Date of Issue", "Date of Expiry", "Place of Issue", "Created At"],
+                "fields": ["idNumber", "fullName", "dob", "gender", "nationality", "address", "hometown", "dateOfIssue", "expiryDate", "placeOfIssue"]
+            },
+            "invoice": {
+                "sheet_name": "hoadon_data",
+                "headers": ["Số HĐ", "Ký hiệu", "Ngày lập", "Người bán", "MST Bán", "Người mua", "MST Mua", "Nội dung", "Tổng tiền", "VAT", "Tổng thanh toán", "Created At"],
+                "fields": ["so_hoa_don", "ky_hieu_hoa_don", "ngay_lap_phieu", "ten_nguoi_ban", "ma_so_thue_nguoi_ban", "ten_nguoi_mua", "ma_so_thue_nguoi_mua", "noi_dung_hoa_don", "tong_tien_truoc_thue", "tong_tien_thue", "tong_so_tien"]
+            },
+            "driver_license": {
+                "sheet_name": "gplx_data",
+                "headers": ["Số GPLX", "Họ tên", "Ngày sinh", "Quốc tịch", "Hạng", "Ngày hết hạn", "Ngày cấp", "Ngày trúng tuyển", "Created At"],
+                "fields": ["idNumber", "fullName", "dob", "nationality", "class", "expiryDate", "dateOfIssue", "dateOfBegining"]
+            },
+            "default": {
+                "sheet_name": "ocr_data",
+                "headers": ["Raw Data", "Created At"],
+                "fields": [] 
+            }
+        }
 
     def exchange_code_for_credentials(self, auth_code, redirect_uri, scopes=None):
         
@@ -134,18 +155,21 @@ class OAuthService:
             Log.error(f"[OAuth] ❌ Failed to get user info from token: {e}")
             raise e
 
-    def get_or_create_sheet(self, credentials, user_email):
+    def get_or_create_sheet(self, credentials, user_email, doc_type="idCard"):
         """
-        Checks if a sheet named {self.base_sheet_name} exists in the user's Drive.
+        Checks if a sheet for the given doc_type exists in the user's Drive.
         If not, creates it.
         Returns the spreadsheet ID and URL.
         """
+        config = self.doc_config.get(doc_type, self.doc_config["default"])
+        sheet_name = config["sheet_name"]
+        
         try:
             service = build('drive', 'v3', credentials=credentials)
             sheets_service = build('sheets', 'v4', credentials=credentials)
 
             # 1. Search for existing file
-            query = f"name = '{self.base_sheet_name}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+            query = f"name = '{sheet_name}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
             results = service.files().list(q=query, spaces='drive', fields='files(id, name, webViewLink)').execute()
             files = results.get('files', [])
 
@@ -162,7 +186,7 @@ class OAuthService:
                 # 2. Create new file
                 sheet_metadata = {
                     'properties': {
-                        'title': self.base_sheet_name
+                        'title': sheet_name
                     }
                 }
                 spreadsheet = sheets_service.spreadsheets().create(body=sheet_metadata, fields='spreadsheetId,spreadsheetUrl').execute()
@@ -170,9 +194,9 @@ class OAuthService:
                 sheet_url = spreadsheet.get('spreadsheetUrl')
                 
                 # 3. Initialize Headers (Optional but recommended)
-                self._init_header(sheets_service, spreadsheet_id)
+                self._init_header(sheets_service, spreadsheet_id, config["headers"])
 
-                Log.info(f"[OAuth] 🆕 Created new sheet for {user_email}: {spreadsheet_id}")
+                Log.info(f"[OAuth] 🆕 Created new sheet for {user_email}: {spreadsheet_id} ({sheet_name})")
                 return {
                     "spreadsheet_id": spreadsheet_id,
                     "sheet_url": sheet_url,
@@ -183,8 +207,7 @@ class OAuthService:
             Log.error(f"[OAuth] ❌ Error handling sheet for {user_email}: {e}")
             raise e
 
-    def _init_header(self, sheets_service, spreadsheet_id):
-        headers = ["ID Number", "Full Name", "DOB", "Address", "Hometown", "Date of Issue", "Date of Expiry", "Place of Issue", "Created At"]
+    def _init_header(self, sheets_service, spreadsheet_id, headers):
         body = {
             "values": [headers]
         }
@@ -195,24 +218,60 @@ class OAuthService:
             body=body
         ).execute()
 
+        # Update styling for header (Bold)
+        requests = [
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": 0,
+                        "startRowIndex": 0,
+                        "endRowIndex": 1
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "textFormat": {
+                                "bold": True,
+                                "fontSize": 11
+                            },
+                             "backgroundColor": {
+                                "red": 0.9,
+                                "green": 0.9,
+                                "blue": 0.9
+                            }
+                        }
+                    },
+                    "fields": "userEnteredFormat(textFormat,backgroundColor)"
+                }
+            }
+        ]
+
+        sheets_service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": requests}
+        ).execute()
+
     def append_data(self, credentials, spreadsheet_id, data, doc_type):
         """Appends a row of data using user credentials."""
         try:
             service = build('sheets', 'v4', credentials=credentials)
             
-            # Normalize data based on doc_type (matching user schema)
-            row = [
-                data.get("idNumber", ""),
-                data.get("fullName", ""),
-                data.get("dob", ""),
-                data.get("gender", ""),
-                data.get("nationality", ""),
-                data.get("address", ""),
-                data.get("hometown", ""),
-                data.get("dateOfIssue", ""),
-                data.get("expiryDate", ""),
-                data.get("placeOfIssue", "")
-            ]
+            config = self.doc_config.get(doc_type, self.doc_config["default"])
+            fields = config["fields"]
+            
+            # Normalize data based on doc_type
+            row = []
+            if doc_type == "default":
+                 row.append(str(data))
+            else:
+                for field in fields:
+                    # Handle special alias if any, but our schema uses 'class' which matches key, 
+                    # except 'class' in python is reserved, pydantic alias is used. 
+                    # In dict it should be 'class' or whatever the simpler extractor output.
+                    # Let's assume the input `data` dict keys match our `fields`.
+                    # For 'class' (rank), make sure dictionary has 'class' or 'rank'.
+                    val = data.get(field, "")
+                    if val is None: val = ""
+                    row.append(str(val))
             
             # Add timestamp
             from datetime import datetime

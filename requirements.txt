@@ -21,3 +21,4 @@ google-auth
 gspread
 google-auth-httplib2
 google-auth-oauthlib
+pymongo[srv]==3.12
