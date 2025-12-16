@@ -241,10 +241,92 @@ def google_drive_connect():
             "message": "Drive connection successful",
             "data": {
                 "user": user_info,
-                "has_drive_permissions": credentials.has_scopes(DRIVE_SCOPES)
+                "has_drive_permissions": getattr(credentials, 'has_drive_permissions', False)
             }
         })
         
     except Exception as e:
         Log.error(f"[Auth] ❌ Drive Connect failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@auth_bp.route('/api/auth/google/drive-disconnect', methods=['POST'])
+@require_auth
+def google_drive_disconnect():
+    """
+    Disconnects user's Google Drive by:
+    1. Deleting stored tokens from database
+    2. Optionally revoking access on Google's side
+    
+    Requires: JWT Authentication (user must be logged in)
+    Optional Body: { "revoke": true } - to also revoke on Google
+    
+    Returns: 200 OK with disconnection status
+    """
+    try:
+        from app.repositories.users_repository import users_repo
+        import requests
+        
+        # Get authenticated user
+        user_id = g.user_id
+        user_data = users_repo.find_by_id(user_id)
+        
+        if not user_data:
+            return jsonify({"statusCode": 404, "message": "User not found"}), 404
+        
+        email = user_data.get('email')
+        if not email:
+            return jsonify({"statusCode": 400, "message": "User email not found"}), 400
+        
+        # Check if user wants to revoke on Google's side
+        data = request.json or {}
+        should_revoke = data.get('revoke', False)
+        
+        revoke_status = None
+        
+        # If revoke requested, try to revoke on Google
+        if should_revoke:
+            tokens = token_service.get_user_tokens(email)
+            if tokens and tokens.get('token'):
+                try:
+                    # Revoke token on Google's side
+                    revoke_url = f"https://oauth2.googleapis.com/revoke?token={tokens['token']}"
+                    response = requests.post(revoke_url)
+                    
+                    if response.status_code == 200:
+                        revoke_status = "success"
+                        Log.info(f"[Auth] ✅ Revoked Google token for {email}")
+                    else:
+                        revoke_status = "failed"
+                        Log.warning(f"[Auth] ⚠️ Failed to revoke Google token: {response.status_code}")
+                except Exception as e:
+                    revoke_status = "error"
+                    Log.error(f"[Auth] ❌ Error revoking token: {e}")
+        
+        # Delete tokens from our database
+        deleted = token_service.delete_user_tokens(email)
+        
+        if deleted:
+            return jsonify({
+                "statusCode": 200,
+                "message": "Drive disconnected successfully",
+                "data": {
+                    "email": email,
+                    "tokens_deleted": True,
+                    "revoke_status": revoke_status
+                }
+            }), 200
+        else:
+            return jsonify({
+                "statusCode": 404,
+                "message": "No Drive connection found for this user",
+                "data": {
+                    "email": email,
+                    "tokens_deleted": False,
+                    "revoke_status": revoke_status
+                }
+            }), 404
+            
+    except Exception as e:
+        Log.error(f"[Auth] ❌ Drive Disconnect failed: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500

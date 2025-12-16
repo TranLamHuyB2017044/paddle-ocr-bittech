@@ -10,23 +10,18 @@ from app.utils.logger import Log
 # Path to your client_secret.json (User must provide this)
 CLIENT_SECRETS_FILE = "client_secret.json"
 
-# Updates these scopes to allow driving file creation
-# Updates these scopes to allow driving file creation
+# Basic scopes for user info
 SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "openid"
 ]
 
-# Separate scope list for Drive Connect as requested
+# Extended scopes for Drive and Sheets access
 DRIVE_SCOPES = SCOPES + [
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile",
-    "openid",
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/spreadsheets',
 ]
-drivescope = DRIVE_SCOPES
 
 class OAuthService:
     def __init__(self):

@@ -43,4 +43,19 @@ class TokenService:
         db = self._load_db()
         return db.get(email)
 
+    def delete_user_tokens(self, email):
+        """
+        Deletes tokens for a specific user (disconnect Drive).
+        Returns True if tokens were found and deleted, False otherwise.
+        """
+        db = self._load_db()
+        if email in db:
+            del db[email]
+            self._save_db(db)
+            Log.info(f"[TokenService] 🗑️ Deleted tokens for user: {email}")
+            return True
+        else:
+            Log.warning(f"[TokenService] ⚠️ No tokens found for user: {email}")
+            return False
+
 token_service = TokenService()

@@ -1,6 +1,6 @@
 
 from flask import Blueprint, request, jsonify
-from app.services.oauth_service import oauth_service, drivescope
+from app.services.oauth_service import oauth_service, DRIVE_SCOPES
 from app.services.token_service import token_service
 from app.utils.logger import Log
 from google.oauth2.credentials import Credentials
