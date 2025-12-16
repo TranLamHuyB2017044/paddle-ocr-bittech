@@ -85,7 +85,7 @@ EXPOSE $PORT
 # - Preload app for faster response
 # Note: wsgi.py contains the Flask app instance
 CMD gunicorn \
-    --bind 0.0.0.0:$PORT \
+    --bind 0.0.0.0:${PORT:-8080} \
     --workers 1 \
     --threads 4 \
     --timeout 120 \
