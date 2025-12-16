@@ -1,23 +1,101 @@
-.git
-.gitignore
-.gitattributes
-venv/
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
-*.egg
+.Python
 *.egg-info/
 dist/
 build/
-*.md
-demo.html
-test_api.py
-start.py
-*.bat
+*.egg
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific
 uploads/*
 !uploads/.gitkeep
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database & Storage
+*.db
+*.sqlite
+*.sqlite3
+user_tokens.json
+user_sheets_map.json
+
+# Secrets & Config
+.env
+.env.local
+.env.*.local
+client_secret.json
+service_account.json
+*.pem
+*.key
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+test_api.py
+start.py
+
+# Documentation
+docs/_build/
+*.md
+!README.md
+demo.html
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+.dockerignore
+Dockerfile.dev
+docker-compose.yml
+docker-compose.*.yml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Scripts
+*.bat
+*.sh
+
+# Jupyter
+*.ipynb
+.ipynb_checkpoints/
+
+# Large files
+*.zip
+*.tar.gz
+*.rar
