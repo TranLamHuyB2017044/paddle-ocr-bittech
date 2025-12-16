@@ -83,6 +83,7 @@ EXPOSE $PORT
 # - 4 threads for concurrency
 # - Timeout increased for OCR processing
 # - Preload app for faster response
+# Note: wsgi.py contains the Flask app instance
 CMD gunicorn \
     --bind 0.0.0.0:$PORT \
     --workers 1 \
@@ -94,4 +95,4 @@ CMD gunicorn \
     --error-logfile - \
     --log-level info \
     --preload \
-    app:app
+    wsgi:app
