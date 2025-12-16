@@ -1,48 +1,46 @@
-# Multi-stage build for optimized production image
-# Stage 1: Builder - Install dependencies
+# ===============================
+# Stage 1: Builder
+# ===============================
 FROM python:3.12-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install build dependencies
+# Build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    wget \
+    gcc g++ wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Copy requirements first (cache layer)
 COPY requirements.txt .
 
-# Create virtual environment and install dependencies
+# Create virtual env
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install CPU-only PyTorch first (smaller size)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Install CPU-only PyTorch
+RUN pip install --no-cache-dir torch \
+    --index-url https://download.pytorch.org/whl/cpu
 
-# Install other dependencies
+# Install other deps
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Stage 2: Runtime - Minimal production image
+
+# ===============================
+# Stage 2: Runtime
+# ===============================
 FROM python:3.12-slim
 
-# Set working directory
 WORKDIR /app
 
-# Set environment variables
+# Runtime env vars
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=5000 \
+    PORT=8080 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
-    PATH="/opt/venv/bin:$PATH" \
-    # Paddle/OCR optimizations
-    FLAGS_eager_delete_tensor_gb=0.0 \
-    FLAGS_fraction_of_gpu_memory_to_use=0.1
+    PATH="/opt/venv/bin:$PATH"
 
-# Install only runtime dependencies (no build tools)
+# Runtime system libs (OCR / OpenCV / Paddle)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -50,42 +48,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libxrender1 \
-    # For healthcheck
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy virtual environment from builder
+# Copy venv from builder
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy application code
+# Copy application source
 COPY . .
 
-# Create necessary directories
+# Create dirs & non-root user
 RUN mkdir -p uploads logs && \
-    # Set permissions
-    chmod -R 755 /app && \
-    # Create non-root user for security
     useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
-# Switch to non-root user
 USER appuser
 
-# Health check
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:$PORT/ || exit 1
+    CMD curl -f http://localhost:${PORT}/ || exit 1
 
-# Expose port
-EXPOSE $PORT
+EXPOSE ${PORT}
 
-# Start command with optimized settings
-# - 1 worker to save memory (ML models are heavy)
-# - 4 threads for concurrency
-# - Timeout increased for OCR processing
-# - Preload app for faster response
-# Note: wsgi.py contains the Flask app instance
+# ===============================
+# START APP (QUAN TRỌNG)
+# ===============================
 CMD gunicorn \
-    --bind 0.0.0.0:${PORT:-8080} \
+    --bind 0.0.0.0:${PORT} \
     --workers 1 \
     --threads 4 \
     --timeout 120 \
@@ -95,4 +84,4 @@ CMD gunicorn \
     --error-logfile - \
     --log-level info \
     --preload \
-    wsgi:app
+    app:app
