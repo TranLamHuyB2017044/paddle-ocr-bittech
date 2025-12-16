@@ -79,9 +79,6 @@ CMD gunicorn \
     --threads 4 \
     --timeout 120 \
     --worker-class gthread \
-    --worker-tmp-dir /dev/shm \
-    --access-logfile - \
-    --error-logfile - \
-    --log-level info \
     --preload \
-    app:app
+    wsgi:app
+
