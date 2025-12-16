@@ -21,6 +21,34 @@ class UsersRepository(BaseRepository):
     def find_by_email(self, email):
         return self.find_one({"email": email})
 
+    def increment_extraction_stats(self, user_id: str, doc_type: str):
+        """
+        Increment extraction statistics for a user
+        - Increment total_extractions
+        - Update last_extraction_at
+        - Increment specific doc_type counter
+        """
+        from datetime import datetime
+        from bson import ObjectId
+        
+        try:
+            result = self.collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {
+                    "$inc": {
+                        "stats.total_extractions": 1,
+                        f"stats.doc_type_stats.{doc_type}": 1
+                    },
+                    "$set": {
+                        "stats.last_extraction_at": datetime.now()
+                    }
+                }
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            print(f"Error incrementing extraction stats: {e}")
+            return False
+
 
 # Global instance
 users_repo = UsersRepository()

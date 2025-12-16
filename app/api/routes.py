@@ -22,7 +22,7 @@ from app.utils.logger import Log
 ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document'}
 MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB limit
 
-def process_with_gemini(raw_front, raw_back, timer_info, doc_type):
+def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None):
     request_start = timer_info["start"]
     ocr_front_time = timer_info["ocr_front"]
     ocr_back_time = timer_info["ocr_back"]
@@ -36,6 +36,12 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type):
         metadata = extraction_result.get("metadata", {})
 
         total_time = time.time() - request_start
+
+        # Increment user stats after successful extraction
+        if user_id:
+            from app.repositories.users_repository import users_repo
+            users_repo.increment_extraction_stats(user_id, doc_type)
+            Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
 
         Log.info("[API] 🎉 Trả về kết quả Gemini")
         return jsonify({
@@ -65,7 +71,7 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type):
              Log.error("[API] ❌ Critical Error (not rate limit). Returning error to user.")
              raise e
 
-def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard"):
+def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None):
     request_start = timer_info["start"]
     ocr_front_time = timer_info["ocr_front"]
     ocr_back_time = timer_info["ocr_back"]
@@ -131,6 +137,12 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard"):
     # ------------------ TỔNG KẾT ----------------------
     total_time = time.time() - request_start
 
+    # Increment user stats after successful extraction
+    if user_id:
+        from app.repositories.users_repository import users_repo
+        users_repo.increment_extraction_stats(user_id, doc_type)
+        Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
+
     Log.info("[API] 🎉 Trả về kết quả kiểu truyền thống")
     return jsonify({
         "statusCode": 200,
@@ -186,6 +198,55 @@ def register_routes(app):
     @app.route("/", methods=["GET"])
     def health_check():
         return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
+
+    @app.route("/api/stats", methods=["GET"])
+    @require_auth
+    def get_user_stats():
+        """
+        Get extraction statistics for the authenticated user
+        Returns total extractions and breakdown by document type
+        """
+        try:
+            from flask import g
+            from app.repositories.users_repository import users_repo
+            
+            user_id = getattr(g, 'user_id', None)
+            if not user_id:
+                return jsonify({"statusCode": 401, "message": "User not authenticated"}), 401
+            
+            # Fetch user from database
+            user_data = users_repo.find_by_id(user_id)
+            if not user_data:
+                return jsonify({"statusCode": 404, "message": "User not found"}), 404
+            
+            # Extract stats
+            stats = user_data.get("stats", {})
+            total_extractions = stats.get("total_extractions", 0)
+            last_extraction_at = stats.get("last_extraction_at")
+            doc_type_stats = stats.get("doc_type_stats", {
+                "idCard": 0,
+                "driverLicense": 0,
+                "invoice": 0,
+                "document": 0
+            })
+            
+            return jsonify({
+                "statusCode": 200,
+                "message": "Success",
+                "data": {
+                    "total_extractions": total_extractions,
+                    "last_extraction_at": last_extraction_at.isoformat() if last_extraction_at else None,
+                    "doc_type_stats": doc_type_stats
+                }
+            }), 200
+            
+        except Exception as e:
+            Log.error(f"[API] Error fetching user stats: {e}")
+            return jsonify({
+                "statusCode": 500,
+                "message": "Internal server error",
+                "error": str(e)
+            }), 500
 
     @app.route("/api/traditional", methods=["POST"])
     @require_auth
@@ -269,10 +330,15 @@ def register_routes(app):
             }
 
             # FORCE TRADITIONAL FLOW
+            # Get user_id from Flask g context (set by @require_auth)
+            from flask import g
+            user_id = getattr(g, 'user_id', None)
+            
             return process_traditional(
                 raw_front, raw_back, 
                 timer_info, 
-                doc_type=doc_type, 
+                doc_type=doc_type,
+                user_id=user_id
             )
 
         except Exception as e:
@@ -399,9 +465,13 @@ def register_routes(app):
                  Log.warning(f"[API] ⚠️ Gemini Limit/Fallback active. Remaining: {gemini_limiter.get_remaining_time():.0f}s. Fallback traditional.")
                  should_skip_gemini = True
 
+            # Get user_id from Flask g context (set by @require_auth)
+            from flask import g
+            user_id = getattr(g, 'user_id', None)
+            
             if not should_skip_gemini:
                  # Pass doc_type to gemini
-                 response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type)
+                 response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id)
                  if response:
                      return response
             
@@ -415,6 +485,7 @@ def register_routes(app):
                 raw_front, raw_back, 
                 timer_info, 
                 doc_type=doc_type,
+                user_id=user_id
             )
 
         except Exception as e:

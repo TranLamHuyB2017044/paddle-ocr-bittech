@@ -5,9 +5,17 @@ from datetime import datetime
 # Helper to handle ObjectId as string
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
+class DocTypeStats(BaseModel):
+    """Statistics for each document type"""
+    idCard: int = 0
+    driverLicense: int = 0
+    invoice: int = 0
+    document: int = 0
+
 class UserStats(BaseModel):
     total_extractions: int = 0
     last_extraction_at: Optional[datetime] = None
+    doc_type_stats: DocTypeStats = Field(default_factory=DocTypeStats)
 
 class User(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
