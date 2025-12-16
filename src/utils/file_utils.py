@@ -4,7 +4,7 @@ Xử lý các thao tác liên quan đến file
 """
 import os
 from datetime import datetime
-from app.config import ALLOWED_EXTENSIONS, UPLOAD_FOLDER
+from src.config import ALLOWED_EXTENSIONS, UPLOAD_FOLDER
 
 
 def allowed_file(filename):

@@ -1,10 +1,10 @@
 
 from flask import Blueprint, request, jsonify, g
-from app.services.oauth_service import oauth_service
-from app.services.token_service import token_service
-from app.services.auth_service_mongo import auth_service
-from app.utils.auth_middleware import require_auth
-from app.utils.logger import Log
+from src.services.oauth_service import oauth_service
+from src.services.token_service import token_service
+from src.services.auth_service_mongo import auth_service
+from src.utils.auth_middleware import require_auth
+from src.utils.logger import Log
 
 auth_bp = Blueprint('auth_bp', __name__)
 
@@ -105,7 +105,7 @@ def logout():
 def get_me():
     """Example of a protected route"""
     try:
-        from app.repositories.users_repository import users_repo
+        from src.repositories.users_repository import users_repo
         user = users_repo.find_by_id(g.user_id)
         if not user:
              return jsonify({"statusCode": 404, "message": "User not found"}), 404
@@ -209,7 +209,7 @@ def google_drive_connect():
         Log.info(f"[Auth] 🔗 Drive Connect: Exchanging code with redirect_uri: {redirect_uri}")
         
         # 1. Exchange Code with Drive Scopes
-        from app.services.oauth_service import DRIVE_SCOPES
+        from src.services.oauth_service import DRIVE_SCOPES
         credentials = oauth_service.exchange_code_for_credentials(auth_code, redirect_uri, scopes=DRIVE_SCOPES)
         
         # 2. Get User Info
@@ -264,7 +264,7 @@ def google_drive_disconnect():
     Returns: 200 OK with disconnection status
     """
     try:
-        from app.repositories.users_repository import users_repo
+        from src.repositories.users_repository import users_repo
         import requests
         
         # Get authenticated user

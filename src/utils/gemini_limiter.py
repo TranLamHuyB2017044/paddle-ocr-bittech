@@ -2,7 +2,7 @@
 import time
 from datetime import datetime, timedelta
 
-from app.utils.logger import Log
+from src.utils.logger import Log
 
 class GeminiRateLimiter:
     _instance = None

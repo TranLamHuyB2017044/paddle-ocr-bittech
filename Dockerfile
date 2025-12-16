@@ -80,5 +80,4 @@ CMD gunicorn \
     --timeout 120 \
     --worker-class gthread \
     --preload \
-    wsgi:app
 

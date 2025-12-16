@@ -1,7 +1,7 @@
 
 import json
 import os
-from app.utils.logger import Log
+from src.utils.logger import Log
 
 class TokenService:
     def __init__(self, db_file="user_tokens.json"):

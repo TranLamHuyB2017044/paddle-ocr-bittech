@@ -1,8 +1,8 @@
 
 from flask import Blueprint, request, jsonify
-from app.services.oauth_service import oauth_service, DRIVE_SCOPES
-from app.services.token_service import token_service
-from app.utils.logger import Log
+from src.services.oauth_service import oauth_service, DRIVE_SCOPES
+from src.services.token_service import token_service
+from src.utils.logger import Log
 from google.oauth2.credentials import Credentials
 
 sheet_bp = Blueprint('sheet_bp', __name__)

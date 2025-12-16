@@ -4,8 +4,8 @@ Các hàm tiện ích cho OCR extraction
 """
 import time
 from datetime import datetime
-from app.models.model_loader import model_loader
-from app.utils.logger import Log
+from src.models.model_loader import model_loader
+from src.utils.logger import Log
 
 import cv2
 
@@ -75,7 +75,7 @@ def filter_useless_lines(lines):
     Returns:
         list: Danh sách các dòng text đã được lọc
     """
-    from app.config import USELESS_KEYWORDS
+    from src.config import USELESS_KEYWORDS
     from rapidfuzz import fuzz
     
     Log.info(f"[FILTER] 🗑️  Bắt đầu lọc text không cần thiết. Số dòng: {len(lines)}")

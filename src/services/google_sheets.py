@@ -4,7 +4,7 @@ import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from app.utils.logger import Log
+from src.utils.logger import Log
 
 # Scopes required
 SCOPES = [

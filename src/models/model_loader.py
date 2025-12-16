@@ -5,8 +5,8 @@ Load và quản lý OCR và AI models
 from paddleocr import PaddleOCR
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from app.config import MODEL_PATH, OCR_CONFIG
-from app.utils.logger import Log
+from src.config import MODEL_PATH, OCR_CONFIG
+from src.utils.logger import Log
 
 
 class ModelLoader:

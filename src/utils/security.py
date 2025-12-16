@@ -3,7 +3,7 @@ import jwt
 import hashlib
 import secrets
 from datetime import datetime, timedelta
-from app.config import JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from src.config import JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 def hash_password(password: str) -> str:
     """Hash mật khẩu bằng bcrypt"""

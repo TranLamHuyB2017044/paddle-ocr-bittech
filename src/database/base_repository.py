@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from pymongo.results import InsertOneResult, UpdateResult, DeleteResult
-from app.database.mongo import client
+from src.database.mongo import client
 import os
 
 # Get DB Name from Env or Default

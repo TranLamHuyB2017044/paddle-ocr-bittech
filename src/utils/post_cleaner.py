@@ -1,5 +1,5 @@
 import re
-from app.utils.logger import Log
+from src.utils.logger import Log
 
 class PostCleaner:
     """

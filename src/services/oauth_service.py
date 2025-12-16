@@ -5,7 +5,7 @@ import google.auth.transport.requests
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from app.utils.logger import Log
+from src.utils.logger import Log
 
 # Path to your client_secret.json (User must provide this)
 CLIENT_SECRETS_FILE = "client_secret.json"

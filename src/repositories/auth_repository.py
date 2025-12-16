@@ -1,5 +1,5 @@
-from app.database.base_repository import BaseRepository
-from app.models.auth_session import AuthSession
+from src.database.base_repository import BaseRepository
+from src.models.auth_session import AuthSession
 from typing import Optional
 
 class AuthRepository(BaseRepository):

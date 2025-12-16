@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta
-from app.models.user import User
-from app.models.auth_session import AuthSession
-from app.repositories.users_repository import users_repo
-from app.repositories.auth_repository import auth_repo
-from app.utils.security import (
+from src.models.user import User
+from src.models.auth_session import AuthSession
+from src.repositories.users_repository import users_repo
+from src.repositories.auth_repository import auth_repo
+from src.utils.security import (
     hash_password, verify_password, 
     create_access_token, create_refresh_token, hash_token
 )
-from app.config import REFRESH_TOKEN_EXPIRE_DAYS
+from src.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 class AuthService:
     def register(self, username, email, password, fullname=None, phone=None):

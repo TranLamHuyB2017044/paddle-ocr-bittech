@@ -6,16 +6,16 @@ import time
 import os
 from datetime import datetime
 from flask import request, jsonify
-from app.utils.auth_middleware import require_auth
+from src.utils.auth_middleware import require_auth
 
-from app.utils.file_utils import allowed_file, save_uploaded_files
-from app.utils.ocr_utils import ocr_extract, filter_useless_lines
-from app.utils.text_cleaner import clean_text_lines
-from app.extractors.gemini_extractor import gemini_extractor
-from app.utils.smart_config import smart_extract
-from app.utils.post_cleaner import PostCleaner
-from app.utils.gemini_limiter import gemini_limiter
-from app.utils.logger import Log
+from src.utils.file_utils import allowed_file, save_uploaded_files
+from src.utils.ocr_utils import ocr_extract, filter_useless_lines
+from src.utils.text_cleaner import clean_text_lines
+from src.extractors.gemini_extractor import gemini_extractor
+from src.utils.smart_config import smart_extract
+from src.utils.post_cleaner import PostCleaner
+from src.utils.gemini_limiter import gemini_limiter
+from src.utils.logger import Log
 
 
 
@@ -39,7 +39,7 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None)
 
         # Increment user stats after successful extraction
         if user_id:
-            from app.repositories.users_repository import users_repo
+            from src.repositories.users_repository import users_repo
             users_repo.increment_extraction_stats(user_id, doc_type)
             Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
 
@@ -139,7 +139,7 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
 
     # Increment user stats after successful extraction
     if user_id:
-        from app.repositories.users_repository import users_repo
+        from src.repositories.users_repository import users_repo
         users_repo.increment_extraction_stats(user_id, doc_type)
         Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
 
@@ -208,7 +208,7 @@ def register_routes(app):
         """
         try:
             from flask import g
-            from app.repositories.users_repository import users_repo
+            from src.repositories.users_repository import users_repo
             
             user_id = getattr(g, 'user_id', None)
             if not user_id:

@@ -1,6 +1,6 @@
-from app.utils.smart_extractor import SmartExtractor
-from app.models.schemas import IdCard, DriverLicense, Invoice, Document
-from app.config import COMMON_COUNTRIES_REGEX
+from src.utils.smart_extractor import SmartExtractor
+from src.models.schemas import IdCard, DriverLicense, Invoice, Document
+from src.config import COMMON_COUNTRIES_REGEX
 
 # ==================== ID CARD (CCCD) CONFIG ====================
 CCCD_CONFIG = {
