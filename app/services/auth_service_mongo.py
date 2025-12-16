@@ -42,11 +42,45 @@ class AuthService:
         if not user.password or not verify_password(password, user.password):
              raise ValueError("Invalid username or password")
 
-        # 3. Tạo Tokens
+        # 3. Create Session & Tokens
+        return self._create_login_response(user, user_agent, ip, device_id)
+
+    def login_with_google(self, email, fullname, user_agent, ip, device_id=None):
+        """
+        Logins or registers a user via Google OAuth.
+        """
+        # 1. Tìm user theo email
+        user_data = users_repo.find_by_email(email)
+        
+        if not user_data:
+            # Create new user
+            user = User(
+                email=email,
+                fullname=fullname,
+                auth_provider="google",
+                active=True
+            )
+            # username is optional, maybe leave it empty or generate one?
+            
+            user_id = users_repo.create_user(user)
+            # Populate ID back to user object for session creation
+            user.id = user_id 
+        else:
+            user = User(**user_data)
+            # Optional: Update fullname if missing?
+            if not user.fullname and fullname:
+                users_repo.update(str(user.id), {"fullname": fullname})
+                user.fullname = fullname
+
+        # 2. Return Tokens
+        return self._create_login_response(user, user_agent, ip, device_id)
+
+    def _create_login_response(self, user, user_agent, ip, device_id):
+        # 1. Tạo Tokens
         access_token = create_access_token(str(user.id))
         refresh_token = create_refresh_token()
         
-        # 4. Lưu Session
+        # 2. Lưu Session
         refresh_hash = hash_token(refresh_token)
         expires_at = datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
         

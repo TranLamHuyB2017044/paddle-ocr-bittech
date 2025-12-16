@@ -21,7 +21,6 @@ class UsersRepository(BaseRepository):
     def find_by_email(self, email):
         return self.find_one({"email": email})
 
-    def find_by_id(self, id):
-        return self.find_one({"_id": ObjectId(id)})
+
 # Global instance
 users_repo = UsersRepository()

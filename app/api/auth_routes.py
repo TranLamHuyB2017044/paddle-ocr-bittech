@@ -147,17 +147,31 @@ def google_login():
         # 2. Get User Info
         user_info = oauth_service.get_user_info(credentials)
         email = user_info.get('email')
+        fullname = user_info.get('name')
 
+        # 3. Login/Register in App DB
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        device_id = request.headers.get('X-Device-ID') 
+        ip = request.remote_addr
+        
+        auth_result = auth_service.login_with_google(
+            email=email,
+            fullname=fullname,
+            user_agent=user_agent,
+            ip=ip,
+            device_id=device_id
+        )
 
         # 4. Return Data
-        # Note: You might want to strip sensitive token info or use a session cookie in a real app,
-        # but for this specific request, we return the data to the FE to handle.
         return jsonify({
             "statusCode": 200,
             "message": "Login successful",
             "data": {
-                "user": user_info,
-                "credentials": {
+                "user": auth_result['user'],
+                "access_token": auth_result['access_token'],
+                "refresh_token": auth_result['refresh_token'],
+                "google_info": user_info,
+                "google_credentials": {
                     "token": credentials.token,
                     "refresh_token": getattr(credentials, 'refresh_token', None),
                     "token_uri": getattr(credentials, 'token_uri', None),
@@ -227,7 +241,7 @@ def google_drive_connect():
             "message": "Drive connection successful",
             "data": {
                 "user": user_info,
-                "has_drive_permissions": True
+                "has_drive_permissions": credentials.has_scopes(DRIVE_SCOPES)
             }
         })
         
