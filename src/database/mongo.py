@@ -7,7 +7,9 @@ import certifi
 uri = MONGODB_URI
 
 # Create a new client and connect to the server
-client = MongoClient(uri, server_api=ServerApi('1'), tlsCAFile=certifi.where())
+client = MongoClient(uri, server_api=ServerApi('1'), tlsCAFile=certifi.where(), tls=True,
+    tlsAllowInvalidCertificates=False,
+    serverSelectionTimeoutMS=30000)
 
 # Send a ping to confirm a successful connection
 try:

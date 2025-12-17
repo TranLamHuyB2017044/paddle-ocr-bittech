@@ -42,6 +42,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Runtime system libs (OCR / OpenCV / Paddle)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
