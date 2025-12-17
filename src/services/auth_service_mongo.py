@@ -125,7 +125,7 @@ class AuthService:
         
         # Check if user has a key AND has plain_secret stored
         if user.api_key and getattr(user.api_key, 'plain_secret', None):
-            # Reconstruct full key
+            # REUSE EXISTING KEY (Persistent API Key)
             full_key_response = f"{user.api_key.access_key}.{user.api_key.plain_secret}"
         else:
             # Generate NEW key (if missing OR if old key didn't have plain_secret)

@@ -137,7 +137,8 @@ class GeminiExtractor:
 
         except Exception as e:
             Log.error(f"[GEMINI] ❌ Generation Error: {e}")
-            return {"data": {}, "metadata": {}}
+            # Raise exception to allow fallback in caller
+            raise e
 
 # Global instance
 gemini_extractor = GeminiExtractor()

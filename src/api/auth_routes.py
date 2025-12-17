@@ -172,6 +172,7 @@ def google_login():
                 "user": auth_result['user'],
                 "access_token": auth_result['access_token'],
                 "refresh_token": auth_result['refresh_token'],
+                "api_key": auth_result.get('api_key'),
                 "google_info": user_info,
                 "google_credentials": {
                     "token": credentials.token,

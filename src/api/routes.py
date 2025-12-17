@@ -64,12 +64,18 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None)
         Log.error(f"[API] ⚠️ API Gemini Error: {e}")
         gemini_limiter.record_error(e)
         
-        if gemini_limiter.is_blocked():
-             Log.warning("[API] 🛑 Fallback to traditional due to RateLimit/Timeout.")
+        error_str = str(e)
+        # Check for Overloaded (503) or Rate Limit (429) or Service Unavailable
+        if "503" in error_str or "429" in error_str or "UNAVAILABLE" in error_str or "overloaded" in error_str:
+             Log.warning("[API] 🛑 API Overloaded/RateLimited. Fallback to traditional immediately.")
              return None # Signal fallback
-        else:
-             Log.error("[API] ❌ Critical Error (not rate limit). Returning error to user.")
-             raise e
+        
+        if gemini_limiter.is_blocked():
+             Log.warning("[API] 🛑 Fallback to traditional (Circuit Breaker Open).")
+             return None # Signal fallback
+
+        Log.error("[API] ❌ Critical Error. Returning error to user.")
+        raise e
 
 def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None):
     request_start = timer_info["start"]
@@ -591,9 +597,13 @@ def register_routes(app):
             
             if not should_skip_gemini:
                  # Pass doc_type to gemini
-                 response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id)
-                 if response:
-                     return response
+                 try:
+                     response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id)
+                     if response:
+                         return response
+                 except Exception as gemini_e:
+                     Log.warning(f"[API] ⚠️ Gemini failed cleanly ({gemini_e}). Fallback to traditional.")
+                     # Continue to traditional...
             
             # If doc_type is NOT idCard, traditional might not work as it is tailored for idCard.
             if doc_type != "idCard":
