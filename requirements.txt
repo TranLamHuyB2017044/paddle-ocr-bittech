@@ -21,7 +21,7 @@ google-auth
 gspread
 google-auth-httplib2
 google-auth-oauthlib
-pymongo[srv]==3.12.3
+pymongo[srv]>=4.0
 bcrypt 
 pyjwt 
 email-validator == 2.3.0
