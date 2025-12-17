@@ -94,9 +94,32 @@ class AuthService:
         )
         auth_repo.create_session(session)
         
+        # 3. Handle API Key (Generate if missing)
+        api_key_response = None
+        if not user.api_key:
+            from src.utils.security import generate_user_api_key
+            full_key, access_key, hashed_secret = generate_user_api_key()
+            
+            # Save to DB
+            users_repo.update(str(user.id), {
+                "api_key": {
+                    "access_key": access_key,
+                    "hashed_secret": hashed_secret,
+                    "created_at": datetime.now()
+                }
+            })
+            api_key_response = full_key # Show FULL key on creation
+        else:
+             # If key exists, we CANNOT show the full key (secret is hashed).
+             # We return the Access Key part so user identify it. 
+             # Or we return None?
+             # Let's return the access_key with a hint
+             api_key_response = f"{user.api_key.access_key}.********" # Masked
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
+            "api_key": api_key_response, # New Field
             "user": {
                 "id": str(user.id),
                 "email": user.email,

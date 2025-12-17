@@ -17,6 +17,11 @@ class UserStats(BaseModel):
     last_extraction_at: Optional[datetime] = None
     doc_type_stats: DocTypeStats = Field(default_factory=DocTypeStats)
 
+class UserApiKey(BaseModel):
+    access_key: str
+    hashed_secret: str
+    created_at: datetime = Field(default_factory=datetime.now)
+
 class User(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     username: Optional[str] = Field(default=None)
@@ -25,6 +30,8 @@ class User(BaseModel):
     phone: Optional[str] = Field(default=None)
     auth_provider: Literal["local", "google"] = Field(default="local")
     password: Optional[str] = Field(default=None, description="Hashed password, null if auth_provider is google")
+    
+    api_key: Optional[UserApiKey] = Field(default=None, description="API Key Details")
     
     stats: UserStats = Field(default_factory=UserStats)
     

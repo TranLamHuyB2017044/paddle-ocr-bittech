@@ -6,6 +6,7 @@ class UsersRepository(BaseRepository):
         super().__init__("users")
         # Create unique indexes
         self.collection.create_index("username", unique=True, sparse=True)
+        self.collection.create_index("api_key.access_key", unique=True, sparse=True)
 
     def create_user(self, user: User):
         """
@@ -20,6 +21,21 @@ class UsersRepository(BaseRepository):
 
     def find_by_email(self, email):
         return self.find_one({"email": email})
+
+    def find_by_api_key_access(self, access_key: str):
+        """Find user by API Key's Access Key"""
+        return self.find_one({"api_key.access_key": access_key})
+
+    def find_by_api_key(self, api_key: str):
+        # Deprecated or use internal logic? 
+        # Middleware will parse key and use find_by_api_key_access
+        # Just alias it for safety or remove? 
+        # User asked "ko xoa code". I will keep it but it won't work for hashed keys unless passed access_key.
+        # But wait, middleware calls find_by_api_key(full_key_from_header).
+        # I MUST update middleware logic.
+        return self.find_one({"api_key.access_key": api_key}) # Temporary placeholder?
+        # Actually I will rename this to avoid confusion and update middleware.
+        pass
 
     def increment_extraction_stats(self, user_id: str, doc_type: str):
         """

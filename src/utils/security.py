@@ -50,3 +50,19 @@ def decode_access_token(token: str):
         return None # Hết hạn
     except jwt.InvalidTokenError:
         return None # Token sai
+
+def generate_user_api_key():
+    """
+    Generate a new API Key with structure: ak_{access_key}.{secret_key}
+    Returns:
+        full_key: String to give to user (ak_ACCESS.SECRET)
+        access_key: Public ID to store/index
+        hashed_secret: Hashed secret to store
+    """
+    access_key = "ak_" + secrets.token_hex(8) # 16 chars + prefix
+    secret_key = secrets.token_hex(32) # 64 chars
+    
+    full_key = f"{access_key}.{secret_key}"
+    hashed_secret = hash_token(secret_key) # Use existing SHA256 hash
+    
+    return full_key, access_key, hashed_secret
