@@ -148,6 +148,7 @@ def google_login():
         user_info = oauth_service.get_user_info(credentials)
         email = user_info.get('email')
         fullname = user_info.get('name')
+        avatar_url = user_info.get('picture')
 
         # 3. Login/Register in App DB
         user_agent = request.headers.get('User-Agent', 'Unknown')
@@ -159,6 +160,7 @@ def google_login():
             fullname=fullname,
             user_agent=user_agent,
             ip=ip,
+            avatar_url=avatar_url,
             device_id=device_id
         )
 

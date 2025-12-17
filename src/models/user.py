@@ -20,6 +20,7 @@ class UserStats(BaseModel):
 class UserApiKey(BaseModel):
     access_key: str
     hashed_secret: str
+    plain_secret: Optional[str] = Field(default=None, description="TEMPORARY: Plaintext secret for FE convenience")
     created_at: datetime = Field(default_factory=datetime.now)
 
 class User(BaseModel):
@@ -27,6 +28,7 @@ class User(BaseModel):
     username: Optional[str] = Field(default=None)
     fullname: Optional[str] = Field(default=None)
     email: EmailStr
+    avatar_url: Optional[str] = Field(default=None)
     phone: Optional[str] = Field(default=None)
     auth_provider: Literal["local", "google"] = Field(default="local")
     password: Optional[str] = Field(default=None, description="Hashed password, null if auth_provider is google")

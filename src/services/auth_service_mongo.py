@@ -45,7 +45,7 @@ class AuthService:
         # 3. Create Session & Tokens
         return self._create_login_response(user, user_agent, ip, device_id)
 
-    def login_with_google(self, email, fullname, user_agent, ip, device_id=None):
+    def login_with_google(self, email, fullname, user_agent, ip, avatar_url=None, device_id=None):
         """
         Logins or registers a user via Google OAuth.
         """
@@ -54,11 +54,25 @@ class AuthService:
         
         if not user_data:
             # Create new user
+            from src.utils.security import generate_user_api_key
+            from src.models.user import UserApiKey
+            
+            full_key, access_key, hashed_secret, plain_secret = generate_user_api_key()
+            
+            api_key_model = UserApiKey(
+                access_key=access_key,
+                hashed_secret=hashed_secret,
+                plain_secret=plain_secret,
+                created_at=datetime.now()
+            )
+
             user = User(
                 email=email,
                 fullname=fullname,
+                avatar_url=avatar_url,
                 auth_provider="google",
-                active=True
+                active=True,
+                api_key=api_key_model
             )
             # username is optional, maybe leave it empty or generate one?
             
@@ -67,10 +81,19 @@ class AuthService:
             user.id = user_id 
         else:
             user = User(**user_data)
-            # Optional: Update fullname if missing?
+            
+            # Optional: Update fullname/avatar if provided
+            update_data = {}
             if not user.fullname and fullname:
-                users_repo.update(str(user.id), {"fullname": fullname})
+                update_data["fullname"] = fullname
                 user.fullname = fullname
+            
+            if avatar_url and user.avatar_url != avatar_url:
+                update_data["avatar_url"] = avatar_url
+                user.avatar_url = avatar_url
+            
+            if update_data:
+                 users_repo.update(str(user.id), update_data)
 
         # 2. Return Tokens
         return self._create_login_response(user, user_agent, ip, device_id)
@@ -94,36 +117,40 @@ class AuthService:
         )
         auth_repo.create_session(session)
         
-        # 3. Handle API Key (Generate if missing)
-        api_key_response = None
-        if not user.api_key:
-            from src.utils.security import generate_user_api_key
-            full_key, access_key, hashed_secret = generate_user_api_key()
+        # 3. Handle API Key
+        # STRATEGY: Store plain secret in DB (Unsafe but requested) and always return full key.
+        from src.utils.security import generate_user_api_key
+        
+        full_key_response = None
+        
+        # Check if user has a key AND has plain_secret stored
+        if user.api_key and getattr(user.api_key, 'plain_secret', None):
+            # Reconstruct full key
+            full_key_response = f"{user.api_key.access_key}.{user.api_key.plain_secret}"
+        else:
+            # Generate NEW key (if missing OR if old key didn't have plain_secret)
+            full_key, access_key, hashed_secret, plain_secret = generate_user_api_key()
             
-            # Save to DB
+            # Save to DB with plain_secret
             users_repo.update(str(user.id), {
                 "api_key": {
                     "access_key": access_key,
                     "hashed_secret": hashed_secret,
+                    "plain_secret": plain_secret, # Saving Plaintext!
                     "created_at": datetime.now()
                 }
             })
-            api_key_response = full_key # Show FULL key on creation
-        else:
-             # If key exists, we CANNOT show the full key (secret is hashed).
-             # We return the Access Key part so user identify it. 
-             # Or we return None?
-             # Let's return the access_key with a hint
-             api_key_response = f"{user.api_key.access_key}.********" # Masked
+            full_key_response = full_key
 
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "api_key": api_key_response, # New Field
+            "api_key": full_key_response, # Always Full Key
             "user": {
                 "id": str(user.id),
                 "email": user.email,
-                "fullname": user.fullname
+                "fullname": user.fullname,
+                "avatar_url": getattr(user, "avatar_url", None)
             }
         }
 

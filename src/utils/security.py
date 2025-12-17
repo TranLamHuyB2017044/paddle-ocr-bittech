@@ -65,4 +65,5 @@ def generate_user_api_key():
     full_key = f"{access_key}.{secret_key}"
     hashed_secret = hash_token(secret_key) # Use existing SHA256 hash
     
-    return full_key, access_key, hashed_secret
+    # Returning 4 values: full_key, access_key, hashed_secret, plain_secret
+    return full_key, access_key, hashed_secret, secret_key
