@@ -51,3 +51,29 @@ def save_uploaded_files(front_file=None, back_file=None):
         back_file.save(path_back)
     
     return path_front, path_back
+
+
+def save_uploaded_file_list(files):
+    """
+    Lưu danh sách file upload
+    
+    Args:
+        files: List các file objects
+        
+    Returns:
+        list: Danh sách đường dẫn file đã lưu
+    """
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    saved_paths = []
+    
+    for idx, file in enumerate(files):
+        if file and allowed_file(file.filename):
+            # Format: TIMESTAMP_index_filename
+            filename = f"{timestamp}_{idx}_{file.filename}"
+            path = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(path)
+            saved_paths.append(path)
+            
+    return saved_paths
