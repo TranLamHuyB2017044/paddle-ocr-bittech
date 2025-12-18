@@ -111,7 +111,7 @@ DRIVER_LICENSE_CONFIG = {
     "expiryDate": {
         "keywords": ["có giá trị đến", "expires"],
         "keywords_threshold": 0.8,
-        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "value_regex": r"(\d{2}[-/]\d{2}[-/]\d{4}|không thời hạn|unlimited)",
         "extraction_mode": "auto"
     },
     "dateOfIssue": {

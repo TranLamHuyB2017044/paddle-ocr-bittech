@@ -8,7 +8,7 @@ Trích xuất các thông tin sau từ Giấy phép lái xe:
 - dob: Ngày sinh
 - nationality: Quốc tịch
 - class: Hạng bằng (A1, A2, B1, B2...)
-- expiryDate: Ngày hết hạn
+- expiryDate: Ngày hết hạn (DD-MM-YYYY) hoặc đa số là Không thời hạn
 - dateOfIssue: Ngày cấp
 - dateOfBegining: Ngày trúng tuyển
 
