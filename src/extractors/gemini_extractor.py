@@ -91,7 +91,7 @@ class GeminiExtractor:
                  config.thinking_config = types.ThinkingConfig(thinking_budget=1024) 
 
             response = self.client.models.generate_content(
-                model="gemini-3-flash-preview", 
+                model="gemini-3-flash", 
                 contents=prompt,
                 config=config,
             )
@@ -106,13 +106,21 @@ class GeminiExtractor:
             if not data and response.text:
                 try:
                     import json
-                    # Remove markdown code blocks if present
-                    clean_text = response.text.strip()
-                    if clean_text.startswith("```json"):
-                        clean_text = clean_text[7:]
-                    if clean_text.endswith("```"):
-                        clean_text = clean_text[:-3]
-                    data = json.loads(clean_text)
+                    import re
+                    # Robust extraction of JSON block
+                    # Find content between first { and last }
+                    match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                    if match:
+                        clean_text = match.group(0)
+                        data = json.loads(clean_text)
+                    else:
+                        # Fallback for simple strip if regex fails (unlikely for JSON object)
+                        clean_text = response.text.strip()
+                        if clean_text.startswith("```json"):
+                            clean_text = clean_text[7:]
+                        if clean_text.endswith("```"):
+                            clean_text = clean_text[:-3]
+                        data = json.loads(clean_text)
                 except Exception as e:
                     Log.warning(f"[GEMINI] ⚠️ Check parsed failed, text clean failed: {e}")
 

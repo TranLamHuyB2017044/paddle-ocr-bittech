@@ -24,104 +24,37 @@ class DriverLicense(BaseModel):
     dateOfBegining: Optional[str] = Field(description="Ngày trúng tuyển")
 
 
-class InvoiceItem(BaseModel):
-    ten_hang_hoa: Optional[str] = Field(description="Tên hàng hóa / dịch vụ")
-    ma_hang: Optional[str] = Field(description="Mã hàng (nếu có)")
-    don_vi_tinh: Optional[str] = Field(description="Đơn vị tính: cái, kg, giờ...")
-    so_luong: Optional[float] = Field(description="Số lượng")
-    don_gia: Optional[float] = Field(description="Đơn giá chưa thuế")
-    thanh_tien: Optional[float] = Field(description="Thành tiền trước thuế")
-    thue_suat: Optional[float] = Field(description="Thuế suất VAT (%)")
-    tien_thue: Optional[float] = Field(description="Tiền thuế VAT")
-    chiet_khau: Optional[float] = Field(description="Chiết khấu dòng hàng (nếu có)")
-
-
 class Invoice(BaseModel):
     # =========================
-    # 1. Nhận diện hóa đơn
+    # Header Information
     # =========================
+    ten_hoa_don: Optional[str] = Field(description="Tên hóa đơn (Ví dụ: Hóa đơn GTGT, Phiếu thu...)")
     so_hoa_don: Optional[str] = Field(description="Số hóa đơn")
-    ky_hieu_hoa_don: Optional[str] = Field(description="Ký hiệu hóa đơn")
-    loai_hoa_don: Optional[str] = Field(
-        description="Loại hóa đơn: gtgt | ban_hang | le | dich_vu | khac"
-    )
-
-    ngay_lap_phieu: Optional[str] = Field(
-        description="Ngày lập hóa đơn (YYYY-MM-DD)"
-    )
-    gio_lap_phieu: Optional[str] = Field(
-        description="Giờ lập hóa đơn (HH:MM:SS)"
-    )
-
+    ngay_lap_hoa_don: Optional[str] = Field(description="Ngày lập hóa đơn")
+    
     # =========================
-    # 2. Bên bán (Seller)
+    # Customer / Buyer
     # =========================
-    ten_nguoi_ban: Optional[str] = Field(description="Tên người bán / đơn vị bán")
-    ma_so_thue_nguoi_ban: Optional[str] = Field(description="MST người bán")
+    ten_khach_hang: Optional[str] = Field(description="Tên khách hàng / người mua")
+    dia_chi_khach_hang: Optional[str] = Field(description="Địa chỉ khách hàng")
+    
+    # =========================
+    # Seller (Optional but good to have)
+    # =========================
+    ten_nguoi_ban: Optional[str] = Field(description="Tên người bán / cửa hàng")
     dia_chi_nguoi_ban: Optional[str] = Field(description="Địa chỉ người bán")
-    dien_thoai_nguoi_ban: Optional[str] = Field(description="SĐT người bán")
-    so_tai_khoan: Optional[str] = Field(description="Số tài khoản ngân hàng")
-    ten_ngan_hang: Optional[str] = Field(description="Tên ngân hàng")
 
     # =========================
-    # 3. Bên mua (Buyer)
+    # Financials
     # =========================
-    ten_nguoi_mua: Optional[str] = Field(description="Tên người mua")
-    ma_so_thue_nguoi_mua: Optional[str] = Field(description="MST người mua")
-    dia_chi_nguoi_mua: Optional[str] = Field(description="Địa chỉ người mua")
-    dien_thoai_nguoi_mua: Optional[str] = Field(description="SĐT người mua")
-
+    tong_tien: Optional[str] = Field(description="Tổng tiền thanh toán / Thành tiền")
+    
     # =========================
-    # 4. Nội dung hóa đơn
+    # Line Items (Simplified)
     # =========================
-    noi_dung_hoa_don: Optional[str] = Field(
-        description="Nội dung hóa đơn / mô tả tổng quát"
-    )
-
-    danh_sach_hang_hoa: Optional[List[InvoiceItem]] = Field(
-        description="Danh sách hàng hóa / dịch vụ"
-    )
-
-    # =========================
-    # 5. Tổng tiền & thuế
-    # =========================
-    tong_tien_truoc_thue: Optional[float] = Field(
-        description="Tổng tiền trước thuế"
-    )
-    tong_tien_thue: Optional[float] = Field(
-        description="Tổng tiền thuế VAT"
-    )
-    tong_chiet_khau: Optional[float] = Field(
-        description="Tổng chiết khấu (nếu có)"
-    )
-    tong_so_tien: Optional[float] = Field(
-        description="Tổng số tiền thanh toán (sau thuế)"
-    )
-    tong_tien_bang_chu: Optional[str] = Field(
-        description="Tổng tiền bằng chữ"
-    )
-
-    # =========================
-    # 6. Thanh toán
-    # =========================
-    hinh_thuc_thanh_toan: Optional[str] = Field(
-        description="Hình thức thanh toán: tiền mặt | chuyển khoản | ví"
-    )
-    trang_thai_thanh_toan: Optional[str] = Field(
-        description="paid | unpaid | partial"
-    )
-
-    # =========================
-    # 7. Thông tin bổ sung
-    # =========================
-    ghi_chu: Optional[str] = Field(description="Ghi chú")
-    tham_chieu_hop_dong: Optional[str] = Field(description="Mã hợp đồng (nếu có)")
-
-    # =========================
-    # 8. Phục vụ OCR / AI
-    # =========================
-    do_tin_cay: Optional[float] = Field(
-        description="Confidence score tổng (0–1)"
+    danh_sach_san_pham: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Danh sách sản phẩm/dịch vụ. Mỗi phần tử là một chuỗi text mô tả dòng hàng (Tên + SL + Giá)"
     )
 
 
