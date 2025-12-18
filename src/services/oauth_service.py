@@ -33,8 +33,8 @@ class OAuthService:
             },
             "invoice": {
                 "sheet_name": "hoadon_data",
-                "headers": ["Số HĐ", "Ký hiệu", "Ngày lập", "Người bán", "MST Bán", "Người mua", "MST Mua", "Nội dung", "Tổng tiền", "VAT", "Tổng thanh toán", "Created At"],
-                "fields": ["so_hoa_don", "ky_hieu_hoa_don", "ngay_lap_phieu", "ten_nguoi_ban", "ma_so_thue_nguoi_ban", "ten_nguoi_mua", "ma_so_thue_nguoi_mua", "noi_dung_hoa_don", "tong_tien_truoc_thue", "tong_tien_thue", "tong_so_tien"]
+                "headers": ["Tên HĐ", "Số HĐ", "Ngày Lập", "Người Bán", "Địa Chỉ Bán", "Khách Hàng", "Địa Chỉ Mua", "Tổng Tiền", "Chi Tiết Sản Phẩm", "Created At"],
+                "fields": ["ten_hoa_don", "so_hoa_don", "ngay_lap_hoa_don", "ten_nguoi_ban", "dia_chi_nguoi_ban", "ten_khach_hang", "dia_chi_khach_hang", "tong_tien", "danh_sach_san_pham"]
             },
             "driver_license": {
                 "sheet_name": "gplx_data",
@@ -266,6 +266,10 @@ class OAuthService:
                     # For 'class' (rank), make sure dictionary has 'class' or 'rank'.
                     val = data.get(field, "")
                     if val is None: val = ""
+                    # Handle list (e.g., product list) by joining with newline to store in A SINGLE CELL
+                    # Example: ['a', 'b'] -> "a\nb" (One cell, two lines)
+                    if isinstance(val, list):
+                        val = "\n".join(map(str, val))
                     row.append(str(val))
             
             # Add timestamp

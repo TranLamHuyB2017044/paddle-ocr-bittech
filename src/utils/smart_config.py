@@ -124,23 +124,53 @@ DRIVER_LICENSE_CONFIG = {
 
 # ==================== DOCUMENT & INVOICE CONFIG (Example) ====================
 INVOICE_CONFIG = {
+    "ten_hoa_don": {
+        "keywords": ["HÓA ĐƠN", "PHIẾU", "RECEIPT", "INVOICE"],
+        "keywords_threshold": 0.7,
+        "value_regex": None,
+        "extraction_mode": "same_line"
+    },
     "so_hoa_don": {
-        "keywords": ["số hóa đơn", "invoice no", "số hd"],
+        "keywords": ["số hóa đơn", "invoice no", "số hd", "số phiếu", "bill no"],
         "keywords_threshold": 0.8,
         "value_regex": None,
         "extraction_mode": "same_line"
     },
-    "tong_so_tien": {
-        "keywords": ["tổng cộng", "total", "thành tiền"],
-        "keywords_threshold": 0.8,
-        "value_regex": r"[\d.,]+",
-        "extraction_mode": "same_line"
-    },
-    "ngay_lap_phieu": {
+    "ngay_lap_hoa_don": {
         "keywords": ["ngày", "date"],
         "keywords_threshold": 0.7,
         "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
         "extraction_mode": "auto"
+    },
+    "ten_khach_hang": {
+        "keywords": ["khách hàng", "người mua", "tên đơn vị", "customer", "buyer"],
+        "keywords_threshold": 0.8,
+        "value_regex": None,
+        "extraction_mode": "same_line"
+    },
+    "dia_chi_khach_hang": {
+        "keywords": ["địa chỉ", "address"],
+        "keywords_threshold": 0.7,
+        "value_regex": None,
+        "extraction_mode": "auto"
+    },
+    "ten_nguoi_ban": {
+        "keywords": ["đơn vị bán", "nhà cung cấp", "seller"],
+        "keywords_threshold": 0.8,
+        "value_regex": None,
+        "extraction_mode": "same_line"
+    },
+    "dia_chi_nguoi_ban": {
+        "keywords": ["địa chỉ bán", "văn phòng"],
+        "keywords_threshold": 0.8,
+        "value_regex": None,
+        "extraction_mode": "auto"
+    },
+    "tong_tien": {
+        "keywords": ["tổng cộng", "total", "thành tiền", "cộng tiền hàng", "thanh toán"],
+        "keywords_threshold": 0.7,
+        "value_regex": r"[\d.,]+",
+        "extraction_mode": "same_line"
     }
 }
 

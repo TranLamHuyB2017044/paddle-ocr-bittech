@@ -83,7 +83,7 @@ class GeminiExtractor:
                 temperature=0.1,
                 response_mime_type="application/json",
                 response_schema=response_schema,
-                maxOutputTokens = 2048
+                maxOutputTokens = 5000
             )
             
             # Add thinking config only for idCard (optimization)
