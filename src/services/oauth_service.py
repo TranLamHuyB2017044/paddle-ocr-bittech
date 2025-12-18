@@ -34,7 +34,7 @@ class OAuthService:
             "invoice": {
                 "sheet_name": "hoadon_data",
                 "headers": ["Tên HĐ", "Số HĐ", "Ngày Lập", "Người Bán", "Địa Chỉ Bán", "Khách Hàng", "Địa Chỉ Mua", "Tổng Tiền", "Chi Tiết Sản Phẩm", "Created At"],
-                "fields": ["ten_hoa_don", "so_hoa_don", "ngay_lap_hoa_don", "ten_nguoi_ban", "dia_chi_nguoi_ban", "ten_khach_hang", "dia_chi_khach_hang", "tong_tien", "danh_sach_san_pham"]
+                "fields": ["invoiceName", "invoiceNumber", "invoiceDate", "sellerName", "sellerAddress", "customerName", "customerAddress", "totalAmount", "products"]
             },
             "driver_license": {
                 "sheet_name": "gplx_data",
@@ -250,6 +250,9 @@ class OAuthService:
         try:
             service = build('sheets', 'v4', credentials=credentials)
             
+            # Log keys for debugging
+            Log.info(f"[OAuth] 🔍 Received Data Keys for {doc_type}: {list(data.keys())}")
+
             config = self.doc_config.get(doc_type, self.doc_config["default"])
             fields = config["fields"]
             
@@ -259,17 +262,30 @@ class OAuthService:
                  row.append(str(data))
             else:
                 for field in fields:
-                    # Handle special alias if any, but our schema uses 'class' which matches key, 
-                    # except 'class' in python is reserved, pydantic alias is used. 
-                    # In dict it should be 'class' or whatever the simpler extractor output.
-                    # Let's assume the input `data` dict keys match our `fields`.
-                    # For 'class' (rank), make sure dictionary has 'class' or 'rank'.
-                    val = data.get(field, "")
+                    # Generic lookup: try exact match, then conversion?
+                    # Field in config is typically snake_case for invoice (e.g. ten_hoa_don)
+                    # But input might be camelCase (e.g. tenHoaDon) or other.
+                    
+                    val = data.get(field)
+                    
+                    # Try camelCase alternative if snake_case missing
+                    if val is None and "_" in field:
+                        # Convert ten_hoa_don -> tenHoaDon
+                        components = field.split('_')
+                        camel_field = components[0] + ''.join(x.title() for x in components[1:])
+                        val = data.get(camel_field)
+                    
+                    # Fallback for product list if strict key match failed
+                    if val is None and field in ["lineItems", "danh_sach_san_pham"]:
+                        # Try common variations
+                        val = data.get("lineItems") or data.get("items") or data.get("danh_sach_san_pham") or data.get("products")
+                    
                     if val is None: val = ""
-                    # Handle list (e.g., product list) by joining with newline to store in A SINGLE CELL
-                    # Example: ['a', 'b'] -> "a\nb" (One cell, two lines)
+                    
+                    # Handle separate list for product list
                     if isinstance(val, list):
                         val = "\n".join(map(str, val))
+                    
                     row.append(str(val))
             
             # Add timestamp

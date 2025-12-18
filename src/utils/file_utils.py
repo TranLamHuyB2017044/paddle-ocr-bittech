@@ -77,3 +77,24 @@ def save_uploaded_file_list(files):
             saved_paths.append(path)
             
     return saved_paths
+
+def copy_to_permanent_storage(file_path):
+    """
+    Copy a file to permanent storage folder and return its relative URL/Path.
+    """
+    import shutil
+    
+    # Store in 'storage' folder in root (or where app runs)
+    # We use a relative path assuming the app root is the working directory
+    STORAGE_FOLDER = "storage"
+    os.makedirs(STORAGE_FOLDER, exist_ok=True)
+    
+    if not file_path or not os.path.exists(file_path):
+        return None
+        
+    filename = os.path.basename(file_path)
+    dest_path = os.path.join(STORAGE_FOLDER, filename)
+    shutil.copy2(file_path, dest_path)
+    
+    # Return relative path for URL usage
+    return f"/storage/{filename}"
