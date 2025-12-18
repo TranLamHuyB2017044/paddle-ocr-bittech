@@ -5,7 +5,7 @@ API Routes
 import time
 import os
 from datetime import datetime
-from flask import request, jsonify
+from flask import request, jsonify, send_from_directory
 from src.utils.auth_middleware import require_auth
 
 from src.utils.file_utils import allowed_file, save_uploaded_files
@@ -50,12 +50,13 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None,
             Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
             
         # Log to DB (Mongo - Logs & Documents)
-        log_service.save_logs(user_id, doc_type, file_paths, info)
+        document_id = log_service.save_logs(user_id, doc_type, file_paths, info)
 
         Log.info("[API] 🎉 Trả về kết quả Gemini")
         return jsonify({
             "statusCode": 200,
             "message": "Success (Gemini)",
+            "document_id": document_id,
             "data": info,
             "debug": {
                 "total_time": f"{total_time:.2f}s",
@@ -164,12 +165,13 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
         Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
 
     # Log to DB (Mongo - Logs & Documents)
-    log_service.save_logs(user_id, doc_type, file_paths, info_extracted)
+    document_id = log_service.save_logs(user_id, doc_type, file_paths, info_extracted)
 
     Log.info("[API] 🎉 Trả về kết quả kiểu truyền thống")
     return jsonify({
         "statusCode": 200,
         "message": "Success",
+        "document_id": document_id,
         "data": info_extracted,
         "debug": {
             "total_time": f"{total_time:.2f}s",
@@ -221,6 +223,10 @@ def register_routes(app):
     @app.route("/", methods=["GET"])
     def health_check():
         return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
+
+    @app.route('/uploads/<path:filename>')
+    def serve_uploaded_file(filename):
+        return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
     @app.route("/api/stats", methods=["GET"])
     @require_auth

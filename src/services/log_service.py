@@ -47,7 +47,7 @@ class LogService:
         
         # Save Document
         # We perform this even if user_id is None? Yes.
-        documents_repo.save_document(
+        document_id = documents_repo.save_document(
             user_id=user_id,
             doc_type=doc_type,
             sheet_info=sheet_info,
@@ -64,5 +64,7 @@ class LogService:
             saved_to_sheet=bool(sheet_info.get("sheet_id")),
             sheet_id=sheet_info.get("sheet_id")
         )
+
+        return document_id
 
 log_service = LogService()

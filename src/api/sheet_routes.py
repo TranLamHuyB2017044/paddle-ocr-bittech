@@ -2,6 +2,7 @@
 from flask import Blueprint, request, jsonify
 from src.services.oauth_service import oauth_service, DRIVE_SCOPES
 from src.services.token_service import token_service
+from src.repositories.documents_repository import documents_repo
 from src.utils.logger import Log
 from google.oauth2.credentials import Credentials
 
@@ -74,6 +75,25 @@ def save_to_sheet():
         # Append Data
         updated_cells = oauth_service.append_data(creds, spreadsheet_id, ocr_data, doc_type)
         
+        # Update Document if document_id is provided
+        document_id = data.get("document_id")
+        if document_id:
+            try:
+                # Get sheet name from config
+                config = oauth_service.doc_config.get(doc_type, oauth_service.doc_config["default"])
+                current_sheet_name = config.get("sheet_name")
+                
+                documents_repo.update(document_id, {
+                    "sheet": {
+                        "sheet_id": spreadsheet_id,
+                        "sheet_url": sheet_url,
+                        "sheet_name": current_sheet_name
+                    }
+                })
+                Log.info(f"[API] 📝 Updated Document {document_id} with sheet info")
+            except Exception as update_e:
+                Log.error(f"[API] ⚠️ Failed to update document {document_id}: {update_e}")
+
         return jsonify({
             "statusCode": 200,
             "message": "Data saved successfully to User Drive",
