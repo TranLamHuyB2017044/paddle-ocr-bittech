@@ -36,10 +36,10 @@ class OAuthService:
                 "headers": ["Tên HĐ", "Số HĐ", "Ngày Lập", "Người Bán", "Địa Chỉ Bán", "Khách Hàng", "Địa Chỉ Mua", "Tổng Tiền", "Chi Tiết Sản Phẩm", "Created At"],
                 "fields": ["invoiceName", "invoiceNumber", "invoiceDate", "sellerName", "sellerAddress", "customerName", "customerAddress", "totalAmount", "products"]
             },
-            "driver_license": {
+            "driverLicense": {
                 "sheet_name": "gplx_data",
                 "headers": ["Số GPLX", "Họ tên", "Ngày sinh", "Quốc tịch", "Hạng", "Ngày hết hạn", "Ngày cấp", "Ngày trúng tuyển", "Created At"],
-                "fields": ["idNumber", "fullName", "dob", "nationality", "class", "expiryDate", "dateOfIssue", "dateOfBegining"]
+                "fields": ["idNumber", "fullName", "dob", "nationality", "rank", "expiryDate", "dateOfIssue", "dateOfBegining"]
             },
             "default": {
                 "sheet_name": "ocr_data",
