@@ -91,7 +91,7 @@ class GeminiExtractor:
                  config.thinking_config = types.ThinkingConfig(thinking_budget=1024) 
 
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash", 
+                model="gemini-3-flash-preview", 
                 contents=prompt,
                 config=config,
             )

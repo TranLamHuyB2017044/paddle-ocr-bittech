@@ -24,8 +24,8 @@ MODEL_PATH = "protonx-models/nano-protonx-legal-tc" # Old online path
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
     "lang": "vi",
-    "use_textline_orientation": False,
     "use_doc_orientation_classify": False,
+    "use_angle_cls": True, # Enable Angle Classification to rotate layout
     "use_doc_unwarping": False,
     
 }
@@ -111,6 +111,13 @@ FRONT_KEYWORDS = [
     "địa chỉ", "dia chi", "address",
     "nơi", "noi", "thường trú", "thuong tru", "cư trú", "cu tru",
     "residence", "place"
+]
+
+# Từ khóa cho mặt sau (Họ tên, Quê quán, Địa chỉ)
+BACK_KEYWORDS = [
+    "Ngày, tháng, năm", "Date, month, year.",
+    "QUẢN LÝ HÀNH CHÍNH", "cục trưởng", "cục hành chính"
+
 ]
 
 # ========== EXTRACTION CONFIG ==========

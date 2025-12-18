@@ -12,9 +12,10 @@ from src.utils.file_utils import allowed_file, save_uploaded_files
 from src.utils.ocr_utils import ocr_extract, filter_useless_lines
 from src.utils.text_cleaner import clean_text_lines
 from src.extractors.gemini_extractor import gemini_extractor
-from src.utils.smart_config import smart_extract
+from src.utils.smart_config import get_smart_config
 from src.utils.post_cleaner import PostCleaner
 from src.utils.gemini_limiter import gemini_limiter
+from src.utils.smart_spatial_extractor import SmartSpatialExtractor
 from src.utils.logger import Log
 
 
@@ -28,8 +29,12 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None)
     ocr_back_time = timer_info["ocr_back"]
     
     Log.info(f"[API] 🤖 Dùng Gemini ({doc_type}) → bỏ qua toàn bộ bước lọc/clean/regex")
+    # Normalize input for Gemini (extract text from dicts if needed)
+    flat_front = [x['text'] if isinstance(x, dict) else str(x) for x in raw_front]
+    flat_back = [x['text'] if isinstance(x, dict) else str(x) for x in raw_back]
+    
     try:
-        raw_text = raw_front + raw_back
+        raw_text = flat_front + flat_back
         extraction_result = gemini_extractor.extract(raw_text, doc_type=doc_type)
         
         info = extraction_result.get("data", {})
@@ -82,11 +87,18 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
     ocr_front_time = timer_info["ocr_front"]
     ocr_back_time = timer_info["ocr_back"]
 
-    Log.info(f"[API] 🧹 Dùng pipeline truyền thống (Hybrid) cho loại: {doc_type}")
+    Log.info(f"[API] 🧹 Dùng pipeline truyền thống (Spatial Hybrid) cho loại: {doc_type}")
 
     # Check inputs (can be empty lists)
     if not isinstance(raw_front, list): raw_front = []
     if not isinstance(raw_back, list): raw_back = []
+
+    # NORMALIZATION: Ensure all items are dicts with boxes
+    # (Handle legacy raw_text input where items are strings)
+    if raw_front and isinstance(raw_front[0], str):
+        raw_front = [{'text': s, 'box': [[0,0],[0,0],[0,0],[0,0]], 'score': 1.0} for s in raw_front]
+    if raw_back and isinstance(raw_back[0], str):
+        raw_back = [{'text': s, 'box': [[0,0],[0,0],[0,0],[0,0]], 'score': 1.0} for s in raw_back]
 
     # ------------------ BƯỚC 5: FILTER ----------------------
     step_start = time.time()
@@ -97,29 +109,26 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
 
     # ------------------ BƯỚC 8: CLEANING ----------------------
     step_start = time.time()
-    # Unified cleaning for all lines
+    # Unified cleaning for all lines (supports dicts now)
     clean_front = clean_text_lines(filtered_front)
     clean_back = clean_text_lines(filtered_back)
     
     clean_time = time.time() - step_start
     Log.info(f"[API]    🧹 Clean xong - {clean_time:.2f}s")
 
-    # ------------------ BƯỚC 9: EXTRACT (HYBRID FLOW) ----------------------
+    # ------------------ BƯỚC 9: EXTRACT (SPATIAL FLOW) ----------------------
     step_start = time.time()
     extract_result = {}
     
-    # Priority Strategy:
-    # Smart Regex (Rule-based) - Safe fallback & good for specific formats
-    
-    # Init empty results
-    res_front = {}
-    res_back = {}
+    # Init Spatial Extractor
+    config = get_smart_config(doc_type)
+    extractor = SmartSpatialExtractor(config)
 
-    Log.info("[API] 🧠 Strategy: Smart Regex (Rule-based)...")
-    res_front = smart_extract(clean_front, doc_type=doc_type)
-    res_back = smart_extract(clean_back, doc_type=doc_type)
-
+    Log.info("[API] 🧠 Strategy: Smart Spatial Extraction (Box-aware)...")
+    res_front = extractor.extract(clean_front)
+    res_back = extractor.extract(clean_back)
     
+    # Merge Logic (Prioritize Front for key fields)
     extract_result = res_back.copy()
     
     front_priority_fields = ["idNumber", "fullName", "dob", "gender", "nationality", "hometown", "address"]
@@ -132,7 +141,8 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
             if v: extract_result[k] = v
             # If front doesn't have it, we keep what's in Back
 
-    extract_result = PostCleaner.clean(extract_result, doc_type)
+    # Post processing
+    # extract_result = PostCleaner.clean(extract_result, doc_type)
     
     info_extracted = extract_result
     
@@ -426,6 +436,7 @@ def register_routes(app):
         request_start = time.time()
         p1 = None
         p2 = None
+        all_temp_files = []
 
         Log.info("\n" + "#"*70)
         Log.info("#"*70)
@@ -475,58 +486,37 @@ def register_routes(app):
                     # Save files
                     from src.utils.file_utils import save_uploaded_file_list
                     saved_paths = save_uploaded_file_list(files)
+                    all_temp_files.extend(saved_paths)
                     
                     # Assign to p1/p2 for cleanup compatibility (first 2 files)
-                    # For more than 2 files, we need to ensure they are cleaned up too.
-                    # We will use a local list 'cleanup_paths' and extend p1/p2 logic.
-                    # BUT existing finally block only cleans p1/p2. 
-                    # LET'S EXTEND p1/p2 Usage or add a cleanup list to finally block.
-                    # Since I cannot easily change finally block without reading it all, 
-                    # I will try to reuse p1 for the first file, so at least one is cleaned.
-                    # WAIT, I can assume p1 and p2 are local variables I can set.
-                    
-                    cleanup_extra = [] # Paths that are not p1 or p2
-                    
                     if len(saved_paths) > 0: p1 = saved_paths[0]
                     if len(saved_paths) > 1: p2 = saved_paths[1]
-                    if len(saved_paths) > 2: cleanup_extra = saved_paths[2:]
+
+                    # Process loop for OCR (simple sequential for now)
+                    # Note: Current detect logic expects raw_front/raw_back specifically.
+                    # Adapting logic: Concatenate all OCR results into 'raw_front' for now?
+                    # Or just process first 2 as front/back.
+                    # Assuming Invoice logic uses only p1 (front).
+                    # For compatibility, we'll just populate raw_front with all text from all pages.
                     
-                    # OCR each file
-                    total_ocr_time = 0
-                    for path in saved_paths:
-                        t = time.time()
-                        ocr_result, _ = ocr_extract(path)
-                        # Add separator for context if multiple files
-                        if len(saved_paths) > 1:
-                            raw_front.extend([f"--- PAGE/IMAGE START: {os.path.basename(path)} ---"])
-                        
-                        raw_front.extend(ocr_result)
-                        total_ocr_time += (time.time() - t)
-                    
-                    ocr_front_time = total_ocr_time
-                    Log.info(f"[API]    ⏳ Total OCR time: {ocr_front_time:.2f}s")
-                    
-                    # Quick hack to ensure extra files are cleaned up in finally block??
-                    # No, finally block is fixed. I should clean extra files HERE if I can't change finally easily.
-                    # But if exception happens during OCR, they won't be cleaned.
-                    # However, replacing the whole finally block is expensive token-wise.
-                    # I will add a try/finally INSIDE here? No, that duplicates logic.
-                    # I will just rely on OS periodic cleanup for extra files (temp), OR
-                    # I will update p1 to be a list? No, p1 usage expects string path.
-                    
-                    # BEST EFFORT: I will clean extra files (index > 1) immediately if OCR succeeds.
-                    # If it fails, they leak. Acceptable for now given constraint.
-                    # Actually, I can use a Mutable list for cleanup if I could, but scope is limited.
-                    
-                    # Let's clean up extra files immediately after OCR loop for now? 
-                    # No, we need them for debugging? No, we extracted text.
-                    # So we can remove them right here!
-                    for extra_path in cleanup_extra:
-                        try:
-                            if os.path.exists(extra_path):
-                                os.remove(extra_path)
-                                Log.info(f"[CLEANUP] 🗑️ Deleted extra file {extra_path}")
-                        except: pass
+                    if doc_type == 'invoice':
+                        # Invoice Loop
+                        for idx, path in enumerate(saved_paths):
+                            t = time.time()
+                            data, _ = ocr_extract(path)
+                            ocr_front_time += (time.time() - t)
+                            # Extend raw_front with data (list ofdicts)
+                            if data: raw_front.extend(data)
+                    else:
+                        # Legacy Doc Type Loop (CCCD/License) - Expects 2 sides max usually
+                        if p1:
+                             t = time.time()
+                             raw_front, _ = ocr_extract(p1)
+                             ocr_front_time += (time.time() - t)
+                        if p2:
+                             t = time.time()
+                             raw_back, _ = ocr_extract(p2)
+                             ocr_back_time += (time.time() - t)
 
                 elif doc_type == 'invoice':
                      # Invoice requested but no files? Maybe used first_image?
@@ -547,6 +537,9 @@ def register_routes(app):
                     step_start = time.time()
                     Log.info("[API] 💾 Bước 2: Lưu file...")
                     p1, p2 = save_uploaded_files(f1, f2)
+                    if p1: all_temp_files.append(p1)
+                    if p2: all_temp_files.append(p2)
+                    
                     if p1: Log.info(f"[API]    📁 Front: {p1}")
                     if p2: Log.info(f"[API]    📁 Back: {p2}")
                     Log.info(f"[API] ✅ Lưu file xong - {time.time() - step_start:.2f}s")
@@ -571,12 +564,14 @@ def register_routes(app):
             Log.info("-" * 30)
             Log.info(f"[API] 📝 RAW OCR FRONT ({len(raw_front)} lines):")
             for line in raw_front:
-                Log.info(f"   > {line}")
+                txt = line.get('text', '') if isinstance(line, dict) else line
+                Log.info(f"   > {txt}")
             
             Log.info("-" * 30)
             Log.info(f"[API] 📝 RAW OCR BACK ({len(raw_back)} lines):")
             for line in raw_back:
-                Log.info(f"   > {line}")
+                txt = line.get('text', '') if isinstance(line, dict) else line
+                Log.info(f"   > {txt}")
             Log.info("-" * 30)
 
             timer_info = {
@@ -584,6 +579,9 @@ def register_routes(app):
                 "ocr_front": ocr_front_time,
                 "ocr_back": ocr_back_time
             }
+
+
+
 
             # Check rate limiter first
             should_skip_gemini = False
@@ -630,18 +628,12 @@ def register_routes(app):
             }), 500
         
         finally:
-            # Cleanup uploaded files
-            if p1 and os.path.exists(p1):
-                try:
-                    os.remove(p1)
-                    Log.info(f"[CLEANUP] 🗑️ Deleted {p1}")
-                except Exception as e:
-                    Log.error(f"[CLEANUP] ⚠️ Failed to delete {p1}: {e}")
-            
-            if p2 and os.path.exists(p2):
-                try:
-                    os.remove(p2)
-                    Log.info(f"[CLEANUP] 🗑️ Deleted {p2}")
-                except Exception as e:
-                    Log.error(f"[CLEANUP] ⚠️ Failed to delete {p2}: {e}")
+            # Cleanup all temporary files
+            for f_path in all_temp_files:
+                if f_path and os.path.exists(f_path):
+                    try:
+                        os.remove(f_path)
+                        Log.info(f"[CLEANUP] 🗑️ Deleted {f_path}")
+                    except Exception as e:
+                        Log.error(f"[CLEANUP] ⚠️ Failed to delete {f_path}: {e}")
 

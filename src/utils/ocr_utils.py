@@ -8,6 +8,7 @@ from src.models.model_loader import model_loader
 from src.utils.logger import Log
 
 import cv2
+import os
 
 def preprocess_for_ocr(path):
     img = cv2.imread(path)
@@ -35,9 +36,12 @@ def preprocess_for_ocr(path):
         Log.error(f"[PREPROCESS] ⚠️ Failed to overwrite image: {e}")
         return path
 
-def ocr_extract(image_path):
+def ocr_extract(image_path, retry_mode=False):
     """
     Trích xuất text từ ảnh sử dụng OCR với preprocessing
+    Returns:
+        list_of_dicts: [{'text': str, 'box': list, 'score': float}, ...]
+        raw_text_list: [str, str, ...] (for legacy compatibility if needed)
     """
 
     start = time.time()
@@ -49,47 +53,190 @@ def ocr_extract(image_path):
     # Gọi OCR
     result = model_loader.ocr.predict(small_path)
 
-    if not result:
-        Log.warning("[OCR] ⚠️ Không tìm thấy text")
-        return [], []
-
     block = result[0]
-    texts = block["rec_texts"]
-    scores = block["rec_scores"]
+    
+    ocr_data = [] # New rich format
+    texts = []    # Legacy format
+
+    import numpy as np
+
+    if block:
+        # CASE 1: New Dict Format (The one user provided)
+        # Check keys directly on block (if block is dict) or result (if result is dict but singular)
+        # Based on user input: {'res': ...} but paddleocr often returns [res_dict] or [[lines]].
+        # Let's handle 'rec_texts' existing in block.
+        
+        target_dict = None
+        if isinstance(block, dict) and "rec_texts" in block:
+             target_dict = block
+        elif isinstance(result, dict) and "res" in result: # Outer wrapper
+             target_dict = result["res"]
+        elif isinstance(block, dict) and "res" in block:
+             target_dict = block["res"]
+             
+        if target_dict and "rec_texts" in target_dict:
+            r_texts = target_dict.get("rec_texts", [])
+            r_scores = target_dict.get("rec_scores", [])
+            # Prefer dt_polys (detection polys) or rec_boxes
+            r_boxes = target_dict.get("dt_polys") 
+            if r_boxes is None: r_boxes = target_dict.get("rec_boxes")
+            if r_boxes is None: r_boxes = target_dict.get("rec_polys")
+            
+            # Ensure length match
+            count = len(r_texts)
+            for i in range(count):
+                txt = r_texts[i]
+                if txt is None: txt = ""
+                
+                # Score
+                score = 1.0
+                if len(r_scores) > i:
+                    score = float(r_scores[i])
+                    
+                # Box
+                box = [[0,0], [0,0], [0,0], [0,0]]
+                if r_boxes is not None and len(r_boxes) > i:
+                    # Convert numpy dict to list
+                    b = r_boxes[i]
+                    if isinstance(b, np.ndarray):
+                        b = b.tolist()
+                    box = b
+                
+                texts.append(txt)
+                ocr_data.append({
+                    "text": txt,
+                    "box": box,
+                    "score": score
+                })
+                
+        # CASE 2: Standard Paddle List of Tuples Format [[box, (text, score)], ...]
+        elif isinstance(block, list):
+             for item in block:
+                 # item structure: [box, (text, score)]
+                 if len(item) >= 2:
+                     box = item[0]
+                     text_obj = item[1]
+                     text_val = text_obj[0]
+                     score_val = text_obj[1]
+                     
+                     texts.append(text_val)
+                     ocr_data.append({
+                         "text": text_val,
+                         "box": box,
+                         "score": score_val
+                     })
 
     Log.info(
-        f"[OCR] ✅ OCR xong. Lines: {len(texts)}. "
+        f"[OCR] ✅ OCR xong. Lines: {len(ocr_data)}. "
         f"Thời gian: {time.time() - start:.2f}s"
     )
 
-    return texts, scores
+    # --- AUTO-ROTATION CHECK (If Classifier Failed) ---
+    if not retry_mode and ocr_data and len(ocr_data) > 3: # Only check if we have enough lines
+        vertical_boxes = 0
+        for item in ocr_data:
+            box = item['box']
+            # box: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+            xs = [p[0] for p in box]
+            ys = [p[1] for p in box]
+            w = max(xs) - min(xs)
+            h = max(ys) - min(ys)
+            if h > w * 1.5: # Clearly vertical
+                vertical_boxes += 1
+        
+        # If > 50% boxes are vertical, image is likely rotated 90 degrees
+        if vertical_boxes > len(ocr_data) * 0.5:
+            Log.warning("[OCR] 🔄 Phát hiện ảnh bị xoay dọc. Đang thử xoay và kiểm tra...")
+            
+            # Keywords to validate used rotation
+            VALIDATION_KEYWORDS = ["Cộng hòa", "Socialist", "Identity", "Driver", "Giấy phép", "Chiến sĩ", "Hóa đơn", "Reciept"]
+            
+            try:
+                import cv2
+                import numpy as np
+                
+                img = cv2.imread(small_path)
+                if img is not None:
+                    # --- ATTEMPT 1: Rotate 90 Clockwise (Most common) ---
+                    Log.info("[OCR] ↪️ Thử xoay 90 độ Clockwise...")
+                    rotated_img_cw = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                    
+                    rot_path = small_path.replace(".", "_rotated_cw.")
+                    cv2.imwrite(rot_path, rotated_img_cw)
+                    
+                    try:
+                        data_cw, texts_cw = ocr_extract(rot_path, retry_mode=True)
+                        
+                        # Validate
+                        is_valid = any(kw.lower() in t.lower() for t in texts_cw for kw in VALIDATION_KEYWORDS)
+                        
+                        if is_valid:
+                            Log.info("[OCR] ✅ Xoay Clockwise thành công (khớp từ khóa).")
+                            if os.path.exists(rot_path): os.remove(rot_path)
+                            return data_cw, texts_cw
+                        else:
+                            Log.warning("[OCR] ⚠️ Xoay Clockwise không ra từ khóa chuẩn. Thử xoay ngược lại...")
+                    except Exception:
+                        pass
+                    
+                    # --- ATTEMPT 2: Rotate 90 Counter-Clockwise ---
+                    # Only runs if Attempt 1 failed validation
+                    Log.info("[OCR] ↩️ Thử xoay 90 độ Counter-Clockwise...")
+                    rotated_img_ccw = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+                    
+                    rot_path_ccw = small_path.replace(".", "_rotated_ccw.")
+                    cv2.imwrite(rot_path_ccw, rotated_img_ccw)
+                    
+                    data_ccw, texts_ccw = ocr_extract(rot_path_ccw, retry_mode=True)
+                    
+                    # Clean up
+                    if os.path.exists(rot_path): os.remove(rot_path)
+                    if os.path.exists(rot_path_ccw): os.remove(rot_path_ccw)
+                    
+                    return data_ccw, texts_ccw
+
+            except Exception as e:
+                Log.error(f"[OCR] ❌ Lỗi khi xoay ảnh: {e}")
+                # Fallback to original result
+
+    return ocr_data, texts
 
 
-def filter_useless_lines(lines):
+def filter_useless_lines(ocr_data):
     """
     Lọc bỏ các dòng text chung không cần thiết
     
     Args:
-        lines: Danh sách các dòng text
+        ocr_data: List dictionaries [{'text':..., 'box':...}] (New Format)
+                  OR List strings (Legacy Format support)
         
     Returns:
-        list: Danh sách các dòng text đã được lọc
+        Same type as input (filtered)
     """
     from src.config import USELESS_KEYWORDS
     from rapidfuzz import fuzz
     
-    Log.info(f"[FILTER] 🗑️  Bắt đầu lọc text không cần thiết. Số dòng: {len(lines)}")
+    is_legacy_input = False
+    if len(ocr_data) > 0 and isinstance(ocr_data[0], str):
+        is_legacy_input = True
     
-    # ⚠️ Kiểm tra input rỗng
-    if len(lines) == 0:
-        Log.warning(f"[FILTER] ⚠️  CẢNH BÁO: Không có dòng text nào từ OCR!")
+    input_count = len(ocr_data)
+    Log.info(f"[FILTER] 🗑️  Bắt đầu lọc text không cần thiết. Số dòng: {input_count}")
+    
+    if input_count == 0:
         return []
     
     filtered = []
     removed_count = 0
     
-    for line in lines:
-        line_lower = line.lower().strip()
+    for item in ocr_data:
+        # Extract text content depending on format
+        if is_legacy_input:
+            line_text = item
+        else:
+            line_text = item.get("text", "")
+
+        line_lower = line_text.lower().strip()
         
         # Bỏ qua dòng rỗng hoặc quá ngắn
         if len(line_lower) < 2:
@@ -109,11 +256,7 @@ def filter_useless_lines(lines):
         # 2. Check Fuzzy match (Slower but catches OCR errors)
         if not is_useless:
             for keyword in USELESS_KEYWORDS:
-                # Nếu từ khóa quá ngắn, fuzzy rất dễ sai -> skip
                 if len(keyword) < 4: continue
-                
-                # Check tỷ lệ trùng khớp (partial_ratio)
-                # Tỷ lệ > 85% coi như là trùng
                 score = fuzz.partial_ratio(keyword, line_lower)
                 if score >= 85:
                     is_useless = True
@@ -121,11 +264,10 @@ def filter_useless_lines(lines):
                     break
 
         if is_useless:
-            Log.debug(f"[FILTER] ❌ Loại bỏ: '{line[:50]}...' [Match: {matched_keyword}]")
+            Log.debug(f"[FILTER] ❌ Loại bỏ: '{line_text[:50]}...' [Match: {matched_keyword}]")
             removed_count += 1
         else:
-            filtered.append(line)
-            # Log.debug(f"[FILTER] ✅ Giữ lại: '{line[:50]}...'")
+            filtered.append(item)
     
     Log.info(f"[FILTER] 📊 Kết quả: Loại bỏ {removed_count} dòng, Còn lại {len(filtered)} dòng")
     

@@ -1,11 +1,10 @@
-from src.utils.smart_extractor import SmartExtractor
 from src.models.schemas import IdCard, DriverLicense, Invoice, Document
 from src.config import COMMON_COUNTRIES_REGEX
 
 # ==================== ID CARD (CCCD) CONFIG ====================
 CCCD_CONFIG = {
     "idNumber": {
-        "keywords": ["số", "so", "id no", "no.", "số đd cn", "S/No"],
+        "keywords": ["số", "so", "id no", "no.", "số đd cn", "S/No", "s6/No."],
         "keywords_threshold": 0.9,
         "value_regex": r"\d{9,12}",
         "extraction_mode": "next_line",
@@ -21,16 +20,16 @@ CCCD_CONFIG = {
         "keywords": ["ngày, tháng, năm sinh", "ngày sinh", "date of birth", "dob"],
         "keywords_threshold": 0.7,
         "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
-        "extraction_mode": "auto"
+        "extraction_mode": "same_line"
     },
     "gender": {
         "keywords": ["giới tính", "sex", "gender"],
         "keywords_threshold": 0.8,
-        "value_regex": r"^(Nam|Nữ|Male|Female)$",
-        "extraction_mode": "auto"
+        "value_regex": r"(Nam|Nữ|Male|Female)",
+        "extraction_mode": "same_line"
     },
     "nationality": {
-        "keywords": ["quốc tịch", "nationality"],
+        "keywords": ["quốc tịch", "nationality", 'Quc tich', 'Quc tch'],
         "keywords_threshold": 0.8,
         "value_regex": COMMON_COUNTRIES_REGEX,
         "extraction_mode": "auto",
@@ -40,7 +39,7 @@ CCCD_CONFIG = {
         "keywords": ["quê quán", "place of origin"],
         "keywords_threshold": 0.8,
         "value_regex": None,
-        "extraction_mode": "multiline",
+        "extraction_mode": "auto",
         "max_lines": 2
     },
     "address": {
@@ -51,22 +50,22 @@ CCCD_CONFIG = {
         "max_lines": 2
     },
     "expiryDate": {
-        "keywords": ["có giá trị đến", "date of expiry", "giá trị đến"],
+        "keywords": ["Date of", "có giá trị đến", "date of expiry", "giá trị đến", "Date of expiration", "expiration"],
         "keywords_threshold": 0.8,
         "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
         "extraction_mode": "auto"
     },
     "dateOfIssue": {
-        "keywords": ["ngày, tháng, năm", "ngày cấp", "date of issue"], # Often on back side
+        "keywords": ["ngày, tháng, năm", "ngày cấp", "date of issue", 'Date, month, year.'], # Often on back side
         "keywords_threshold": 0.7,
         "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
-        "extraction_mode": "auto"
+        "extraction_mode": "same_line"
     },
     "placeOfIssue": {
         "keywords": ["cục trưởng", "director"], # Heuristic for place of issue anchor
         "keywords_threshold": 0.7,
         "value_regex": None,
-        "extraction_mode": "same_line" # Or next_line depending on layout
+        "extraction_mode": "multiline" # Or next_line depending on layout
     }
 }
 
