@@ -144,8 +144,9 @@ COMMON_COUNTRIES_REGEX = r"Việt Nam|Trung Quốc|Lào|Campuchia|Thái Lan|Myan
 DEFAULT_NATIONALITY = "Việt Nam"
 DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
 
-# ========== GEMINI CONFIG ==========
+# ========== AI API KEY CONFIG ==========
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+OPENROUTER_GROK_API_KEY = os.getenv("OPENROUTER_GROK_API_KEY", "")
 
 # ========== MONGODB CONFIG ==========
 MONGODB_URI = os.getenv("MONGODB_URI", "")
