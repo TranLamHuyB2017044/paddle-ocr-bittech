@@ -61,8 +61,25 @@ def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, f
         })
     except Exception as e:
         Log.error(f"[API] ⚠️ API Grok Error: {e}")
-        # Could implement limiter here if needed
+        grok_limiter.record_error(e)
+        
+        error_str = str(e)
+        # Check for Quota/Rate Limit (429) or Service Unavailable or Overloaded
+        if "429" in error_str or "quota" in error_str or "too many requests" in error_str or "503" in error_str:
+             Log.warning("[API] 🛑 Grok Overloaded/RateLimited. Fallback initiated.")
+             return None # Signal fallback
+        
+        # If blocked by limiter
+        if grok_limiter.is_blocked():
+             Log.warning(f"[API] 🛑 Grok blocked ({grok_limiter.get_remaining_time():.0f}s). Fallback initiated.")
+             return None
+
+        # For critical errors that shouldn't fallback (maybe?), or just raise
+        # If we want aggressive fallback, we return None for almost everything.
+        # But let's stick to rate limits for now to mirror Gemini logic.
         raise e
+
+from src.utils.grok_limiter import grok_limiter
 
 from src.extractors.gemini_extractor import gemini_extractor
 
@@ -947,43 +964,52 @@ def register_routes(app):
             user_id = getattr(g, 'user_id', None)
             
             # Check provider param
-            provider = request.form.get("provider", "gemini")
+            provider = request.form.get("provider", "auto")
             
             # --- 1. FORCE PROVIDERS ---
-            if provider == 'openai':
-                try:
-                    response = process_with_openai(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                    if response: return response
-                except Exception as e:
-                    Log.warning(f"[API] ⚠️ OpenAI failed: {e}. Fallback to traditional.")
-                    
-            elif provider == 'grok':
+            if provider == 'grok':
                 try:
                     response = process_with_grok(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
                     if response: return response
                 except Exception as e:
                     Log.warning(f"[API] ⚠️ Grok failed: {e}. Fallback to traditional.")
 
-            # --- 2. GEMINI (Priority) -> GROK (Fallback 1) -> TRADITIONAL (Fallback 2) ---
+            elif provider == 'gemini':
+                # Explicit Gemini Request
+                if not should_skip_gemini:
+                    try:
+                        response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
+                        if response: return response
+                    except Exception as e:
+                        Log.warning(f"[API] ⚠️ Gemini failed: {e}. Fallback to traditional.")
+                else:
+                     Log.warning(f"[API] ⚠️ Gemini skipped (Rate Limit). Fallback to traditional.")
+
+            # --- 2. AUTO CHAIN: GROK (Priority) -> GEMINI (Fallback 1) -> TRADITIONAL (Fallback 2) ---
             else:
-                gemini_success = False
-                
-                # A. Try Gemini
+                should_skip_grok = False
+                if grok_limiter.is_blocked():
+                    Log.warning(f"[API] ⚠️ Grok Limit active. Remaining: {grok_limiter.get_remaining_time():.0f}s. Skipping to Gemini.")
+                    should_skip_grok = True
+
+                # A. Try Grok
+                if not should_skip_grok:
+                    try:
+                        response = process_with_grok(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
+                        if response: return response
+                        # If response is None, it means fallback initiated by grok logic (429/503)
+                    except Exception as grok_e:
+                        Log.warning(f"[API] ⚠️ Grok failed ({grok_e}). Trying Gemini...")
+
+                # B. Try Gemini (If Grok failed)
                 if not should_skip_gemini:
                     try:
                          response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
                          if response: return response
-                         # If response is None, it means fallback initiated by gemini logic (limiter or 503)
                     except Exception as gemini_e:
-                         Log.warning(f"[API] ⚠️ Gemini failed cleanly ({gemini_e}). Trying Grok...")
-                
-                # B. Try Grok (If Gemini skipped or failed)
-                try:
-                    Log.info(f"[API] 🔄 Fallback: Trying Grok...")
-                    response = process_with_grok(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                    if response: return response
-                except Exception as grok_e:
-                    Log.warning(f"[API] ⚠️ Grok failed ({grok_e}). Fallback to traditional.")
+                         Log.warning(f"[API] ⚠️ Gemini failed cleanly ({gemini_e}). Fallback to traditional.")
+                else:
+                    Log.warning(f"[API] ⚠️ Gemini skipped (Rate Limit). Fallback to traditional.")
             
             
             
