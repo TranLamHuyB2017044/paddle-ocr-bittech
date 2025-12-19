@@ -25,10 +25,26 @@ def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, f
     
     try:
         raw_text = flat_front + flat_back
+        
+        # --- LOG OCR TEXT ---
+        Log.info("\n" + "="*30)
+        Log.info("📜 OCR RAW TEXT FOR GROK:")
+        for line in raw_text:
+            Log.info(f"   {line}")
+        Log.info("="*30 + "\n")
+        # --------------------
+
         extraction_result = grok_extractor.extract(raw_text, doc_type=doc_type)
         
         info = extraction_result.get("data", {})
         metadata = extraction_result.get("metadata", {})
+
+        # --- LOG EXTRACTED DATA ---
+        Log.info("\n" + "="*30)
+        Log.info("🧠 GROK EXTRACTED DATA:")
+        Log.info(str(info))
+        Log.info("="*30 + "\n")
+        # --------------------------
 
         total_time = time.time() - request_start
 
@@ -107,10 +123,26 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None,
     
     try:
         raw_text = flat_front + flat_back
+        
+        # --- LOG OCR TEXT ---
+        Log.info("\n" + "="*30)
+        Log.info("📜 OCR RAW TEXT FOR GEMINI:")
+        for line in raw_text:
+            Log.info(f"   {line}")
+        Log.info("="*30 + "\n")
+        # --------------------
+
         extraction_result = gemini_extractor.extract(raw_text, doc_type=doc_type)
         
         info = extraction_result.get("data", {})
         metadata = extraction_result.get("metadata", {})
+
+        # --- LOG EXTRACTED DATA ---
+        Log.info("\n" + "="*30)
+        Log.info("🧠 GEMINI EXTRACTED DATA:")
+        Log.info(str(info))
+        Log.info("="*30 + "\n")
+        # --------------------------
 
         total_time = time.time() - request_start
 
