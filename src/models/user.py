@@ -11,6 +11,8 @@ class DocTypeStats(BaseModel):
     driverLicense: int = 0
     invoice: int = 0
     document: int = 0
+    vehicleDocuments: int = 0
+    vehicle: int = 0
 
 class UserStats(BaseModel):
     total_extractions: int = 0

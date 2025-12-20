@@ -93,13 +93,20 @@ def register_routes(app):
             
             # Extract stats
             stats = user_data.get("stats", {})
+            Log.info(f"[API] User {user_id} raw stats: {stats}")
             total_extractions = stats.get("total_extractions", 0)
             last_extraction_at = stats.get("last_extraction_at")
             doc_type_stats = stats.get("doc_type_stats", {})
-            # Ensure standard types are present in breakdown
-            for dt in ["idCard", "driverLicense", "invoice", "document", "vehicleDocuments"]:
-                if dt not in doc_type_stats:
-                    doc_type_stats[dt] = 0
+            
+            # Create a clean breakdown and handle old naming conventions
+            breakdown = {
+                "idCard": doc_type_stats.get("idCard", 0),
+                "driverLicense": doc_type_stats.get("driverLicense", 0),
+                "invoice": doc_type_stats.get("invoice", 0),
+                "document": doc_type_stats.get("document", 0),
+                "vehicleDocuments": doc_type_stats.get("vehicleDocuments", 0) + doc_type_stats.get("vehicle_documents", 0),
+                "vehicle": doc_type_stats.get("vehicleDocuments", 0) + doc_type_stats.get("vehicle_documents", 0) # FE Alias
+            }
             
             # Get daily count
             from src.repositories.extraction_logs_repository import extraction_logs_repo
@@ -112,7 +119,8 @@ def register_routes(app):
                     "total_extractions": total_extractions,
                     "today_extractions": today_extractions,
                     "last_extraction_at": last_extraction_at.isoformat() if last_extraction_at else None,
-                    "breakdown": doc_type_stats
+                    "breakdown": breakdown,
+                    "doc_type_stats": breakdown # Alias for better FE compatibility
                 }
             }), 200
             
