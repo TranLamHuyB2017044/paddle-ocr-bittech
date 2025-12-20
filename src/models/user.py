@@ -43,6 +43,7 @@ class User(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
     
     active: bool = True
+    deviceId: Optional[str] = Field(default=None)
 
     class Config:
         populate_by_name = True

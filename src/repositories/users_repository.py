@@ -7,6 +7,7 @@ class UsersRepository(BaseRepository):
         # Create unique indexes
         self.collection.create_index("username", unique=True, sparse=True)
         self.collection.create_index("api_key.access_key", unique=True, sparse=True)
+        self.collection.create_index("deviceId", unique=True, sparse=True)
 
     def create_user(self, user: User):
         """
@@ -64,6 +65,30 @@ class UsersRepository(BaseRepository):
         except Exception as e:
             print(f"Error incrementing extraction stats: {e}")
             return False
+
+
+    def check_device_id(self, user_id: str, device_id: str) -> bool:
+        """
+        Kiểm tra thiết bị của user.
+        - Nếu user chưa có deviceId: lưu device_id hiện tại và trả về True (cho phép).
+        - Nếu đã có: so sánh với device_id hiện tại.
+        Trả về True nếu hợp lệ, False nếu bị khóa thiết bị khác.
+        """
+        if not device_id:
+            return False  
+        user_data = self.find_by_id(user_id)
+        if not user_data:
+            return False
+
+        saved_device_id = user_data.get("deviceId")
+
+        if not saved_device_id:
+            # Liên kết thiết bị lần đầu
+            self.update(user_id, {"deviceId": device_id})
+            return True
+        
+        # Kiểm tra xem có trùng với thiết bị đã lưu không
+        return saved_device_id == device_id
 
 
 # Global instance
