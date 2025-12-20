@@ -175,11 +175,57 @@ INVOICE_CONFIG = {
 }
 
 DOCUMENT_CONFIG = {
-    # Generic document fields usually rely on layout or specific keywords
     "title": {
-        # Strategy: usually first few lines?
-        # Keyword based title finding is hard.
         "keywords": [],
+        "extraction_mode": "auto"
+    }
+}
+
+# ==================== VEHICLE DOCUMENTS CONFIG ====================
+VEHICLE_DOC_CONFIG = {
+    "plateNumber": {
+        "keywords": ["biển số", "số đăng ký", "plate no", "number plate"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"[0-9]{2}[A-Z]-[0-9]{3,5}(\.[0-9]{2})?", # Simplified VN plate regex
+        "extraction_mode": "auto"
+    },
+    "ownerName": {
+        "keywords": ["chủ xe", "tên chủ xe", "người được bảo hiểm", "owner's full name", "người mua"],
+        "keywords_threshold": 0.8,
+        "extraction_mode": "next_line"
+    },
+    "engineNumber": {
+        "keywords": ["số máy", "engine no", "engine number"],
+        "keywords_threshold": 0.8,
+        "extraction_mode": "auto"
+    },
+    "chassisNumber": {
+        "keywords": ["số khung", "chassis no", "chassis number", "số xe"],
+        "keywords_threshold": 0.8,
+        "extraction_mode": "auto"
+    },
+    "inspectionNumber": {
+        "keywords": ["số phiếu kiểm định", "số đăng kiểm", "inspection report no"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"VA-[0-9]+",
+        "extraction_mode": "auto"
+    },
+    "dateOfIssue": {
+        "keywords": ["ngày cấp", "issued on", "ngày đăng ký lần đầu"],
+        "keywords_threshold": 0.8,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "extraction_mode": "auto"
+    },
+    "expiryDate": {
+        "keywords": ["hết hạn ngày", "có hiệu lực đến ngày", "valid until", "đến ngày", "đến 15 giờ 00, ngày"],
+        "keywords_threshold": 0.7,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "extraction_mode": "auto"
+    },
+    "effectiveDate": {
+        "keywords": ["hiệu lực từ ngày", "từ 15 giờ 00, ngày", "valid from"],
+        "keywords_threshold": 0.7,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
         "extraction_mode": "auto"
     }
 }
@@ -190,7 +236,8 @@ CONFIG_MAP = {
     "idCard": CCCD_CONFIG,
     "driverLicense": DRIVER_LICENSE_CONFIG,
     "invoice": INVOICE_CONFIG,
-    "document": DOCUMENT_CONFIG
+    "document": DOCUMENT_CONFIG,
+    "vehicleDocuments": VEHICLE_DOC_CONFIG
 }
 
 def get_smart_config(doc_type):

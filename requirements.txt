@@ -27,3 +27,4 @@ pyjwt
 email-validator == 2.3.0
 certifi
 openai
+cloudinary

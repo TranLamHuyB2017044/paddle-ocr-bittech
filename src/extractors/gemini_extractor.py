@@ -10,14 +10,15 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from src.config import GEMINI_API_KEY
 from src.utils.logger import Log
-from src.models.schemas import IdCard, DriverLicense, Invoice, Document
+from src.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument
 
 # Map doc_type string to Pydantic model
 SCHEMA_MAP = {
     "idCard": IdCard,
     "driverLicense": DriverLicense,
     "invoice": Invoice,
-    "document": Document
+    "document": Document,
+    "vehicleDocuments": VehicleDocument
 }
 
 class GeminiExtractor:

@@ -7,93 +7,13 @@ import os
 from datetime import datetime
 from flask import request, jsonify, send_from_directory
 from src.utils.auth_middleware import require_auth
-
 from src.utils.file_utils import allowed_file, save_uploaded_files
-from src.utils.ocr_utils import ocr_extract, filter_useless_lines
-from src.utils.text_cleaner import clean_text_lines
-from src.extractors.grok_extractor import grok_extractor
+from src.utils.ocr_utils import ocr_extract
+from src.api.processors.ai_processor import process_with_grok, process_with_gemini
+from src.api.processors.traditional_processor import process_traditional
+from src.utils.logger import Log
 
-def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, file_paths=None):
-    request_start = timer_info["start"]
-    ocr_front_time = timer_info["ocr_front"]
-    ocr_back_time = timer_info["ocr_back"]
-    
-    Log.info(f"[API] 🤖 Dùng Grok ({doc_type}) → bỏ qua toàn bộ bước lọc/clean/regex")
-    # Normalize input
-    flat_front = [x['text'] if isinstance(x, dict) else str(x) for x in raw_front]
-    flat_back = [x['text'] if isinstance(x, dict) else str(x) for x in raw_back]
-    
-    try:
-        raw_text = flat_front + flat_back
-        
-        # --- LOG OCR TEXT ---
-        Log.info("\n" + "="*30)
-        Log.info("📜 OCR RAW TEXT FOR GROK:")
-        for line in raw_text:
-            Log.info(f"   {line}")
-        Log.info("="*30 + "\n")
-        # --------------------
 
-        extraction_result = grok_extractor.extract(raw_text, doc_type=doc_type)
-        
-        info = extraction_result.get("data", {})
-        metadata = extraction_result.get("metadata", {})
-
-        # --- LOG EXTRACTED DATA ---
-        Log.info("\n" + "="*30)
-        Log.info("🧠 GROK EXTRACTED DATA:")
-        Log.info(str(info))
-        Log.info("="*30 + "\n")
-        # --------------------------
-
-        total_time = time.time() - request_start
-
-        # Increment user stats after successful extraction
-        if user_id:
-            from src.repositories.users_repository import users_repo
-            users_repo.increment_extraction_stats(user_id, doc_type)
-            Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
-            
-        # Log to DB (Mongo - Logs & Documents)
-        document_id = log_service.save_logs(user_id, doc_type, file_paths, info)
-
-        Log.info("[API] 🎉 Trả về kết quả Grok")
-        return jsonify({
-            "statusCode": 200,
-            "message": "Success (Grok)",
-            "document_id": document_id,
-            "data": info,
-            "debug": {
-                "total_time": f"{total_time:.2f}s",
-                "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
-                "provider": "grok",
-                "doc_type": doc_type,
-                "grok_metadata": metadata,
-                "ocr_raw": {
-                    "front": raw_front,
-                    "back": raw_back
-                }
-            }
-        })
-    except Exception as e:
-        Log.error(f"[API] ⚠️ API Grok Error: {e}")
-        grok_limiter.record_error(e)
-        
-        error_str = str(e)
-        # Check for Quota/Rate Limit (429) or Service Unavailable or Overloaded
-        if "429" in error_str or "quota" in error_str or "too many requests" in error_str or "503" in error_str:
-             Log.warning("[API] 🛑 Grok Overloaded/RateLimited. Fallback initiated.")
-             return None # Signal fallback
-        
-        # If blocked by limiter
-        if grok_limiter.is_blocked():
-             Log.warning(f"[API] 🛑 Grok blocked ({grok_limiter.get_remaining_time():.0f}s). Fallback initiated.")
-             return None
-
-        # For critical errors that shouldn't fallback (maybe?), or just raise
-        # If we want aggressive fallback, we return None for almost everything.
-        # But let's stick to rate limits for now to mirror Gemini logic.
-        raise e
 
 from src.utils.grok_limiter import grok_limiter
 
@@ -108,192 +28,12 @@ from src.services.log_service import log_service
 
 
 
-ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document'}
+ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments'}
 MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB limit
 
-def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None, file_paths=None):
-    request_start = timer_info["start"]
-    ocr_front_time = timer_info["ocr_front"]
-    ocr_back_time = timer_info["ocr_back"]
-    
-    Log.info(f"[API] 🤖 Dùng Gemini ({doc_type}) → bỏ qua toàn bộ bước lọc/clean/regex")
-    # Normalize input for Gemini (extract text from dicts if needed)
-    flat_front = [x['text'] if isinstance(x, dict) else str(x) for x in raw_front]
-    flat_back = [x['text'] if isinstance(x, dict) else str(x) for x in raw_back]
-    
-    try:
-        raw_text = flat_front + flat_back
-        
-        # --- LOG OCR TEXT ---
-        Log.info("\n" + "="*30)
-        Log.info("📜 OCR RAW TEXT FOR GEMINI:")
-        for line in raw_text:
-            Log.info(f"   {line}")
-        Log.info("="*30 + "\n")
-        # --------------------
 
-        extraction_result = gemini_extractor.extract(raw_text, doc_type=doc_type)
-        
-        info = extraction_result.get("data", {})
-        metadata = extraction_result.get("metadata", {})
 
-        # --- LOG EXTRACTED DATA ---
-        Log.info("\n" + "="*30)
-        Log.info("🧠 GEMINI EXTRACTED DATA:")
-        Log.info(str(info))
-        Log.info("="*30 + "\n")
-        # --------------------------
 
-        total_time = time.time() - request_start
-
-        # Increment user stats after successful extraction
-        if user_id:
-            from src.repositories.users_repository import users_repo
-            users_repo.increment_extraction_stats(user_id, doc_type)
-            Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
-            
-        # Log to DB (Mongo - Logs & Documents)
-        document_id = log_service.save_logs(user_id, doc_type, file_paths, info)
-
-        Log.info("[API] 🎉 Trả về kết quả Gemini")
-        return jsonify({
-            "statusCode": 200,
-            "message": "Success (Gemini)",
-            "document_id": document_id,
-            "data": info,
-            "debug": {
-                "total_time": f"{total_time:.2f}s",
-                "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
-                "gemini": True,
-                "doc_type": doc_type,
-                "gemini_metadata": metadata,
-                "ocr_raw": {
-                    "front": raw_front,
-                    "back": raw_back
-                }
-            }
-        })
-    except Exception as e:
-        Log.error(f"[API] ⚠️ API Gemini Error: {e}")
-        gemini_limiter.record_error(e)
-        
-        error_str = str(e)
-        # Check for Overloaded (503) or Rate Limit (429) or Service Unavailable
-        if "503" in error_str or "429" in error_str or "UNAVAILABLE" in error_str or "overloaded" in error_str:
-             Log.warning("[API] 🛑 API Overloaded/RateLimited. Fallback to traditional immediately.")
-             return None # Signal fallback
-        
-        if gemini_limiter.is_blocked():
-             Log.warning("[API] 🛑 Fallback to traditional (Circuit Breaker Open).")
-             return None # Signal fallback
-
-        Log.error("[API] ❌ Critical Error. Returning error to user.")
-        raise e
-
-def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None, file_paths=None):
-    request_start = timer_info["start"]
-    ocr_front_time = timer_info["ocr_front"]
-    ocr_back_time = timer_info["ocr_back"]
-
-    Log.info(f"[API] 🧹 Dùng pipeline truyền thống (Spatial Hybrid) cho loại: {doc_type}")
-
-    # Check inputs (can be empty lists)
-    if not isinstance(raw_front, list): raw_front = []
-    if not isinstance(raw_back, list): raw_back = []
-
-    # NORMALIZATION: Ensure all items are dicts with boxes
-    # (Handle legacy raw_text input where items are strings)
-    if raw_front and isinstance(raw_front[0], str):
-        raw_front = [{'text': s, 'box': [[0,0],[0,0],[0,0],[0,0]], 'score': 1.0} for s in raw_front]
-    if raw_back and isinstance(raw_back[0], str):
-        raw_back = [{'text': s, 'box': [[0,0],[0,0],[0,0],[0,0]], 'score': 1.0} for s in raw_back]
-
-    # ------------------ BƯỚC 5: FILTER ----------------------
-    step_start = time.time()
-    filtered_front = filter_useless_lines(raw_front)
-    filtered_back = filter_useless_lines(raw_back)
-    filter_time = time.time() - step_start
-    Log.info(f"[API]    🗑️ Filter xong - {filter_time:.2f}s")
-
-    # ------------------ BƯỚC 8: CLEANING ----------------------
-    step_start = time.time()
-    # Unified cleaning for all lines (supports dicts now)
-    clean_front = clean_text_lines(filtered_front)
-    clean_back = clean_text_lines(filtered_back)
-    
-    clean_time = time.time() - step_start
-    Log.info(f"[API]    🧹 Clean xong - {clean_time:.2f}s")
-
-    # ------------------ BƯỚC 9: EXTRACT (SPATIAL FLOW) ----------------------
-    step_start = time.time()
-    extract_result = {}
-    
-    # Init Spatial Extractor
-    config = get_smart_config(doc_type)
-    extractor = SmartSpatialExtractor(config)
-
-    Log.info("[API] 🧠 Strategy: Smart Spatial Extraction (Box-aware)...")
-    res_front = extractor.extract(clean_front)
-    res_back = extractor.extract(clean_back)
-    
-    # Merge Logic (Prioritize Front for key fields)
-    extract_result = res_back.copy()
-    
-    front_priority_fields = ["idNumber", "fullName", "dob", "gender", "nationality", "hometown", "address"]
-    
-    for k, v in res_front.items():
-        if k in front_priority_fields:
-            extract_result[k] = v
-        else:
-            # For other fields (expiryDate), prefer Front if exists, else keep Back
-            if v: extract_result[k] = v
-            # If front doesn't have it, we keep what's in Back
-
-    # Post processing
-    # extract_result = PostCleaner.clean(extract_result, doc_type)
-    
-    info_extracted = extract_result
-    
-    extract_time = time.time() - step_start
-    Log.info(f"[API]    📊 Extract xong ({doc_type}) - {extract_time:.2f}s")
-    Log.debug(f"[API]    📝 Result: {info_extracted}")
-
-    # ------------------ TỔNG KẾT ----------------------
-    total_time = time.time() - request_start
-
-    # Increment user stats after successful extraction
-    if user_id:
-        from src.repositories.users_repository import users_repo
-        users_repo.increment_extraction_stats(user_id, doc_type)
-        Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
-
-    # Log to DB (Mongo - Logs & Documents)
-    document_id = log_service.save_logs(user_id, doc_type, file_paths, info_extracted)
-
-    Log.info("[API] 🎉 Trả về kết quả kiểu truyền thống")
-    return jsonify({
-        "statusCode": 200,
-        "message": "Success",
-        "document_id": document_id,
-        "data": info_extracted,
-        "debug": {
-            "total_time": f"{total_time:.2f}s",
-            "ocr_time": f"{ocr_front_time + ocr_back_time:.2f}s",
-            # "filter_time": f"{filter_time:.2f}s",
-            "clean_time": f"{clean_time:.2f}s",
-            "extract_time": f"{extract_time:.2f}s",
-            "gemini": False,
-            "doc_type": doc_type,
-            "ocr_raw": {
-                "front": raw_front,
-                "back": raw_back
-            },
-            "cleaned_lines": {
-                "front": clean_front,
-                "back": clean_back
-            }
-        }
-    })
 
 def validate_request_params(req):
     """
@@ -355,20 +95,24 @@ def register_routes(app):
             stats = user_data.get("stats", {})
             total_extractions = stats.get("total_extractions", 0)
             last_extraction_at = stats.get("last_extraction_at")
-            doc_type_stats = stats.get("doc_type_stats", {
-                "idCard": 0,
-                "driverLicense": 0,
-                "invoice": 0,
-                "document": 0
-            })
+            doc_type_stats = stats.get("doc_type_stats", {})
+            # Ensure standard types are present in breakdown
+            for dt in ["idCard", "driverLicense", "invoice", "document", "vehicleDocuments"]:
+                if dt not in doc_type_stats:
+                    doc_type_stats[dt] = 0
             
+            # Get daily count
+            from src.repositories.extraction_logs_repository import extraction_logs_repo
+            today_extractions = extraction_logs_repo.count_today_by_user(user_id)
+
             return jsonify({
                 "statusCode": 200,
                 "message": "Success",
                 "data": {
                     "total_extractions": total_extractions,
+                    "today_extractions": today_extractions,
                     "last_extraction_at": last_extraction_at.isoformat() if last_extraction_at else None,
-                    "doc_type_stats": doc_type_stats
+                    "breakdown": doc_type_stats
                 }
             }), 200
             
@@ -538,152 +282,6 @@ def register_routes(app):
                 except Exception as e:
                     Log.error(f"[CLEANUP] ⚠️ Failed to delete {p1}: {e}")
             
-    @app.route("/api/openai", methods=["POST"])
-    @require_auth
-    def detect_openai():
-        request_start = time.time()
-        p1 = None
-        p2 = None
-        all_temp_files = []
-
-        Log.info("\n" + "#"*70)
-        Log.info("###  🚀 OPENAI TEST REQUEST")
-        Log.info(f"###  ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-        Log.info("#"*70 + "\n")
-
-        try:
-            # ==================== BƯỚC 1: VALIDATE ====================
-            step_start = time.time()
-            Log.info("[API-GPT] 📋 Bước 1: Validate request...")
-            
-            # Validate params
-            doc_type, error_resp, status_code = validate_request_params(request)
-            if error_resp:
-                Log.error(f"[API-GPT] ❌ Validation Failed: {error_resp.json}")
-                return error_resp, status_code
-
-            # Initialize variables
-            raw_front = []
-            raw_back = []
-            ocr_front_time = 0.0
-            ocr_back_time = 0.0
-
-            # 🆕 CHECK: RAW TEXT INPUT (Bypass OCR)
-            raw_text_input = request.form.get("raw_text")
-
-            if raw_text_input:
-                Log.info("[API-GPT] 📝 Nhận diện 'raw_text' -> Bỏ qua OCR, xử lý trực tiếp.")
-                raw_front = [line.strip() for line in raw_text_input.strip().split('\\n') if line.strip()]
-                Log.info(f"[API-GPT]    📝 Input lines: {len(raw_front)}")
-            
-            else:
-                # Check if 'files' is present and not empty
-                has_files_list = 'files' in request.files and len(request.files.getlist('files')) > 0
-                
-                if has_files_list:
-                    # 🧾 MULTI-FILE FLOW
-                    files = request.files.getlist('files')
-                    
-                    if len(files) > 5:
-                         return jsonify({"statusCode": 400, "message": "Tối đa 5 ảnh"}), 400
-                    
-                    Log.info(f"[API-GPT] 📦 Multi-file Mode: Received {len(files)} files")
-                    
-                    # Save files
-                    from src.utils.file_utils import save_uploaded_file_list
-                    saved_paths = save_uploaded_file_list(files)
-                    all_temp_files.extend(saved_paths)
-                    
-                    if len(saved_paths) > 0: p1 = saved_paths[0]
-                    if len(saved_paths) > 1: p2 = saved_paths[1]
-                    
-                    # OCR each file
-                    total_ocr_time = 0
-                    for path in saved_paths:
-                        t = time.time()
-                        ocr_result, _ = ocr_extract(path)
-                        if len(saved_paths) > 1:
-                            raw_front.extend([f"--- PAGE/IMAGE START: {os.path.basename(path)} ---"])
-                        raw_front.extend(ocr_result)
-                        total_ocr_time += (time.time() - t)
-                    
-                    ocr_front_time = total_ocr_time
-                    Log.info(f"[API-GPT]    ⏳ Total OCR time: {ocr_front_time:.2f}s")
-
-                else:
-                    # 📷 SINGLE/DOUBLE FILE UPLOAD FLOW
-                    if "first_image" not in request.files and "second_image" not in request.files:
-                        return jsonify({"statusCode": 400, "message": "Cần ít nhất 1 file (files, first_image hoặc second_image) hoặc field 'raw_text'"}), 400
-
-                    f1 = request.files.get("first_image")
-                    f2 = request.files.get("second_image")
-                    
-                    Log.info(f"[API-GPT] ✅ Validation OK (Type: {doc_type}) - {time.time() - step_start:.2f}s")
-
-                    # ==================== BƯỚC 2: LƯU FILE ====================
-                    step_start = time.time()
-                    Log.info("[API-GPT] 💾 Bước 2: Lưu file...")
-                    p1, p2 = save_uploaded_files(f1, f2)
-                    if p1: all_temp_files.append(p1)
-                    if p2: all_temp_files.append(p2)
-
-                    if p1: Log.info(f"[API-GPT]    📁 Front: {p1}")
-                    if p2: Log.info(f"[API-GPT]    📁 Back: {p2}")
-
-                    # ==================== BƯỚC 3: OCR HAI MẶT ====================
-                    Log.info("[API-GPT] 🔍 Bước 3: OCR...")
-
-                    if p1:
-                        t = time.time()
-                        raw_front, _ = ocr_extract(p1)
-                        ocr_front_time = time.time() - t
-                        Log.info(f"[API-GPT]    ⏳ OCR front: {ocr_front_time:.2f}s")
-
-                    if p2:
-                        t = time.time()
-                        raw_back, _ = ocr_extract(p2)
-                        ocr_back_time = time.time() - t
-                        Log.info(f"[API-GPT]    ⏳ OCR back : {ocr_back_time:.2f}s")
-
-            Log.info("[API-GPT] ✅ OCR xong")
-            
-            timer_info = {
-                "start": request_start,
-                "ocr_front": ocr_front_time,
-                "ocr_back": ocr_back_time
-            }
-
-            # FORCE OPENAI FLOW
-            from flask import g
-            user_id = getattr(g, 'user_id', None)
-            
-            try:
-                response = process_with_openai(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                if response: return response
-                # If None was returned (unlikely for openai function unless unimplemented changes)
-                return jsonify({"statusCode": 500, "message": "OpenAI processing returned no data"}), 500
-            except Exception as e:
-                # If process_with_openai raises exception, it comes here
-                raise e
-
-        except Exception as e:
-            Log.error("\n" + "!"*70)
-            Log.error(f"[API-GPT] ❌ LỖI: {str(e)}")
-            Log.error("!"*70 + "\n")
-
-            return jsonify({
-                "statusCode": 500,
-                "message": "Lỗi server",
-                "error": str(e)
-            }), 500
-        
-        finally:
-            # Cleanup uploaded files
-            for f_path in all_temp_files:
-                if f_path and os.path.exists(f_path):
-                    try:
-                        os.remove(f_path)
-                    except: pass
 
     @app.route("/api/grok", methods=["POST"])
     @require_auth

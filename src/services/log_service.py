@@ -29,9 +29,13 @@ class LogService:
         # and perhaps the relative path of where it was uploaded (even if deleted later).
         if file_paths and len(file_paths) > 0:
             first_path = file_paths[0]
-            saved_file_name = os.path.basename(first_path)
-            # We map the URL to the uploads folder structure, though it might be cleaned up.
-            saved_file_url = f"/uploads/{saved_file_name}"
+            if first_path.startswith("http"):
+                saved_file_url = first_path
+                saved_file_name = os.path.basename(first_path)
+            else:
+                saved_file_name = os.path.basename(first_path)
+                # We map the URL to the uploads folder structure, though it might be cleaned up.
+                saved_file_url = f"/uploads/{saved_file_name}"
         
         # Determine Sheet Info
         # Check if extraction_data has sheet info. 

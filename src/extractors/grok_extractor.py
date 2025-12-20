@@ -9,14 +9,15 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 from src.config import OPENROUTER_GROK_API_KEY
 from src.utils.logger import Log
-from src.models.schemas import IdCard, DriverLicense, Invoice, Document
+from src.models.schemas import IdCard, DriverLicense, Invoice, Document,VehicleDocument
 
 # Map doc_type string to Pydantic model
 SCHEMA_MAP = {
     "idCard": IdCard,
     "driverLicense": DriverLicense,
     "invoice": Invoice,
-    "document": Document
+    "document": Document,
+    "vehicleDocuments": VehicleDocument
 }
 
 class GrokExtractor:
@@ -104,7 +105,7 @@ class GrokExtractor:
             # Model: "x-ai/grok-3-mini"
             
             completion = self.client.beta.chat.completions.parse(
-                model="x-ai/grok-3-mini", # Using a known stable Grok model or the one requested "x-ai/grok-3-mini" if valid. 
+                model="x-ai/grok-4.1-fast", # Using a known stable Grok model or the one requested "x-ai/grok-3-mini" if valid. 
                 # User requested "x-ai/grok-3-mini". Let's use that.
                 # WARNING: grok-3 might be hypothetical or very new. If it fails, we fall back to user desire.
                 

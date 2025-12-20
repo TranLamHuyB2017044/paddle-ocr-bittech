@@ -19,5 +19,22 @@ class ExtractionLogsRepository(BaseRepository):
         }
         return self.create(data)
 
+    def count_today_by_user(self, user_id):
+        """
+        Count number of extractions for a user today
+        """
+        if not user_id:
+            return 0
+            
+        now = datetime.now()
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        query = {
+            "user_id": ObjectId(user_id),
+            "created_at": {"$gte": start_of_day}
+        }
+        
+        return self.collection.count_documents(query)
+
 # Global instance
 extraction_logs_repo = ExtractionLogsRepository()

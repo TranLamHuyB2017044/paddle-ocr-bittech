@@ -62,6 +62,23 @@ class Invoice(BaseModel):
 
 
 
+class VehicleDocument(BaseModel):
+    documentType: Optional[str] = Field(description="Loại giấy tờ nhận diện được (inspection/insurance/registration)")
+    # Common Fields
+    plateNumber: Optional[str] = Field(description="Biển số đăng ký")
+    ownerName: Optional[str] = Field(description="Tên chủ xe / Người được bảo hiểm")
+    address: Optional[str] = Field(description="Địa chỉ chủ xe")
+    engineNumber: Optional[str] = Field(description="Số máy (Engine No)")
+    chassisNumber: Optional[str] = Field(description="Số khung (Chassis No)")
+    dateOfIssue: Optional[str] = Field(description="Ngày cấp (DD-MM-YYYY)")
+    
+    # Specific for Inspection/Insurance
+    inspectionNumber: Optional[str] = Field(description="Số phiếu kiểm định / Số đăng kiểm (VA-...)")
+    expiryDate: Optional[str] = Field(description="Ngày hết hạn / Hiệu lực đến ngày (DD-MM-YYYY)")
+    effectiveDate: Optional[str] = Field(description="Ngày bắt đầu hiệu lực (DD-MM-YYYY)")
+    insuranceCompany: Optional[str] = Field(description="Công ty bảo hiểm / Đơn vị cấp")
+
+
 class Document(BaseModel):
     title: Optional[str] = Field(description="Tiêu đề tài liệu")
     summary: Optional[str] = Field(description="Tóm tắt nội dung")

@@ -89,7 +89,12 @@ USELESS_KEYWORDS = [
     "cccd",
     "cmnd",
     
-
+    # Vehicle Document specific noise
+    "thông số kỹ thuật", "specifications", "ct bánh xe", "vết bánh xe", "tire size",
+    "kích thước", "khối lượng", "weight", "kerb mass", "payload", "tổng tải",
+    "số người", "chỗ đứng", "chỗ nằm", "seating", "standing", "lying",
+    "dung tích", "engine displacement", "công suất", "loại nhiên liệu", "fuel",
+    "áp suất", "lốp xe", "number of tires", "vận tốc",
 ]
 
 # Từ khóa cho mặt sau (ngày tháng)
@@ -156,3 +161,7 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-key-change-me")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
+# ========== CLOUDINARY CONFIG ==========
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
