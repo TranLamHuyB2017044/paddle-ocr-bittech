@@ -5,7 +5,7 @@ API Routes
 import time
 import os
 from datetime import datetime
-from flask import request, jsonify, send_from_directory
+from flask import request, jsonify, send_from_directory, g
 from src.utils.auth_middleware import require_auth
 from src.utils.file_utils import allowed_file, save_uploaded_files
 from src.utils.ocr_utils import ocr_extract
@@ -79,7 +79,6 @@ def register_routes(app):
         Returns total extractions and breakdown by document type
         """
         try:
-            from flask import g
             from src.repositories.users_repository import users_repo
             
             user_id = getattr(g, 'user_id', None)
@@ -261,7 +260,7 @@ def register_routes(app):
 
             # FORCE TRADITIONAL FLOW
             # Get user_id from Flask g context (set by @require_auth)
-            from flask import g
+            user_id = getattr(g, 'user_id', None)
             return process_traditional(
                 raw_front, raw_back, 
                 timer_info, 
@@ -407,7 +406,6 @@ def register_routes(app):
             }
 
             # FORCE GROK FLOW
-            from flask import g
             user_id = getattr(g, 'user_id', None)
             
             try:
@@ -598,7 +596,6 @@ def register_routes(app):
                  should_skip_gemini = True
 
             # Get user_id from Flask g context (set by @require_auth)
-            from flask import g
             user_id = getattr(g, 'user_id', None)
             
             # Check provider param
