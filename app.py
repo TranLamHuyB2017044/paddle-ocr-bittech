@@ -47,8 +47,10 @@ register_routes(app)
 
 from src.api.sheet_routes import sheet_bp
 from src.api.auth_routes import auth_bp
+from src.rag.rag_routes import rag_bp
 app.register_blueprint(sheet_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(rag_bp)
 
 # ==================== RUN APP ====================
 if __name__ == "__main__":

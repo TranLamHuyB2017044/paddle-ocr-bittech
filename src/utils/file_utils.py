@@ -56,25 +56,29 @@ def save_uploaded_files(front_file=None, back_file=None):
 def save_uploaded_file_list(files):
     """
     Lưu danh sách file upload
-    
-    Args:
-        files: List các file objects
-        
-    Returns:
-        list: Danh sách đường dẫn file đã lưu
     """
+    from src.utils.logger import Log
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     saved_paths = []
     
+    Log.info(f"[Files] Incoming file list size: {len(files)}")
+    
     for idx, file in enumerate(files):
-        if file and allowed_file(file.filename):
+        if not file:
+            Log.warning(f"[Files] File at index {idx} is None/Empty")
+            continue
+            
+        if allowed_file(file.filename):
             # Format: TIMESTAMP_index_filename
             filename = f"{timestamp}_{idx}_{file.filename}"
             path = os.path.join(UPLOAD_FOLDER, filename)
             file.save(path)
             saved_paths.append(path)
+            Log.info(f"[Files] ✅ Saved valid file: {file.filename}")
+        else:
+            Log.error(f"[Files] ❌ Rejected invalid extension: {file.filename}. Allowed: {ALLOWED_EXTENSIONS}")
             
     return saved_paths
 

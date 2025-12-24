@@ -14,7 +14,8 @@ load_dotenv(os.path.join(root_dir, '.env'))
 
 # ========== UPLOAD CONFIG ==========
 UPLOAD_FOLDER = "uploads"
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx'}
+MAX_RAG_FILE_SIZE = 5 * 1024 * 1024  # 5 MB per file for RAG
 
 # ========== MODEL CONFIG ==========
 MODEL_PATH = "protonx-models/nano-protonx-legal-tc" # Old online path
@@ -165,3 +166,13 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
+
+# ========== QDRANT CONFIG ==========
+QDRANT_URL = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+
+# ========== RAG CONFIG ==========
+RAG_COLLECTION_NAME = "documents_rag"
+RAG_CHUNK_SIZE = 800
+RAG_CHUNK_OVERLAP = 100
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
