@@ -100,6 +100,33 @@ class QdrantService:
             )
         )
 
+    def get_document_count(self, workspace_id):
+        """
+        Count unique documents in a workspace.
+        """
+        try:
+            # Scroll through points to collect unique document names
+            # We only need the payload field 'document_name'
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="workspace_id",
+                            match=models.MatchValue(value=workspace_id),
+                        )
+                    ]
+                ),
+                limit=1000, 
+                with_payload=["document_name"],
+                with_vectors=False
+            )
+            unique_docs = {p.payload["document_name"] for p in points if "document_name" in p.payload}
+            return len(unique_docs)
+        except Exception as e:
+            Log.error(f"[Qdrant] Error counting documents: {e}")
+            return 0
+
     def scroll(self, *args, **kwargs):
         """
         Scroll through points in the collection.
@@ -145,5 +172,9 @@ class QdrantServiceProxy:
     def scroll(self, *args, **kwargs):
         if self.instance: return self.instance.scroll(*args, **kwargs)
         raise Exception("Qdrant not initialized")
+
+    def get_document_count(self, *args, **kwargs):
+        if self.instance: return self.instance.get_document_count(*args, **kwargs)
+        return 0
 
 qdrant_service = QdrantServiceProxy()

@@ -4,6 +4,7 @@ from src.utils.auth_middleware import require_auth
 from src.repositories.workspaces_repository import workspaces_repo
 from src.repositories.chat_history_repository import chat_history_repo
 from src.rag.rag_service import rag_service
+from src.rag.qdrant_service import qdrant_service
 from src.utils.ocr_utils import ocr_extract
 from src.utils.file_utils import save_uploaded_files
 from src.utils.logger import Log
@@ -37,6 +38,14 @@ def create_workspace():
 def list_workspaces():
     try:
         workspaces = workspaces_repo.find_by_user(g.user_id)
+        
+        # Add document count from Qdrant for each workspace
+        for ws in workspaces:
+            try:
+                ws["document_count"] = qdrant_service.get_document_count(ws["_id"])
+            except:
+                ws["document_count"] = 0
+                
         return jsonify({
             "statusCode": 200,
             "data": workspaces
