@@ -168,7 +168,7 @@ CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
 
 # ========== QDRANT CONFIG ==========
-QDRANT_URL = os.getenv("QDRANT_URL", "local_qdrant_db")
+QDRANT_URL = os.getenv("QDRANT_URL", "")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 
 # ========== RAG CONFIG ==========
