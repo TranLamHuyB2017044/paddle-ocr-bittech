@@ -51,4 +51,7 @@ class WorkspacesRepository(BaseRepository):
             
         return self.update(workspace_id, update_data)
 
+    def delete_workspace(self, workspace_id):
+        return self.delete(workspace_id)
+
 workspaces_repo = WorkspacesRepository()

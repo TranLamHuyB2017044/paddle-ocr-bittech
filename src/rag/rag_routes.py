@@ -84,6 +84,48 @@ def update_workspace(workspace_id):
         Log.error(f"[RAG-API] Update workspace failed: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
+@rag_bp.route('/api/rag/workspaces/<workspace_id>', methods=['DELETE'])
+@require_auth
+def delete_workspace(workspace_id):
+    try:
+        # 1. Verify workspace exists and belongs to user
+        workspace = workspaces_repo.find_workspace_by_id(workspace_id)
+        if not workspace:
+            return jsonify({"statusCode": 404, "message": "Workspace not found"}), 404
+            
+        if workspace['user_id'] != g.user_id:
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+
+        # 2. Delete vectors from Qdrant
+        try:
+            qdrant_service.delete_by_workspace(workspace_id)
+            Log.info(f"[RAG-API] Deleted vectors for workspace: {workspace_id}")
+        except Exception as q_err:
+            Log.error(f"[RAG-API] Failed to delete vectors from Qdrant: {q_err}")
+            # We continue even if Qdrant fails to ensure DB consistency if possible
+            
+        # 3. Delete chat history from MongoDB
+        try:
+            chat_history_repo.clear_history(workspace_id)
+            Log.info(f"[RAG-API] Deleted chat history for workspace: {workspace_id}")
+        except Exception as h_err:
+            Log.error(f"[RAG-API] Failed to delete chat history: {h_err}")
+
+        # 4. Delete workspace metadata from MongoDB
+        success = workspaces_repo.delete_workspace(workspace_id)
+        
+        if success:
+            return jsonify({
+                "statusCode": 200,
+                "message": "Workspace and all associated data deleted successfully"
+            })
+        else:
+            return jsonify({"statusCode": 400, "message": "Failed to delete workspace metadata"}), 400
+            
+    except Exception as e:
+        Log.error(f"[RAG-API] Delete workspace failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
 @rag_bp.route('/api/rag/workspaces/<workspace_id>/upload', methods=['POST'])
 @require_auth
 def upload_to_workspace(workspace_id):
@@ -101,6 +143,20 @@ def upload_to_workspace(workspace_id):
             
         if len(files) > 5:
             return jsonify({"statusCode": 400, "message": "Tối đa 5 file cho mỗi lần upload"}), 400
+
+        # 3. Check document limit (Max 5 documents per workspace)
+        current_doc_count = qdrant_service.get_document_count(workspace_id)
+        if current_doc_count >= 5:
+            return jsonify({
+                "statusCode": 400, 
+                "message": f"Workspace đã đạt giới hạn tối đa 5 tài liệu. Hiện tại bạn đang có {current_doc_count} tài liệu."
+            }), 400
+            
+        if current_doc_count + len(files) > 5:
+            return jsonify({
+                "statusCode": 400, 
+                "message": f"Bạn chỉ có thể upload thêm {5 - current_doc_count} tài liệu nữa để không vượt quá giới hạn 5 file."
+            }), 400
 
         # Check file sizes before saving
         from src.config import MAX_RAG_FILE_SIZE
