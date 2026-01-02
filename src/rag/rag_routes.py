@@ -7,6 +7,8 @@ from src.rag.rag_service import rag_service
 from src.rag.qdrant_service import qdrant_service
 from src.utils.ocr_utils import ocr_extract
 from src.utils.file_utils import save_uploaded_files
+from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
+from src.utils.word_utils import extract_text_from_word
 from src.utils.logger import Log
 
 rag_bp = Blueprint('rag_bp', __name__)
@@ -52,6 +54,29 @@ def list_workspaces():
         })
     except Exception as e:
         Log.error(f"[RAG-API] List workspaces failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@rag_bp.route('/api/rag/workspaces/<workspace_id>', methods=['GET'])
+@require_auth
+def get_workspace_details(workspace_id):
+    try:
+        # Verify workspace belongs to user
+        workspace = workspaces_repo.find_workspace_by_id(workspace_id)
+        if not workspace or workspace['user_id'] != g.user_id:
+            return jsonify({"statusCode": 403, "message": "Access denied or workspace not found"}), 403
+            
+        # Add extra info
+        try:
+            workspace["document_count"] = qdrant_service.get_document_count(workspace_id)
+        except:
+            workspace["document_count"] = 0
+            
+        return jsonify({
+            "statusCode": 200,
+            "data": workspace
+        })
+    except Exception as e:
+        Log.error(f"[RAG-API] Get workspace failed: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 @rag_bp.route('/api/rag/workspaces/<workspace_id>', methods=['PUT'])
@@ -198,20 +223,41 @@ def upload_to_workspace(workspace_id):
             
             # Handle Word files (.docx and .doc)
             elif ext in ['docx', 'doc']:
-                if ext == 'doc':
-                    Log.warning(f"[RAG-API] .doc format is legacy. Attempting to read {original_filename}")
-                try:
-                    import docx
-                    doc = docx.Document(p1)
-                    full_text = "\n".join([para.text for para in doc.paragraphs])
-                    Log.info(f"[RAG-API] Read Word file directly: {len(full_text)} chars")
-                except Exception as e:
-                    Log.error(f"[RAG-API] Failed to read Word file: {e}")
-                    if ext == 'doc':
-                        Log.hint("Please convert .doc to .docx for better compatibility.")
+                Log.info(f"[RAG-API] Extracting text from Word ({ext}): {original_filename}")
+                full_text = extract_text_from_word(p1)
+                if full_text:
+                    Log.info(f"[RAG-API] Successfully extracted {len(full_text)} chars from Word file")
+                else:
+                    Log.error(f"[RAG-API] Could not extract text from {original_filename}")
             
-            elif ext in ['pdf', 'jpg', 'jpeg', 'png', 'bmp']:
-                # OCR for Images/PDFs
+            elif ext == 'pdf':
+                # Optimized PDF handling
+                Log.info(f"[RAG-API] Extracting text from PDF: {original_filename}")
+                full_text = extract_text_from_pdf(p1)
+                
+                # If no text extracted (likely scanned PDF), fallback to OCR
+                if not full_text.strip():
+                    Log.info(f"[RAG-API] PDF appears scanned. Falling back to OCR for {original_filename}")
+                    image_paths = get_pdf_pages_as_images(p1)
+                    ocr_texts = []
+                    for img_p in image_paths:
+                        try:
+                            # Use OCR for each page
+                            res, _ = ocr_extract(img_p)
+                            if res:
+                                page_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
+                                ocr_texts.append(page_text)
+                            # Cleanup temp image
+                            if os.path.exists(img_p): os.remove(img_p)
+                        except Exception as ocr_err:
+                            Log.error(f"[RAG-API] OCR failed for page in {original_filename}: {ocr_err}")
+                    
+                    full_text = "\n\n".join(ocr_texts)
+                else:
+                    Log.info(f"[RAG-API] Successfully extracted {len(full_text)} chars directly from PDF")
+
+            elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
+                # OCR for Images
                 try:
                     ocr_result, _ = ocr_extract(p1)
                     # Concatenate text

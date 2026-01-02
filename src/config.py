@@ -10,11 +10,14 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 root_dir = os.path.dirname(basedir)
 load_dotenv(os.path.join(root_dir, '.env'))
 
+# Fix Paddle OCR hanging issue (oneDNN)
+os.environ["ONEDNN_PRIMITIVE_CACHE_CAPACITY"] = "10"
+
 
 
 # ========== UPLOAD CONFIG ==========
 UPLOAD_FOLDER = "uploads"
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc'}
 MAX_RAG_FILE_SIZE = 5 * 1024 * 1024  # 5 MB per file for RAG
 
 # ========== MODEL CONFIG ==========
