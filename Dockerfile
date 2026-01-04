@@ -40,17 +40,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MKL_NUM_THREADS=1 \
     PATH="/opt/venv/bin:$PATH"
 
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true
+
 # Runtime system libs (OCR / OpenCV / Paddle)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libgl1 \
-    libglib2.0-0 \
-    libgomp1 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    curl \
+    libicu-dev \
+    icu-devtools \
+    libc6 \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Copy venv from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -81,4 +81,4 @@ CMD gunicorn \
     --timeout 120 \
     --worker-class gthread \
     --preload \
-
+    app:app

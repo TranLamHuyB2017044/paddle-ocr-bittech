@@ -42,7 +42,7 @@ def extract_text_from_pdf(pdf_path):
     """
     if fitz is None:
         Log.error("[PDF] ❌ PyMuPDF (fitz) is not installed. Cannot process PDF properly.")
-        return "", []
+        return ""
 
     full_text = ""
     images = []
