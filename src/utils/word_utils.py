@@ -1,98 +1,120 @@
 import os
-try:
-    import aspose.words as aw
-except ImportError:
-    aw = None
+import subprocess
+import shutil
+import platform
+from src.utils.logger import Log
 
 try:
     import docx
 except ImportError:
     docx = None
 
-import os
-from src.utils.logger import Log
+def get_libreoffice_path():
+    """
+    Trả về lệnh chạy LibreOffice phù hợp với từng hệ điều hành
+    """
+    if platform.system() == "Windows":
+        # Các đường dẫn mặc định của LibreOffice trên Windows
+        common_paths = [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+        return "soffice.exe" # Hy vọng nó nằm trong PATH
+    else:
+        # Trên Linux/Docker đã cài qua apt-get
+        return "soffice"
+
+def convert_doc_to_docx(input_path, timeout=60):
+    """
+    Sử dụng LibreOffice headless để convert .doc sang .docx
+    """
+    if not os.path.exists(input_path):
+        Log.error(f"[Converter] File not found: {input_path}")
+        return None
+
+    out_dir = os.path.dirname(input_path)
+    filename = os.path.basename(input_path)
+    name_no_ext = os.path.splitext(filename)[0]
+    expected_out = os.path.join(out_dir, f"{name_no_ext}.docx")
+
+    # Xóa file cũ nếu đã tồn tại để tránh xung đột
+    if os.path.exists(expected_out):
+        try: os.remove(expected_out)
+        except: pass
+
+    soffice_path = get_libreoffice_path()
+    
+    # Kiểm tra xem binary có tồn tại không trước khi chạy subprocess
+    if not shutil.which(soffice_path) and not os.path.exists(soffice_path):
+        Log.error(f"[Converter] ❌ LibreOffice (soffice) not found at: {soffice_path}")
+        Log.error("[Converter] 👉 Please install LibreOffice OR run this app via Docker on VPS.")
+        return None
+
+    try:
+        Log.info(f"[Converter] Converting {filename} to .docx via {soffice_path}...")
+        
+        command = [
+            soffice_path,
+            "--headless",
+            "--convert-to", "docx",
+            "--outdir", out_dir,
+            input_path
+        ]
+        
+        # Chạy command
+        result = subprocess.run(
+            command, 
+            capture_output=True, 
+            text=True, 
+            timeout=timeout,
+            shell=(platform.system() == "Windows") # Cần shell=True trên Windows nếu dùng lệnh alias
+        )
+        
+        if os.path.exists(expected_out):
+            Log.info(f"[Converter] ✅ Success: {expected_out}")
+            return expected_out
+        else:
+            Log.error(f"[Converter] ❌ Conversion failed. Output file not found. Stdout: {result.stdout}, Stderr: {result.stderr}")
+            return None
+            
+    except Exception as e:
+        Log.error(f"[Converter] ❌ Unexpected error: {e}")
+        if "WinError 2" in str(e):
+            Log.error("[Converter] 👉 Mẹo: Bạn cần cài đặt LibreOffice trên máy Local để test tính năng này ngoài Docker.")
+        return None
 
 def extract_text_from_word(file_path):
     """
     Trích xuất văn bản từ file .doc hoặc .docx.
-    Sử dụng logic Hybrid: python-docx cho .docx và aspose-words cho .doc
     """
     ext = file_path.lower().split('.')[-1]
+    docx_path = file_path
+    is_temporary_docx = False
+
+    if ext == 'doc':
+        converted = convert_doc_to_docx(file_path)
+        if not converted:
+            Log.error(f"[Word] ❌ Could not convert .doc to .docx: {file_path}")
+            return ""
+        docx_path = converted
+        is_temporary_docx = True
+
     full_text = ""
-
-    # --- ƯU TIÊN 1: Dùng python-docx cho .docx (Nhẹ và ổn định) ---
-    if ext == 'docx' and docx is not None:
+    if docx is not None:
         try:
-            Log.info(f"[Word] 📄 Thử trích xuất .docx bằng python-docx: {file_path}")
-            doc = docx.Document(file_path)
+            doc = docx.Document(docx_path)
             full_text = "\n".join([para.text for para in doc.paragraphs])
-            if full_text.strip():
-                Log.info(f"[Word] ✅ Trích xuất thành công bằng python-docx ({len(full_text)} ký tự)")
-                return full_text.strip()
-        except Exception as e:
-            Log.warning(f"[Word] ⚠️ python-docx thất bại, sẽ thử aspose: {e}")
-
-    # --- ƯU TIÊN 2: Dùng aspose-words cho .doc hoặc khi python-docx thất bại ---
-    if aw is not None:
-        try:
-            Log.info(f"[Word] 🔄 Thử trích xuất bằng aspose-words: {file_path}")
-            doc = aw.Document(file_path)
-            raw_text = doc.get_text()
             
-            if raw_text:
-                lines = raw_text.split('\n')
-                clean_lines = []
-                for line in lines:
-                    if "Evaluation Only" in line or "Aspose.Words" in line:
-                        continue
-                    clean_line = "".join(c for c in line if ord(c) >= 32 or c in '\n\r\t')
-                    if clean_line.strip():
-                        clean_lines.append(clean_line)
+            # Cleanup nếu là file tạm
+            if is_temporary_docx and os.path.exists(docx_path):
+                try: os.remove(docx_path)
+                except: pass
                 
-            full_text = '\n'.join(clean_lines)
-            if full_text.strip():
-                Log.info(f"[Word] ✅ Trích xuất thành công bằng aspose-words ({len(full_text)} ký tự)")
-                return full_text.strip()
+            return full_text.strip()
         except Exception as e:
-            Log.error(f"[Word] ❌ aspose-words lỗi khi lấy text trực tiếp: {e}")
-
-    # --- ƯU TIÊN 3: PHƯƠNG ÁN CUỐI CÙNG - CHUYỂN SANG PDF VÀ OCR ---
-    # Nếu đến đây vẫn chưa có text, có thể file Word chỉ chứa ảnh (Scanned doc)
-    if aw is not None:
-        try:
-            Log.info(f"[Word] 🔄 File Word có thể là ảnh scan. Đang thử chuyển sang PDF để xử lý...")
-            doc = aw.Document(file_path)
-            temp_pdf = file_path.replace(f".{ext}", "_temp.pdf")
-            doc.save(temp_pdf) # Chuyển Word sang PDF
+            Log.error(f"[Word] ❌ Error reading docx: {e}")
             
-            from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
-            from src.utils.ocr_utils import ocr_extract
-            
-            # Thử lấy text từ PDF vừa tạo
-            pdf_text = extract_text_from_pdf(temp_pdf)
-            
-            if not pdf_text.strip():
-                Log.info(f"[Word] PDF chuyển đổi không có text. Tiến hành OCR từng trang...")
-                # Nếu PDF không có text, dùng flow OCR PDF trang
-                image_paths = get_pdf_pages_as_images(temp_pdf)
-                ocr_texts = []
-                for img_p in image_paths:
-                    res, _ = ocr_extract(img_p)
-                    if res:
-                        page_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
-                        ocr_texts.append(page_text)
-                    if os.path.exists(img_p): os.remove(img_p)
-                
-                pdf_text = "\n\n".join(ocr_texts)
-            
-            # Dọn dẹp file PDF tạm
-            if os.path.exists(temp_pdf): os.remove(temp_pdf)
-            
-            if pdf_text.strip():
-                Log.info(f"[Word] ✅ Trích xuất thành công bằng OCR Fallback ({len(pdf_text)} ký tự)")
-                return pdf_text.strip()
-                
-        except Exception as e:
-            Log.error(f"[Word] ❌ OCR Fallback thất bại: {e}")
-    
     return ""
