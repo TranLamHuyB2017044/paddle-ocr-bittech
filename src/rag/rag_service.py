@@ -1,4 +1,6 @@
 import uuid
+import concurrent.futures
+import os
 from typing import List, Dict
 from src.rag.embedding_service import embedding_service
 from src.rag.qdrant_service import qdrant_service
@@ -8,9 +10,10 @@ import src.config as config
 from qdrant_client.http import models
 
 class RagService:
-    def split_text(self, text: str, chunk_size: int = config.RAG_CHUNK_SIZE, chunk_overlap: int = config.RAG_CHUNK_OVERLAP) -> List[str]:
+    @staticmethod
+    def _chunk_worker(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
         """
-        Simple recursive character splitter.
+        Worker function for multiprocessing chunking.
         """
         if len(text) <= chunk_size:
             return [text]
@@ -21,36 +24,79 @@ class RagService:
             end = start + chunk_size
             chunks.append(text[start:end])
             start = end - chunk_overlap
+            if start >= len(text) - chunk_overlap: # Avoid infinite loop or tiny last chunk
+                break
         return chunks
 
-    def index_text(self, text: str, workspace_id: str, document_name: str):
+    def split_text(self, text: str, chunk_size: int = config.RAG_CHUNK_SIZE, chunk_overlap: int = config.RAG_CHUNK_OVERLAP) -> List[str]:
         """
-        Chunk text, embed it, and store in Qdrant.
+        Public API for splitting text.
         """
-        Log.info(f"[RAG] Indexing document '{document_name}' for workspace '{workspace_id}'")
-        chunks = self.split_text(text)
+        return self._chunk_worker(text, chunk_size, chunk_overlap)
+
+    def index_text(self, text: str, workspace_id: str, document_name: str, batch_size: int = 50):
+        """
+        Chunk text using multiprocessing, embed it in batches, and store in Qdrant.
+        """
+        Log.info(f"[RAG] Indexing document '{document_name}' for workspace '{workspace_id}' (Length: {len(text)})")
+        
+        # 1. Parallel Chunking if text is large
+        num_procs = min(os.cpu_count() or 4, 8)
+        
+        if len(text) > 10000: # Only use threading for reasonably large text
+            Log.info(f"[RAG] Using threading with {num_procs} workers for chunking")
+            # Divide text into large blocks for workers
+            block_size = len(text) // num_procs
+            overlap = config.RAG_CHUNK_OVERLAP
+            
+            blocks = []
+            for i in range(num_procs):
+                start = max(0, i * block_size - overlap)
+                end = (i + 1) * block_size if i < num_procs - 1 else len(text)
+                blocks.append(text[start:end])
+            
+            chunks = []
+            # Use ThreadPoolExecutor instead of ProcessPoolExecutor to avoid re-importing models on Windows
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_procs) as executor:
+                futures = [executor.submit(self._chunk_worker, block, config.RAG_CHUNK_SIZE, config.RAG_CHUNK_OVERLAP) for block in blocks]
+                for future in concurrent.futures.as_completed(futures):
+                    chunks.extend(future.result())
+            
+            # Deduplicate chunks if overlap created identical ones (simple check)
+            chunks = list(dict.fromkeys(chunks))
+        else:
+            chunks = self.split_text(text)
+            
         Log.info(f"[RAG] Created {len(chunks)} chunks")
         
-        embeddings = embedding_service.embed_text(chunks)
-        
-        points = []
-        for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):
-            points.append(
-                models.PointStruct(
-                    id=str(uuid.uuid4()),
-                    vector=vector,
-                    payload={
-                        "text": chunk,
-                        "workspace_id": workspace_id,
-                        "document_name": document_name,
-                        "chunk_index": i
-                    }
+        # 2. Batch Embedding & Upserting
+        total_indexed = 0
+        for i in range(0, len(chunks), batch_size):
+            batch_chunks = chunks[i : i + batch_size]
+            Log.debug(f"[RAG] Processing batch {i//batch_size + 1}/{(len(chunks)-1)//batch_size + 1}")
+            
+            embeddings = embedding_service.embed_text(batch_chunks)
+            
+            points = []
+            for j, (chunk, vector) in enumerate(zip(batch_chunks, embeddings)):
+                points.append(
+                    models.PointStruct(
+                        id=str(uuid.uuid4()),
+                        vector=vector,
+                        payload={
+                            "text": chunk,
+                            "workspace_id": workspace_id,
+                            "document_name": document_name,
+                            "chunk_index": i + j
+                        }
+                    )
                 )
-            )
-        
-        qdrant_service.upsert_points(points)
-        Log.info(f"[RAG] Successfully indexed {len(points)} points in Qdrant")
-        return len(points)
+            
+            qdrant_service.upsert_points(points)
+            total_indexed += len(points)
+            
+        Log.info(f"[RAG] Successfully indexed {total_indexed} points in Qdrant")
+        return total_indexed
 
     def query(self, question: str, workspace_id: str, provider: str = "auto") -> Dict:
         """

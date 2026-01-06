@@ -12,6 +12,7 @@ from src.utils.ocr_utils import ocr_extract
 from src.api.processors.ai_processor import process_with_grok, process_with_gemini
 from src.api.processors.traditional_processor import process_traditional
 from src.utils.logger import Log
+from concurrent.futures import ThreadPoolExecutor
 
 
 
@@ -194,20 +195,19 @@ def register_routes(app):
                     if len(saved_paths) > 1: p2 = saved_paths[1]
                     if len(saved_paths) > 2: cleanup_extra = saved_paths[2:]
                     
-                    # OCR each file
-                    total_ocr_time = 0
-                    for path in saved_paths:
-                        t = time.time()
-                        ocr_result, _ = ocr_extract(path)
-                        # Add separator for context if multiple files
-                        if len(saved_paths) > 1:
-                            raw_front.extend([f"--- PAGE/IMAGE START: {os.path.basename(path)} ---"])
+                    # OCR each file in PARALLEL
+                    t_start_ocr = time.time()
+                    with ThreadPoolExecutor(max_workers=min(len(saved_paths), 4)) as executor:
+                        # Map paths to ocr function, results is an iterator of (ocr_data, texts)
+                        results = list(executor.map(ocr_extract, saved_paths))
                         
+                    for idx, (ocr_result, _) in enumerate(results):
+                        if len(saved_paths) > 1:
+                            raw_front.extend([f"--- PAGE/IMAGE START: {os.path.basename(saved_paths[idx])} ---"])
                         raw_front.extend(ocr_result)
-                        total_ocr_time += (time.time() - t)
                     
-                    ocr_front_time = total_ocr_time
-                    Log.info(f"[API-TRAD]    ⏳ Total OCR time: {ocr_front_time:.2f}s")
+                    ocr_front_time = time.time() - t_start_ocr
+                    Log.info(f"[API-TRAD]    ⏳ Parallel OCR time ({len(saved_paths)} images): {ocr_front_time:.2f}s")
                     
                     # Cleanup extra files immediately
                     for extra_path in cleanup_extra:
@@ -261,13 +261,17 @@ def register_routes(app):
             # FORCE TRADITIONAL FLOW
             # Get user_id from Flask g context (set by @require_auth)
             user_id = getattr(g, 'user_id', None)
-            return process_traditional(
+            response = process_traditional(
                 raw_front, raw_back, 
                 timer_info, 
                 doc_type=doc_type,
                 user_id=user_id,
                 file_paths=[p for p in [p1, p2] if p] if (p1 or p2) else []
             )
+            # Clear paths so finally block doesn't delete them (handed to background task)
+            p1 = None
+            p2 = None
+            return response
 
         except Exception as e:
             Log.error("\n" + "!"*70)
@@ -349,18 +353,18 @@ def register_routes(app):
                     if len(saved_paths) > 0: p1 = saved_paths[0]
                     if len(saved_paths) > 1: p2 = saved_paths[1]
                     
-                    # OCR each file
-                    total_ocr_time = 0
-                    for path in saved_paths:
-                        t = time.time()
-                        ocr_result, _ = ocr_extract(path)
+                    # OCR each file in PARALLEL
+                    t_start_ocr = time.time()
+                    with ThreadPoolExecutor(max_workers=min(len(saved_paths), 4)) as executor:
+                        results = list(executor.map(ocr_extract, saved_paths))
+                        
+                    for idx, (ocr_result, _) in enumerate(results):
                         if len(saved_paths) > 1:
-                            raw_front.extend([f"--- PAGE/IMAGE START: {os.path.basename(path)} ---"])
+                            raw_front.extend([f"--- PAGE/IMAGE START: {os.path.basename(saved_paths[idx])} ---"])
                         raw_front.extend(ocr_result)
-                        total_ocr_time += (time.time() - t)
                     
-                    ocr_front_time = total_ocr_time
-                    Log.info(f"[API-GROK]    ⏳ Total OCR time: {ocr_front_time:.2f}s")
+                    ocr_front_time = time.time() - t_start_ocr
+                    Log.info(f"[API-GROK]    ⏳ Parallel OCR time ({len(saved_paths)} images): {ocr_front_time:.2f}s")
 
                 else:
                     # 📷 SINGLE/DOUBLE FILE UPLOAD FLOW
@@ -410,7 +414,9 @@ def register_routes(app):
             
             try:
                 response = process_with_grok(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                if response: return response
+                if response: 
+                    all_temp_files = [] # Hand off to background
+                    return response
                 # If None was returned
                 return jsonify({"statusCode": 500, "message": "Grok processing returned no data"}), 500
             except Exception as e:
@@ -505,16 +511,19 @@ def register_routes(app):
                     # Assuming Invoice logic uses only p1 (front).
                     # For compatibility, we'll just populate raw_front with all text from all pages.
                     
-                    if doc_type == 'invoice':
-                        # Invoice Loop
-                        for idx, path in enumerate(saved_paths):
-                            t = time.time()
-                            data, _ = ocr_extract(path)
-                            ocr_front_time += (time.time() - t)
-                            # Extend raw_front with data (list ofdicts)
+                    if doc_type == 'invoice' or has_files_list:
+                        # Parallel Loop for all saved paths
+                        t_start_ocr = time.time()
+                        with ThreadPoolExecutor(max_workers=min(len(saved_paths), 4)) as executor:
+                            results = list(executor.map(ocr_extract, saved_paths))
+                        
+                        for idx, (data, _) in enumerate(results):
                             if data: raw_front.extend(data)
+                        
+                        ocr_front_time = time.time() - t_start_ocr
+                        Log.info(f"[API] ⏳ Parallel OCR time ({len(saved_paths)} images): {ocr_front_time:.2f}s")
                     else:
-                        # Legacy Doc Type Loop (CCCD/License) - Expects 2 sides max usually
+                        # This section is mostly deprecated by the logic above but kept for absolute safety
                         if p1:
                              t = time.time()
                              raw_front, _ = ocr_extract(p1)
@@ -605,7 +614,9 @@ def register_routes(app):
             if provider == 'grok':
                 try:
                     response = process_with_grok(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                    if response: return response
+                    if response: 
+                        all_temp_files = [] 
+                        return response
                 except Exception as e:
                     Log.warning(f"[API] ⚠️ Grok failed: {e}. Fallback to traditional.")
 
@@ -614,7 +625,9 @@ def register_routes(app):
                 if not should_skip_gemini:
                     try:
                         response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                        if response: return response
+                        if response: 
+                            all_temp_files = []
+                            return response
                     except Exception as e:
                         Log.warning(f"[API] ⚠️ Gemini failed: {e}. Fallback to traditional.")
                 else:
@@ -631,7 +644,9 @@ def register_routes(app):
                 if not should_skip_grok:
                     try:
                         response = process_with_grok(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                        if response: return response
+                        if response: 
+                            all_temp_files = []
+                            return response
                         # If response is None, it means fallback initiated by grok logic (429/503)
                     except Exception as grok_e:
                         Log.warning(f"[API] ⚠️ Grok failed ({grok_e}). Trying Gemini...")
@@ -640,7 +655,9 @@ def register_routes(app):
                 if not should_skip_gemini:
                     try:
                          response = process_with_gemini(raw_front, raw_back, timer_info, doc_type=doc_type, user_id=user_id, file_paths=all_temp_files)
-                         if response: return response
+                         if response: 
+                             all_temp_files = []
+                             return response
                     except Exception as gemini_e:
                          Log.warning(f"[API] ⚠️ Gemini failed cleanly ({gemini_e}). Fallback to traditional.")
                 else:
@@ -648,13 +665,15 @@ def register_routes(app):
             
             
             
-            return process_traditional(
+            response = process_traditional(
                 raw_front, raw_back, 
                 timer_info, 
                 doc_type=doc_type,
                 user_id=user_id,
                 file_paths=all_temp_files
             )
+            all_temp_files = [] # Hand off
+            return response
 
         except Exception as e:
             Log.error("\n" + "!"*70)

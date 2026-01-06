@@ -4,7 +4,10 @@ import src.config as config
 
 class EmbeddingService:
     def __init__(self, model_name: str = config.EMBEDDING_MODEL):
-        self.model = TextEmbedding(model_name=model_name)
+        # Increase threads for faster processing on multicore CPUs
+        import os
+        num_threads = min(os.cpu_count() or 4, 8)
+        self.model = TextEmbedding(model_name=model_name, threads=num_threads)
         
     def embed_text(self, texts: List[str]) -> List[List[float]]:
         """

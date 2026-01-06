@@ -28,10 +28,13 @@ MODEL_PATH = "protonx-models/nano-protonx-legal-tc" # Old online path
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
     "lang": "vi",
-    "use_doc_orientation_classify": False,
-    "use_angle_cls": True, # Enable Angle Classification to rotate layout
+    "use_angle_cls": True, # Enable Angle Classification
+    "use_doc_orientation_classify": True, # Native orientation detection
     "use_doc_unwarping": False,
-    
+    "enable_mkldnn": True, # Acceleration for Intel CPUs
+    "cpu_threads": 4, # Parallel processing
+    "det_limit_side_len": 960, # Reduced from 1280 for faster detection
+    "det_db_unclip_ratio": 1.8, # Balanced for speed/accuracy
 }
 
 # ========== TEXT CLEANING CONFIG ==========

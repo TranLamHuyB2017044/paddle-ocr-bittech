@@ -115,6 +115,7 @@ class GrokExtractor:
                 ],
                 response_format=response_schema,
                 temperature=0.1,
+                max_tokens=5000,
             )
             
             message = completion.choices[0].message

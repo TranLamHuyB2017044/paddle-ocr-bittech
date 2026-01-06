@@ -9,6 +9,7 @@ from src.utils.smart_config import get_smart_config
 from src.utils.smart_spatial_extractor import SmartSpatialExtractor
 from src.utils.ocr_utils import filter_useless_lines
 from src.utils.text_cleaner import clean_text_lines
+from src.utils.background_tasks import run_background_upload_and_log
 
 def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None, file_paths=None):
     request_start = timer_info["start"]
@@ -83,35 +84,13 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
         users_repo.increment_extraction_stats(user_id, doc_type)
         Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
 
-    # CLOUDINARY UPLOAD (Optional)
-    final_file_paths = file_paths
-    
-    if cloudinary_service.configured and file_paths:
-        Log.info(f"[API] ☁️ Đang upload {len(file_paths)} ảnh lên Cloudinary...")
-        try:
-            upload_urls = []
-            for f_path in file_paths:
-                url = cloudinary_service.upload_image(f_path)
-                if url: 
-                    upload_urls.append(url)
-                    Log.info(f"[API] ☁️ Uploaded: {url}")
-            
-            if len(upload_urls) > 0:
-                final_file_paths = upload_urls
-                Log.info(f"[API] ☁️ Đã thay thế paths bằng Cloudinary URLs.")
-        except Exception as cloud_e:
-            Log.error(f"[API] ⚠️ Cloudinary upload failed: {cloud_e}")
-    elif not cloudinary_service.configured:
-        Log.warning("[API] ☁️ Cloudinary chưa được cấu hình, bỏ qua upload.")
+    # Trigger Background Upload and Logging
+    run_background_upload_and_log(user_id, doc_type, file_paths, info_extracted)
 
-    # Log to DB (Mongo - Logs & Documents)
-    document_id = log_service.save_logs(user_id, doc_type, final_file_paths, info_extracted)
-
-    Log.info("[API] 🎉 Trả về kết quả kiểu truyền thống")
+    Log.info("[API] 🎉 Trả về kết quả kiểu truyền thống (Background Upload active)")
     return jsonify({
         "statusCode": 200,
         "message": "Success",
-        "document_id": document_id,
         "data": info_extracted,
         "debug": {
             "total_time": f"{total_time:.2f}s",

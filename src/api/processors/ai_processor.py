@@ -9,6 +9,7 @@ from src.extractors.grok_extractor import grok_extractor
 from src.extractors.gemini_extractor import gemini_extractor
 from src.utils.grok_limiter import grok_limiter
 from src.utils.gemini_limiter import gemini_limiter
+from src.utils.background_tasks import run_background_upload_and_log
 
 def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, file_paths=None):
     request_start = timer_info["start"]
@@ -50,35 +51,13 @@ def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, f
             users_repo.increment_extraction_stats(user_id, doc_type)
             Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
             
-        # CLOUDINARY UPLOAD (Optional)
-        final_file_paths = file_paths
-        
-        if cloudinary_service.configured and file_paths:
-            Log.info(f"[API] ☁️ Đang upload {len(file_paths)} ảnh lên Cloudinary (Grok)...")
-            try:
-                 upload_urls = []
-                 for f_path in file_paths:
-                     url = cloudinary_service.upload_image(f_path)
-                     if url: 
-                         upload_urls.append(url)
-                         Log.info(f"[API] ☁️ Uploaded: {url}")
-                 
-                 if len(upload_urls) > 0:
-                     final_file_paths = upload_urls
-                     Log.info(f"[API] ☁️ Đã thay thế paths bằng Cloudinary URLs.")
-            except Exception as cloud_e:
-                Log.error(f"[API] ⚠️ Cloudinary upload failed: {cloud_e}")
-        elif not cloudinary_service.configured:
-            Log.warning("[API] ☁️ Cloudinary chưa được cấu hình, bỏ qua upload.")
+        # Trigger Background Upload and Logging
+        run_background_upload_and_log(user_id, doc_type, file_paths, info)
 
-        # Log to DB (Mongo - Logs & Documents)
-        document_id = log_service.save_logs(user_id, doc_type, final_file_paths, info)
-
-        Log.info("[API] 🎉 Trả về kết quả Grok")
+        Log.info("[API] 🎉 Trả về kết quả Grok (Background Upload active)")
         return jsonify({
             "statusCode": 200,
             "message": "Success (Grok)",
-            "document_id": document_id,
             "data": info,
             "debug": {
                 "total_time": f"{total_time:.2f}s",
@@ -149,35 +128,13 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None,
             users_repo.increment_extraction_stats(user_id, doc_type)
             Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
             
-        # CLOUDINARY UPLOAD (Optional)
-        final_file_paths = file_paths
-        
-        if cloudinary_service.configured and file_paths:
-            Log.info(f"[API] ☁️ Đang upload {len(file_paths)} ảnh lên Cloudinary (Gemini)...")
-            try:
-                 upload_urls = []
-                 for f_path in file_paths:
-                     url = cloudinary_service.upload_image(f_path)
-                     if url: 
-                         upload_urls.append(url)
-                         Log.info(f"[API] ☁️ Uploaded: {url}")
-                 
-                 if len(upload_urls) > 0:
-                     final_file_paths = upload_urls
-                     Log.info(f"[API] ☁️ Đã thay thế paths bằng Cloudinary URLs.")
-            except Exception as cloud_e:
-                 Log.error(f"[API] ⚠️ Cloudinary upload failed: {cloud_e}")
-        elif not cloudinary_service.configured:
-            Log.warning("[API] ☁️ Cloudinary chưa được cấu hình, bỏ qua upload.")
+        # Trigger Background Upload and Logging
+        run_background_upload_and_log(user_id, doc_type, file_paths, info)
 
-        # Log to DB (Mongo - Logs & Documents)
-        document_id = log_service.save_logs(user_id, doc_type, final_file_paths, info)
-
-        Log.info("[API] 🎉 Trả về kết quả Gemini")
+        Log.info("[API] 🎉 Trả về kết quả Gemini (Background Upload active)")
         return jsonify({
             "statusCode": 200,
             "message": "Success (Gemini)",
-            "document_id": document_id,
             "data": info,
             "debug": {
                 "total_time": f"{total_time:.2f}s",
