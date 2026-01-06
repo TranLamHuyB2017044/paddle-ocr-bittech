@@ -3,6 +3,8 @@ import os
 from src.utils.auth_middleware import require_auth
 from src.repositories.workspaces_repository import workspaces_repo
 from src.repositories.chat_history_repository import chat_history_repo
+from src.repositories.documents_repository import documents_repo
+from src.repositories.extraction_logs_repository import extraction_logs_repo
 from src.rag.rag_service import rag_service
 from src.rag.qdrant_service import qdrant_service
 from src.utils.ocr_utils import ocr_extract
@@ -149,6 +151,67 @@ def delete_workspace(workspace_id):
             
     except Exception as e:
         Log.error(f"[RAG-API] Delete workspace failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@rag_bp.route('/api/rag/workspaces/clear-all', methods=['DELETE'])
+@require_auth
+def delete_all_workspaces():
+    try:
+        # 1. Get all workspaces for this user
+        workspaces = workspaces_repo.find_by_user(g.user_id)
+        workspace_ids = [w["_id"] for w in workspaces]
+        
+        Log.info(f"[RAG-API] Clearing all data for user {g.user_id}. Workspaces found: {len(workspace_ids)}")
+
+        # 2. Delete vectors from Qdrant for each workspace
+        deleted_vectors_count = 0
+        for ws_id in workspace_ids:
+            try:
+                qdrant_service.delete_by_workspace(ws_id)
+                deleted_vectors_count += 1
+            except Exception as q_err:
+                Log.error(f"[RAG-API] Failed to delete vectors for workspace {ws_id}: {q_err}")
+
+        # 3. Delete chat histories for all workspaces of this user
+        try:
+            deleted_history_count = chat_history_repo.delete_by_user(g.user_id)
+            Log.info(f"[RAG-API] Deleted {deleted_history_count} chat history records")
+        except Exception as h_err:
+            Log.error(f"[RAG-API] Failed to delete chat history: {h_err}")
+
+        # 4. Delete extraction logs
+        try:
+            deleted_logs_count = extraction_logs_repo.delete_by_user(g.user_id)
+            Log.info(f"[RAG-API] Deleted {deleted_logs_count} extraction logs")
+        except Exception as l_err:
+            Log.error(f"[RAG-API] Failed to delete extraction logs: {l_err}")
+
+        # 5. Delete documents metadata
+        try:
+            deleted_docs_count = documents_repo.delete_by_user(g.user_id)
+            Log.info(f"[RAG-API] Deleted {deleted_docs_count} document records")
+        except Exception as d_err:
+            Log.error(f"[RAG-API] Failed to delete documents: {d_err}")
+
+        # 6. Delete all workspaces from MongoDB
+        try:
+            deleted_workspaces_count = workspaces_repo.delete_by_user(g.user_id)
+            Log.info(f"[RAG-API] Deleted {deleted_workspaces_count} workspace records")
+        except Exception as w_err:
+            Log.error(f"[RAG-API] Failed to delete workspaces: {w_err}")
+
+        return jsonify({
+            "statusCode": 200,
+            "message": "All workspaces and associated data cleared successfully",
+            "data": {
+                "workspaces_deleted": len(workspace_ids),
+                "history_cleared": True,
+                "logs_cleared": True,
+                "documents_cleared": True
+            }
+        })
+    except Exception as e:
+        Log.error(f"[RAG-API] Clear all failed: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 @rag_bp.route('/api/rag/workspaces/<workspace_id>/upload', methods=['POST'])

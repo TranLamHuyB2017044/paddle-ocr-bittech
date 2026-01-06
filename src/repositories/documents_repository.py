@@ -25,5 +25,10 @@ class DocumentsRepository(BaseRepository):
         }
         return self.create(data)
 
+    def delete_by_user(self, user_id):
+        uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = self.collection.delete_many({"user_id": uid})
+        return result.deleted_count
+
 # Global instance
 documents_repo = DocumentsRepository()

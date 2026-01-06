@@ -130,7 +130,7 @@ class RagService:
         system_instruction = (
             "Bạn là một trợ lý AI thông minh. Hãy trả lời câu hỏi dựa trên ngữ cảnh được cung cấp. "
             "Nếu thông tin không có trong ngữ cảnh, hãy trả lời chính xác là: 'Tôi không có thông tin', tuyệt đối không tự bịa ra câu trả lời. "
-            "Nếu có thông tin, hãy trả lời một cách chi tiết và chuyên nghiệp bằng Tiếng Việt."
+            "Nếu có thông tin, hãy trả lời một cách ngắn gọn và đầy đủ ý bằng Tiếng Việt."
         )
         
         prompt = f"NGỮ CẢNH:\n{context}\n\nCÂU HỎI: {question}"

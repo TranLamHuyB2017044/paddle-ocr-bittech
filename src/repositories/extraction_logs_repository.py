@@ -36,5 +36,10 @@ class ExtractionLogsRepository(BaseRepository):
         
         return self.collection.count_documents(query)
 
+    def delete_by_user(self, user_id):
+        uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = self.collection.delete_many({"user_id": uid})
+        return result.deleted_count
+
 # Global instance
 extraction_logs_repo = ExtractionLogsRepository()

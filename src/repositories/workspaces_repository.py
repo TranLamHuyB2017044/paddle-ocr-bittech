@@ -54,4 +54,10 @@ class WorkspacesRepository(BaseRepository):
     def delete_workspace(self, workspace_id):
         return self.delete(workspace_id)
 
+    def delete_by_user(self, user_id):
+        # Convert to ObjectId for querying
+        uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+        result = self.collection.delete_many({"user_id": uid})
+        return result.deleted_count
+
 workspaces_repo = WorkspacesRepository()
