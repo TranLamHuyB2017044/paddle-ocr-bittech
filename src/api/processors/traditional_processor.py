@@ -88,7 +88,7 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
     run_background_upload_and_log(user_id, doc_type, file_paths, info_extracted)
 
     Log.info("[API] 🎉 Trả về kết quả kiểu truyền thống (Background Upload active)")
-    return jsonify({
+    return {
         "statusCode": 200,
         "message": "Success",
         "data": info_extracted,
@@ -108,4 +108,4 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
                 "back": clean_back
             }
         }
-    })
+    }

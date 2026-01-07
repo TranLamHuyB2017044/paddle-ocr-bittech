@@ -1,10 +1,38 @@
 services:
+  # Redis - Hàng đợi công việc
+  redis:
+    image: redis:latest
+    container_name: paddle-ocr-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # Background Worker - Nơi xử lý OCR và Embedding nặng
+  worker:
+    build: .
+    container_name: paddle-ocr-worker
+    command: python run_worker.py
+    restart: always
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+      - ./storage:/app/storage
+
+  # Flask API - Chỉ nhận file và trả về 202
   ocr-api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: paddle-ocr-app
     restart: always
+    depends_on:
+      - redis
     ports:
       - "8080:8080"
     volumes:
@@ -15,10 +43,5 @@ services:
       - .env
     environment:
       - PORT=8080
+      - REDIS_URL=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s

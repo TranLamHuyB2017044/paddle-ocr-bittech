@@ -32,3 +32,5 @@ fastembed
 qdrant-client>=1.10.1
 python-docx
 pymupdf
+redis
+rq

@@ -55,7 +55,7 @@ def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, f
         run_background_upload_and_log(user_id, doc_type, file_paths, info)
 
         Log.info("[API] 🎉 Trả về kết quả Grok (Background Upload active)")
-        return jsonify({
+        return {
             "statusCode": 200,
             "message": "Success (Grok)",
             "data": info,
@@ -70,7 +70,7 @@ def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, f
                     "back": raw_back
                 }
             }
-        })
+        }
     except Exception as e:
         Log.error(f"[API] ⚠️ API Grok Error: {e}")
         grok_limiter.record_error(e)
@@ -132,7 +132,7 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None,
         run_background_upload_and_log(user_id, doc_type, file_paths, info)
 
         Log.info("[API] 🎉 Trả về kết quả Gemini (Background Upload active)")
-        return jsonify({
+        return {
             "statusCode": 200,
             "message": "Success (Gemini)",
             "data": info,
@@ -147,7 +147,7 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None,
                     "back": raw_back
                 }
             }
-        })
+        }
     except Exception as e:
         Log.error(f"[API] ⚠️ API Gemini Error: {e}")
         gemini_limiter.record_error(e)

@@ -6,24 +6,48 @@ class DocumentsRepository(BaseRepository):
     def __init__(self):
         super().__init__("documents")
     
-    def save_document(self, user_id, doc_type, sheet_info=None, source_file=None):
+    def save_document(self, user_id, doc_type=None, workspace_id=None, filename=None, status=None, **kwargs):
         """
-        Save document metadata
-        
-        Args:
-            user_id: ID of the user
-            doc_type: Type of document
-            sheet_info: Dict containing sheet_id, sheet_url, sheet_name
-            source_file: Dict containing file_name, file_url
+        Save document metadata (Compatible with both OCR logs and RAG system)
         """
         data = {
             "user_id": ObjectId(user_id) if user_id else None,
-            "document_type": doc_type,
-            "sheet": sheet_info or {},
-            "source_file": source_file or {},
-            "created_at": datetime.now()
+            "created_at": datetime.now(),
+            "updated_at": datetime.now()
         }
-        return self.create(data)
+        
+        # RAG specific fields
+        if workspace_id: data["workspace_id"] = workspace_id
+        if filename: data["filename"] = filename
+        if status: data["status"] = status
+        
+        # OCR log specific fields (backward compatibility)
+        if doc_type: data["document_type"] = doc_type
+        
+        # Add any other kwargs (sheet_info, source_file, etc.)
+        data.update(kwargs)
+        
+        return str(self.create(data))
+
+    def update_status(self, doc_id, status, **kwargs):
+        """
+        Update document status and metadata
+        """
+        update_data = {
+            "status": status,
+            "updated_at": datetime.now()
+        }
+        
+        # Add any other fields (total_chunks, error_message, result, etc.)
+        update_data.update(kwargs)
+            
+        self.collection.update_one(
+            {"_id": ObjectId(doc_id)},
+            {"$set": update_data}
+        )
+
+    def find_by_workspace(self, workspace_id):
+        return self.find_all({"workspace_id": workspace_id})
 
     def delete_by_user(self, user_id):
         uid = ObjectId(user_id) if isinstance(user_id, str) else user_id

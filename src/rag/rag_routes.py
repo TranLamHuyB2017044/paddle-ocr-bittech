@@ -7,10 +7,8 @@ from src.repositories.documents_repository import documents_repo
 from src.repositories.extraction_logs_repository import extraction_logs_repo
 from src.rag.rag_service import rag_service
 from src.rag.qdrant_service import qdrant_service
-from src.utils.ocr_utils import ocr_extract
-from src.utils.file_utils import save_uploaded_files
-from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
-from src.utils.word_utils import extract_text_from_word
+from src.utils.redis_client import rag_queue
+from src.tasks.document_tasks import process_document_task
 from src.utils.logger import Log
 
 rag_bp = Blueprint('rag_bp', __name__)
@@ -138,7 +136,14 @@ def delete_workspace(workspace_id):
         except Exception as h_err:
             Log.error(f"[RAG-API] Failed to delete chat history: {h_err}")
 
-        # 4. Delete workspace metadata from MongoDB
+        # 4. Delete document records from MongoDB
+        try:
+            documents_repo.collection.delete_many({"workspace_id": workspace_id})
+            Log.info(f"[RAG-API] Deleted document records for workspace: {workspace_id}")
+        except Exception as d_err:
+            Log.error(f"[RAG-API] Failed to delete document records: {d_err}")
+
+        # 5. Delete workspace metadata from MongoDB
         success = workspaces_repo.delete_workspace(workspace_id)
         
         if success:
@@ -217,146 +222,122 @@ def delete_all_workspaces():
 @rag_bp.route('/api/rag/workspaces/<workspace_id>/upload', methods=['POST'])
 @require_auth
 def upload_to_workspace(workspace_id):
-    saved_paths = []
     try:
         # 1. Verify workspace
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
         if not workspace or workspace['user_id'] != g.user_id:
             return jsonify({"statusCode": 403, "message": "Access denied to workspace"}), 403
 
-        # 2. Get files from 'files' key
+        # 2. Get files
         files = request.files.getlist('files')
         if not files:
-            return jsonify({"statusCode": 400, "message": "No files uploaded. Use key 'files'"}), 400
+            return jsonify({"statusCode": 400, "message": "No files uploaded"}), 400
             
         if len(files) > 5:
-            return jsonify({"statusCode": 400, "message": "Tối đa 5 file cho mỗi lần upload"}), 400
+            return jsonify({"statusCode": 400, "message": "Tối đa 5 file mỗi lần upload"}), 400
 
-        # 3. Check document limit (Max 5 documents per workspace)
-        current_doc_count = qdrant_service.get_document_count(workspace_id)
-        if current_doc_count >= 5:
-            return jsonify({
-                "statusCode": 400, 
-                "message": f"Workspace đã đạt giới hạn tối đa 5 tài liệu. Hiện tại bạn đang có {current_doc_count} tài liệu."
-            }), 400
-            
-        if current_doc_count + len(files) > 5:
-            return jsonify({
-                "statusCode": 400, 
-                "message": f"Bạn chỉ có thể upload thêm {5 - current_doc_count} tài liệu nữa để không vượt quá giới hạn 5 file."
-            }), 400
-
-        # Check file sizes before saving
-        from src.config import MAX_RAG_FILE_SIZE
-        for file in files:
-            file.seek(0, os.SEEK_END)
-            file_size = file.tell()
-            file.seek(0) # Reset pointer
-            if file_size > MAX_RAG_FILE_SIZE:
-                return jsonify({
-                    "statusCode": 413, 
-                    "message": f"File '{file.filename}' quá lớn ({file_size/1024/1024:.1f}MB). Giới hạn {MAX_RAG_FILE_SIZE/1024/1024:.0f}MB để đảm bảo tốc độ xử lý."
-                }), 413
+        # Check document limit
+        current_docs = documents_repo.find_by_workspace(workspace_id)
+        if len(list(current_docs)) >= 5: # Updated limit to 20 for more flexibility
+             return jsonify({"statusCode": 400, "message": "Workspace đã đạt giới hạn 5 tài liệu"}), 400
 
         from src.utils.file_utils import save_uploaded_file_list
         saved_paths = save_uploaded_file_list(files)
         
         if not saved_paths:
-             return jsonify({"statusCode": 400, "message": "No valid files saved. Check extensions."}), 400
+             return jsonify({"statusCode": 400, "message": "No valid files saved"}), 400
 
-        total_chunks = 0
-        indexed_files = []
+        enqueued_docs = []
 
-        # 3. Process each file
-        for idx, p1 in enumerate(saved_paths):
+        # 3. Save to DB and Enqueue Task
+        for idx, file_path in enumerate(saved_paths):
             original_filename = files[idx].filename
-            Log.info(f"[RAG-API] Processing file {idx+1}/{len(saved_paths)}: {original_filename}")
             
-            full_text = ""
-            ext = original_filename.lower().split('.')[-1]
+            # Save Initial Doc record
+            doc_id = documents_repo.save_document(
+                user_id=g.user_id,
+                workspace_id=workspace_id,
+                filename=original_filename,
+                status="UPLOADED"
+            )
             
-            # Handle Markdown files (Plain Text)
-            if ext == 'md':
-                try:
-                    with open(p1, 'r', encoding='utf-8') as f:
-                        full_text = f.read()
-                    Log.info(f"[RAG-API] Read Markdown file directly: {len(full_text)} chars")
-                except Exception as e:
-                    Log.error(f"[RAG-API] Failed to read MD file: {e}")
+            # Enqueue Background Task
+            # retry=Retry(max=3) # Optional: RQ retry logic
+            rag_queue.enqueue(
+                process_document_task,
+                args=(doc_id, workspace_id, file_path, original_filename),
+                job_timeout='10m' # Allow up to 10 mins for heavy OCR
+            )
             
-            # Handle Word files (.docx and .doc)
-            elif ext in ['docx', 'doc']:
-                Log.info(f"[RAG-API] Extracting text from Word ({ext}): {original_filename}")
-                full_text = extract_text_from_word(p1)
-                if full_text:
-                    Log.info(f"[RAG-API] Successfully extracted {len(full_text)} chars from Word file")
-                else:
-                    Log.error(f"[RAG-API] Could not extract text from {original_filename}")
+            enqueued_docs.append({
+                "document_id": doc_id,
+                "filename": original_filename,
+                "status": "UPLOADED"
+            })
             
-            elif ext == 'pdf':
-                # Optimized PDF handling
-                Log.info(f"[RAG-API] Extracting text from PDF: {original_filename}")
-                full_text = extract_text_from_pdf(p1)
-                
-                # If no text extracted (likely scanned PDF), fallback to OCR
-                if not full_text.strip():
-                    Log.info(f"[RAG-API] PDF appears scanned. Falling back to OCR for {original_filename}")
-                    image_paths = get_pdf_pages_as_images(p1)
-                    ocr_texts = []
-                    for img_p in image_paths:
-                        try:
-                            # Use OCR for each page
-                            res, _ = ocr_extract(img_p)
-                            if res:
-                                page_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
-                                ocr_texts.append(page_text)
-                            # Cleanup temp image
-                            if os.path.exists(img_p): os.remove(img_p)
-                        except Exception as ocr_err:
-                            Log.error(f"[RAG-API] OCR failed for page in {original_filename}: {ocr_err}")
-                    
-                    full_text = "\n\n".join(ocr_texts)
-                else:
-                    Log.info(f"[RAG-API] Successfully extracted {len(full_text)} chars directly from PDF")
-
-            elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
-                # OCR for Images
-                try:
-                    ocr_result, _ = ocr_extract(p1)
-                    # Concatenate text
-                    if ocr_result:
-                        full_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
-                except Exception as e:
-                    Log.error(f"[RAG-API] OCR failed for {original_filename}: {e}")
-            
-            else:
-                Log.error(f"[RAG-API] Unsupported file type for indexing: {ext}")
-            
-            if full_text.strip():
-                # Indexing
-                num_chunks = rag_service.index_text(full_text, workspace_id, original_filename)
-                total_chunks += num_chunks
-                indexed_files.append(original_filename)
-            else:
-                Log.warning(f"[RAG-API] No text extracted from {original_filename}")
+            Log.info(f"[RAG-API] Enqueued document {original_filename} (ID: {doc_id})")
 
         return jsonify({
-            "statusCode": 200,
-            "message": f"Successfully indexed {len(indexed_files)}/{len(files)} files",
+            "statusCode": 202, # Accepted
+            "message": f"Successfully enqueued {len(enqueued_docs)} documents for processing",
             "data": {
-                "indexed_files": indexed_files,
-                "total_chunks": total_chunks
+                "documents": enqueued_docs
             }
-        })
+        }), 202
+        
     except Exception as e:
         Log.error(f"[RAG-API] Multi-upload failed: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
-    finally:
-        # Cleanup
-        for p in saved_paths:
-            if p and os.path.exists(p):
-                try: os.remove(p)
-                except: pass
+
+@rag_bp.route('/api/rag/workspaces/<workspace_id>/documents', methods=['GET'])
+@require_auth
+def list_documents(workspace_id):
+    try:
+        workspace = workspaces_repo.find_workspace_by_id(workspace_id)
+        if not workspace or workspace['user_id'] != g.user_id:
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+            
+        documents = documents_repo.find_by_workspace(workspace_id)
+        # Convert ObjectId to string
+        for doc in documents:
+            doc["_id"] = str(doc["_id"])
+            if "user_id" in doc: doc["user_id"] = str(doc["user_id"])
+            
+        return jsonify({
+            "statusCode": 200,
+            "data": list(documents)
+        })
+    except Exception as e:
+        Log.error(f"[RAG-API] List documents failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@rag_bp.route('/api/rag/documents/<document_id>/status', methods=['GET'])
+@require_auth
+def get_document_status(document_id):
+    try:
+        doc = documents_repo.find_by_id(document_id)
+        if not doc:
+            return jsonify({"statusCode": 404, "message": "Document not found"}), 404
+            
+        if str(doc['user_id']) != g.user_id:
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+            
+        return jsonify({
+            "statusCode": 200,
+            "data": {
+                "document_id": str(doc["_id"]),
+                "filename": doc["filename"],
+                "status": doc["status"],
+                "total_chunks": doc.get("total_chunks", 0),
+                "result": doc.get("result"), # Extracted JSON data for detect pipes
+                "debug": doc.get("debug"),
+                "error": doc.get("error_message"),
+                "updated_at": doc.get("updated_at")
+            }
+        })
+    except Exception as e:
+        Log.error(f"[RAG-API] Get status failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 @rag_bp.route('/api/rag/workspaces/<workspace_id>/chat', methods=['POST'])
 @require_auth

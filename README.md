@@ -114,3 +114,21 @@ Dự án đã được cấu hình sẵn Dockerfile để deploy.
 - `requirements.txt`: Các thư viện cần thiết.
 - `Dockerfile`: Cấu hình build cho Railway.
 - `uploads/`: Thư mục lưu ảnh tạm thời.
+
+
+# Khởi động tất cả (API, Worker, Redis) chạy ngầm
+docker-compose up -d --build
+
+
+# Xem log của API (Để kiểm tra lỗi request)
+docker-compose logs -f
+
+# Dừng hệ thống
+docker-compose down
+
+# Truy cập vào redis trong docker
+docker exec -it paddle-ocr-redis redis-cli
+# Kiểm tra số lượng job đang chờ
+LLEN rq:queue:rag_tasks
+# Xóa sạch hàng đợi (nếu muốn làm lại từ đầu)
+FLUSHALL
