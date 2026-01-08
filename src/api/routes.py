@@ -193,7 +193,7 @@ def register_routes(app):
                 if p2: all_temp_files.append(p2)
 
             user_id = getattr(g, 'user_id', None)
-            provider = request.form.get("provider", "auto")
+            provider = request.form.get("provider", "grok")
             
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,

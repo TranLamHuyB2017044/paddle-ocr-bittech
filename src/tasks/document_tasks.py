@@ -75,7 +75,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename):
             except Exception as e:
                 Log.error(f"[Worker] Failed to delete file {file_path}: {e}")
 
-def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="auto"):
+def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok"):
     """
     Background task to process document detection (ID Card, License, etc.)
     """
@@ -96,13 +96,13 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="auto
         if len(file_paths) > 0:
             p1 = file_paths[0]
             t = time.time()
-            raw_front, _ = ocr_extract(p1)
+            raw_front, _ = ocr_extract(p1, doc_type=doc_type, side="front")
             ocr_front_time = time.time() - t
             
         if len(file_paths) > 1:
             p2 = file_paths[1]
             t = time.time()
-            raw_back, _ = ocr_extract(p2)
+            raw_back, _ = ocr_extract(p2, doc_type=doc_type, side="back")
             ocr_back_time = time.time() - t
             
         timer_info = {
@@ -138,5 +138,12 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="auto
         Log.error(traceback.format_exc())
         documents_repo.update_status(doc_id, "FAILED", error_message=error_msg)
     finally:
-        # File cleanup is handled by processors or above code if needed
-        pass
+        # 5. Cleanup files
+        if file_paths:
+            for path in file_paths:
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                        Log.info(f"[Worker-Detect] 🗑️ Cleaned up temp file: {path}")
+                    except Exception as e:
+                        Log.error(f"[Worker-Detect] ❌ Failed to delete file {path}: {e}")
