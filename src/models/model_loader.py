@@ -24,9 +24,8 @@ class ModelLoader:
         return cls._instance
     
     def __init__(self):
-        """Initialize models if not already loaded"""
-        if self._ocr is None:
-            self._load_models()
+        """Initialize ModelLoader instance without loading models immediately"""
+        pass
     
     def _load_models(self):
         """Load all required models"""
@@ -50,22 +49,30 @@ class ModelLoader:
     
     @property
     def ocr(self):
-        """Get OCR instance"""
+        """Get OCR instance, loading it if necessary"""
+        if self._ocr is None:
+            self._load_models()
         return self._ocr
     
     @property
     def tokenizer(self):
-        """Get tokenizer instance"""
+        """Get tokenizer instance, loading it if necessary"""
+        if self._tokenizer is None:
+            self._load_models()
         return self._tokenizer
     
     @property
     def model(self):
-        """Get model instance"""
+        """Get model instance, loading it if necessary"""
+        if self._model is None:
+            self._load_models()
         return self._model
     
     @property
     def device(self):
-        """Get device"""
+        """Get device, loading it if necessary"""
+        if self._device is None:
+            self._load_models()
         return self._device
 
 

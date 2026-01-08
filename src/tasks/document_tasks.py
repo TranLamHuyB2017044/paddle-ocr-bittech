@@ -96,13 +96,13 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
         if len(file_paths) > 0:
             p1 = file_paths[0]
             t = time.time()
-            raw_front, _ = ocr_extract(p1, doc_type=doc_type, side="front")
+            raw_front, _ = ocr_extract(p1)
             ocr_front_time = time.time() - t
             
         if len(file_paths) > 1:
             p2 = file_paths[1]
             t = time.time()
-            raw_back, _ = ocr_extract(p2, doc_type=doc_type, side="back")
+            raw_back, _ = ocr_extract(p2)
             ocr_back_time = time.time() - t
             
         timer_info = {
@@ -111,26 +111,53 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
             "ocr_back": ocr_back_time
         }
         
-        # 3. Process with UI Processors
+        # 3. Process with UI Processors (with Fallback Logic)
         result_response = None
-        if provider == 'grok':
-            result_response = process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
-        elif provider == 'gemini':
-            result_response = process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
-        else:
+        current_provider = provider
+        
+        Log.info(f"[Worker-Detect] 🎯 Initial provider selected: {current_provider}")
+        
+        # --- PHASE 1: Try Primary Provider ---
+        try:
+            if current_provider == 'grok':
+                result_response = process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
+            elif current_provider == 'gemini':
+                result_response = process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
+        except Exception as e:
+            Log.error(f"[Worker-Detect] ❌ Primary Provider ({current_provider}) Critical Error: {e}")
+            result_response = None # Force fallback if exception occurred but wasn't caught inside
+            
+        # --- PHASE 2: Fallback to Gemini if Grok failed ---
+        if current_provider == 'grok' and result_response is None:
+            Log.warning("[Worker-Detect] 🔄 Grok failed/overloaded. Falling back to Gemini...")
+            current_provider = 'gemini'
+            try:
+                result_response = process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
+            except Exception as e:
+                Log.error(f"[Worker-Detect] ❌ Fallback Gemini Critical Error: {e}")
+                result_response = None
+
+        # --- PHASE 3: Fallback to Traditional if all AI failed or if Traditional was requested ---
+        if result_response is None or current_provider == 'traditional':
+            reason = "AIs failed" if result_response is None and current_provider != 'traditional' else "requested"
+            Log.warning(f"[Worker-Detect] 🔄 Switching to Traditional pipeline (Reason: {reason})...")
+            current_provider = 'traditional'
             result_response = process_traditional(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
             
         # 4. Success -> Mark as READY and store result
         if result_response:
-            # result_response is now a dict (from our refactored processors)
+            final_provider = result_response.get("debug", {}).get("provider", current_provider)
+            Log.info(f"[Worker-Detect] ✅ SUCCESS! Final provider used: {final_provider}")
+            
             documents_repo.update_status(
                 doc_id, "READY", 
                 result=result_response.get("data"), 
                 debug=result_response.get("debug")
             )
-            Log.info(f"[Worker-Detect] Successfully detected {doc_type}")
+            Log.info(f"[Worker-Detect] 📑 Detection task completed for {doc_type}")
         else:
-            raise Exception("Processing failed to return valid data")
+            Log.error("[Worker-Detect] ❌ Final extraction failed - No result from any provider")
+            raise Exception("Processing failed to return valid data after trying all providers")
             
     except Exception as e:
         error_msg = str(e)

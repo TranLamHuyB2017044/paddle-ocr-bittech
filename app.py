@@ -8,7 +8,7 @@ import os
 
 import src.config as config
 from src.api.routes import register_routes
-from src.models.model_loader import model_loader
+# Model loader is no longer explicitly imported here to prevent unnecessary loading
 
 
 # ==================== FLASK APP SETUP ====================
@@ -31,13 +31,7 @@ app.config['JSON_SORT_KEYS'] = False
 # ==================== LOAD MODELS ====================
 from src.utils.logger import Log
 
-# ==================== LOAD MODELS ====================
-Log.info("="*70)
-Log.info("🚀 KHỞI ĐỘNG CCCD OCR API")
-Log.info("="*70)
-
-# Models sẽ được load tự động khi import model_loader
-Log.info(f"✅ Models đã sẵn sàng!")
+# Models will be loaded on-demand by the worker, not the API server
 Log.info(f"📁 Upload folder: {config.UPLOAD_FOLDER}")
 Log.info("="*70)
 
