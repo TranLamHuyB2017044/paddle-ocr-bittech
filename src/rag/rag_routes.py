@@ -71,6 +71,18 @@ def get_workspace_details(workspace_id):
         except:
             workspace["document_count"] = 0
             
+        # Add documents list
+        try:
+            documents = list(documents_repo.find_by_workspace(workspace_id))
+            for doc in documents:
+                doc["_id"] = str(doc["_id"])
+                if "user_id" in doc: doc["user_id"] = str(doc["user_id"])
+                if "workspace_id" in doc: doc["workspace_id"] = str(doc["workspace_id"])
+            workspace["documents"] = documents
+        except Exception as doc_err:
+            Log.error(f"[RAG-API] Failed to fetch documents for workspace {workspace_id}: {doc_err}")
+            workspace["documents"] = []
+            
         return jsonify({
             "statusCode": 200,
             "data": workspace
