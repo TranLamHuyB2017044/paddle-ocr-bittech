@@ -5,17 +5,26 @@ from src.utils.security import decode_access_token
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # === API KEY AUTH (TEMPORARY) ===
-        api_key_header = request.headers.get("x-api-key")
+        # === API KEY AUTH ===
+        api_key = None
         
-        if api_key_header:
+        # 1. Check Authorization Header (Bearer ak_...)
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            api_key = auth_header.split(" ")[1]
+            
+        # 2. Fallback to Custom Header or Query Param
+        if not api_key:
+            api_key = request.headers.get("x-api-key") or request.args.get("api_key")
+        
+        if api_key:
             from src.repositories.users_repository import users_repo
             from src.utils.security import hash_token
             
             # 1. Parse Key Structure (ak_ACCESS.SECRET)
-            if "." in api_key_header:
+            if "." in api_key:
                 try:
-                    access_key, plain_secret = api_key_header.split(".", 1)
+                    access_key, plain_secret = api_key.split(".", 1)
                     
                     # 2. Find User by Access Key
                     user = users_repo.find_by_api_key_access(access_key)

@@ -38,8 +38,8 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
 
     # ------------------ BƯỚC 8: CLEANING ----------------------
     step_start = time.time()
-    # Unified cleaning for all lines (supports dicts now)
     clean_front = clean_text_lines(filtered_front)
+        
     clean_back = clean_text_lines(filtered_back)
     
     clean_time = time.time() - step_start

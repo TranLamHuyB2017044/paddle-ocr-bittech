@@ -3,22 +3,52 @@ import traceback
 import time
 from src.repositories.documents_repository import documents_repo
 from src.rag.rag_service import rag_service
-from src.utils.ocr_utils import ocr_extract
+from src.utils.ocr_utils import ocr_extract, layout_ocr_extract, filter_back_side_lines, preprocess_for_ocr
 from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
 from src.utils.word_utils import extract_text_from_word
 from src.utils.logger import Log
 from src.api.processors.ai_processor import process_with_grok, process_with_gemini
 from src.api.processors.traditional_processor import process_traditional
+from src.utils.redis_client import publish_event, redis_conn
+from src.utils.file_utils import calculate_files_hash
+from src.config import DocStatus
+import threading
+import json
 
-def process_document_task(doc_id, workspace_id, file_path, original_filename):
+def silent_cleanup_files(file_paths):
+    """Cleanup files in a background thread to avoid blocking the main task completion log."""
+    def cleanup():
+        if not file_paths:
+            return
+        # Ensure it's a list
+        paths = [file_paths] if isinstance(file_paths, str) else file_paths
+        for path in paths:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                    # Use debug level to be "silent"
+                    Log.debug(f"[Cleanup] 🗑️ Removed: {path}")
+                except Exception as e:
+                    Log.debug(f"[Cleanup] ❌ Failed to delete {path}: {e}")
+    
+    thread = threading.Thread(target=cleanup, daemon=True)
+    thread.start()
+
+def process_document_task(doc_id, workspace_id, file_path, original_filename, user_id):
     """
     Background task to process OCR, extraction and indexing for RAG
     """
     try:
+        start_time = time.time()
         Log.info(f"[Worker] Starting processing document: {original_filename} (ID: {doc_id})")
         
         # 1. Update status to PROCESSING
-        documents_repo.update_status(doc_id, "PROCESSING")
+        documents_repo.update_status(doc_id, DocStatus.PROCESSING)
+        publish_event(user_id, "document_status", {
+            "document_id": doc_id,
+            "status": DocStatus.PROCESSING,
+            "filename": original_filename
+        })
         
         ext = original_filename.lower().split('.')[-1]
         full_text = ""
@@ -55,8 +85,17 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename):
             total_chunks = rag_service.index_text(full_text, workspace_id, original_filename)
             
             # 4. Success -> Mark as READY
-            documents_repo.update_status(doc_id, "READY", total_chunks=total_chunks)
-            Log.info(f"[Worker] Successfully processed: {original_filename}")
+            documents_repo.update_status(doc_id, DocStatus.READY, total_chunks=total_chunks)
+            publish_event(user_id, "document_status", {
+                "document_id": doc_id,
+                "status": DocStatus.READY,
+                "filename": original_filename,
+                "total_chunks": total_chunks,
+                "debug": {
+                    "total_time": f"{time.time() - start_time:.2f}s" if 'start_time' in locals() else "N/A"
+                }
+            })
+            Log.info(f"[Worker] Successfully processed: {original_filename} - Total time: {time.time() - start_time:.2f}s")
         else:
             raise Exception("No text could be extracted from this document")
             
@@ -64,16 +103,18 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename):
         error_msg = str(e)
         Log.error(f"[Worker] Failed to process {original_filename}: {error_msg}")
         Log.error(traceback.format_exc())
-        documents_repo.update_status(doc_id, "FAILED", error_message=error_msg)
+        documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=error_msg)
+        publish_event(user_id, "document_status", {
+            "document_id": doc_id,
+            "status": DocStatus.FAILED,
+            "filename": original_filename,
+            "error": error_msg
+        })
         
     finally:
-        # 6. Cleanup file
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                Log.info(f"[Worker] Cleaned up file: {file_path}")
-            except Exception as e:
-                Log.error(f"[Worker] Failed to delete file {file_path}: {e}")
+        # 6. Cleanup file (Silently in background)
+        if 'file_path' in locals():
+            silent_cleanup_files(file_path)
 
 def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok"):
     """
@@ -83,11 +124,44 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
         Log.info(f"[Worker-Detect] Starting detection: {doc_type} (ID: {doc_id})")
         
         # 1. Update status to PROCESSING
-        documents_repo.update_status(doc_id, "PROCESSING")
+        documents_repo.update_status(doc_id, DocStatus.PROCESSING)
+        publish_event(user_id, "detection_status", {
+            "document_id": doc_id,
+            "status": DocStatus.PROCESSING,
+            "type": doc_type
+        })
         
         request_start = time.time()
         
-        # 2. OCR (Heaviest part)
+        # 2. Cache Check
+        files_hash = calculate_files_hash(file_paths)
+        cache_key = f"cache:extract:{doc_type}:{provider}:{files_hash}"
+        
+        if files_hash:
+            cached_result = redis_conn.get(cache_key)
+            if cached_result:
+                try:
+                    result_data = json.loads(cached_result)
+                    Log.info(f"[Worker-Detect] ⚡ Cache Hit! Returning cached result for hash {files_hash}")
+                    
+                    # Update status and send SSE
+                    documents_repo.update_status(
+                        doc_id, DocStatus.READY, 
+                        result=result_data.get("data"), 
+                        debug={**result_data.get("debug", {}), "cached": True}
+                    )
+                    publish_event(user_id, "detection_status", {
+                        "document_id": doc_id,
+                        "status": DocStatus.READY,
+                        "type": doc_type,
+                        "result": result_data.get("data"),
+                        "debug": {**result_data.get("debug", {}), "cached": True}
+                    })
+                    return # Exit task early
+                except Exception as cache_err:
+                    Log.error(f"[Worker-Detect] ⚠️ Failed to parse cache: {cache_err}")
+
+        # 3. OCR (Heaviest part)
         raw_front = []
         raw_back = []
         ocr_front_time = 0.0
@@ -96,13 +170,28 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
         if len(file_paths) > 0:
             p1 = file_paths[0]
             t = time.time()
-            raw_front, _ = ocr_extract(p1)
+            img1 = preprocess_for_ocr(p1)
+            if doc_type == 'idCard':
+                Log.info("[Worker-Detect] 🛡️ Applying Layout OCR for CCCD Front")
+                raw_front, _ = layout_ocr_extract(p1, img=img1)
+                # Fallback to normal OCR if layout failed or returned nothing
+                if not raw_front:
+                    Log.warning("[Worker-Detect] ⚠️ Layout OCR returned nothing, falling back to normal OCR")
+                    raw_front, _ = ocr_extract(p1, img=img1)
+            else:
+                raw_front, _ = ocr_extract(p1, img=img1)
             ocr_front_time = time.time() - t
             
         if len(file_paths) > 1:
             p2 = file_paths[1]
             t = time.time()
-            raw_back, _ = ocr_extract(p2)
+            img2 = preprocess_for_ocr(p2)
+            raw_back_all, _ = ocr_extract(p2, img=img2)
+            if doc_type == 'idCard':
+                Log.info("[Worker-Detect] 🛡️ Applying Back Side Keyword Filter for ID Card")
+                raw_back = filter_back_side_lines(raw_back_all)
+            else:
+                raw_back = raw_back_all
             ocr_back_time = time.time() - t
             
         timer_info = {
@@ -150,10 +239,30 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
             Log.info(f"[Worker-Detect] ✅ SUCCESS! Final provider used: {final_provider}")
             
             documents_repo.update_status(
-                doc_id, "READY", 
+                doc_id, DocStatus.READY, 
                 result=result_response.get("data"), 
                 debug=result_response.get("debug")
             )
+            publish_event(user_id, "detection_status", {
+                "document_id": doc_id,
+                "status": DocStatus.READY,
+                "type": doc_type,
+                "result": result_response.get("data"),
+                "debug": result_response.get("debug")
+            })
+            # 5. Save to Cache
+            if files_hash:
+                try:
+                    cache_payload = {
+                        "data": result_response.get("data"),
+                        "debug": result_response.get("debug")
+                    }
+                    # Cache for 24 hours (86400 seconds)
+                    redis_conn.setex(cache_key, 86400, json.dumps(cache_payload))
+                    Log.info(f"[Worker-Detect] 💾 Result cached with key: {cache_key}")
+                except Exception as cache_save_err:
+                    Log.error(f"[Worker-Detect] ⚠️ Could not save to cache: {cache_save_err}")
+
             Log.info(f"[Worker-Detect] 📑 Detection task completed for {doc_type}")
         else:
             Log.error("[Worker-Detect] ❌ Final extraction failed - No result from any provider")
@@ -163,14 +272,14 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
         error_msg = str(e)
         Log.error(f"[Worker-Detect] Failed: {error_msg}")
         Log.error(traceback.format_exc())
-        documents_repo.update_status(doc_id, "FAILED", error_message=error_msg)
+        documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=error_msg)
+        publish_event(user_id, "detection_status", {
+            "document_id": doc_id,
+            "status": DocStatus.FAILED,
+            "type": doc_type,
+            "error": error_msg
+        })
     finally:
-        # 5. Cleanup files
-        if file_paths:
-            for path in file_paths:
-                if path and os.path.exists(path):
-                    try:
-                        os.remove(path)
-                        Log.info(f"[Worker-Detect] 🗑️ Cleaned up temp file: {path}")
-                    except Exception as e:
-                        Log.error(f"[Worker-Detect] ❌ Failed to delete file {path}: {e}")
+        # 5. Cleanup files (Silently in background)
+        if 'file_paths' in locals() and file_paths:
+            silent_cleanup_files(file_paths)

@@ -36,8 +36,15 @@ class SmartSpatialExtractor:
                 return True
         return False
 
-    def _find_anchor(self, items, field_config):
-        """Find the box that matches the label keywords"""
+    def _find_anchor(self, items, field_config, field_name=None):
+        """Find the box that matches the label keywords or layout label"""
+        # 1. Check for layout label match (highest priority)
+        if field_name:
+            for item in items:
+                if item.get("label") == field_name:
+                    Log.debug(f"[SPATIAL] Found anchor '{field_name}' by layout label")
+                    return item
+
         keywords = field_config.get("keywords", [])
         threshold = field_config.get("keywords_threshold", 0.8)
         
@@ -205,7 +212,7 @@ class SmartSpatialExtractor:
             mode = rules.get("extraction_mode", "auto")
             
             # 1. Find Anchor
-            anchor = self._find_anchor(items, rules)
+            anchor = self._find_anchor(items, rules, field_name=field)
             
             val = None
             if anchor:
@@ -262,6 +269,11 @@ class SmartSpatialExtractor:
                     if split_match:
                          possible_val = split_match.group(1).strip()
                          if len(possible_val) > 0: anchor_val = possible_val
+                
+                # If STILL no anchor_val but it was found via YOLO label, 
+                # assume the whole box is the value (common for ROI-based detect)
+                if not anchor_val and anchor.get("label") == field:
+                    anchor_val = anchor_text.strip()
 
                 val = (anchor_val + " " + spatial_val).strip()
                 

@@ -9,6 +9,7 @@ from src.utils.logger import Log
 
 import cv2
 import os
+import threading
 
 def preprocess_for_ocr(path):
     """
@@ -22,6 +23,7 @@ def preprocess_for_ocr(path):
         return None
         
     h, w = img.shape[:2]
+    Log.info(f"[PREPROCESS] 📸 Original size: {w}x{h}")
 
     # Resize logic: Giữ độ phân giải đủ cao nhưng không quá nặng
     max_side = 960
@@ -31,10 +33,12 @@ def preprocess_for_ocr(path):
         new_h = int(h * scale)
         img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
         Log.info(f"[PREPROCESS] 📉 Resized {w}x{h} -> {new_w}x{new_h}")
+    else:
+        Log.info(f"[PREPROCESS] ✅ Size is within limit ({w}x{h})")
 
     return img
 
-def ocr_extract(image_path, retry_mode=False):
+def ocr_extract(image_path, img=None, retry_mode=False):
     """
     Trích xuất text từ ảnh sử dụng OCR hiệu năng cao (In-memory processing)
     Returns:
@@ -45,8 +49,8 @@ def ocr_extract(image_path, retry_mode=False):
     start = time.time()
     Log.info(f"[OCR] 🔍 Bắt đầu OCR (In-memory): {image_path}")
 
-    # 1. Tiền xử lý trực tiếp trong RAM
-    processed_img = preprocess_for_ocr(image_path)
+    # 1. Tiền xử lý trực tiếp trong RAM (Chỉ load nếu chưa có img)
+    processed_img = img if img is not None else preprocess_for_ocr(image_path)
     if processed_img is None:
         return [], []
 
@@ -87,6 +91,93 @@ def ocr_extract(image_path, retry_mode=False):
                      ocr_data.append({"text": text_val, "box": box, "score": score_val})
 
     Log.info(f"[OCR] ✅ Hoàn tất. Lines: {len(ocr_data)}. Thời gian: {time.time() - start:.2f}s")
+    return ocr_data, texts
+
+
+def layout_ocr_extract(image_path, img=None):
+    """
+    1. Chạy YOLO để detect các vùng (layout).
+    2. Sử dụng Thread Pool để OCR song song các vùng (ROIs) nhằm tăng tốc.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    import numpy as np
+    from src.config import YOLO_LABEL_MAP
+
+    start = time.time()
+    Log.info(f"[LAYOUT-OCR] 🔍 Bắt đầu Detect Layout: {image_path}")
+
+    # 1. Tiền xử lý ảnh
+    processed_img = img if img is not None else preprocess_for_ocr(image_path)
+    if processed_img is None:
+        return [], []
+    
+    img = processed_img
+    h_img, w_img = img.shape[:2]
+    
+    # 2. Detect layout (YOLO)
+    yolo_start = time.time()
+    results = model_loader.yolo.predict(img, conf=0.25, verbose=False)
+    yolo_boxes = results[0].boxes
+    names = results[0].names
+    yolo_time = time.time() - yolo_start
+    
+    # 3. Duyệt và xử lý từng vùng (ROI) theo tuần tự để đảm bảo độ ổn định cao nhất
+    ocr_data = []
+    for idx, y_box in enumerate(yolo_boxes):
+        try:
+            x1, y1, x2, y2 = y_box.xyxy[0].tolist()
+            cls_id = int(y_box.cls[0])
+            yolo_label = names[cls_id]
+            mapped_label = YOLO_LABEL_MAP.get(yolo_label, yolo_label)
+            
+            Log.info(f"[LAYOUT-OCR] 🎯 ROI #{idx}: {mapped_label} (Box: [{int(x1)}, {int(y1)}, {int(x2)}, {int(y2)}])")
+            
+            # Cắt ROI và Padding (Bội số của 32 giúp Paddle hoạt động ổn định nhất)
+            roi_raw = img[int(max(0, y1)):int(min(h_img, y2)), int(max(0, x1)):int(min(w_img, x2))]
+            if roi_raw.size == 0: continue
+            
+            rh, rw = roi_raw.shape[:2]
+            pad_size = max(rh, rw)
+            if pad_size % 32 != 0:
+                pad_size = ((pad_size // 32) + 1) * 32
+            
+            roi_padded = np.ones((pad_size, pad_size, 3), dtype=np.uint8) * 255
+            roi_padded[0:rh, 0:rw] = roi_raw
+            
+            # OCR execution (Tuần tự giúp tránh lỗi Memory Corruption)
+            roi_results = model_loader.ocr.predict(roi_padded, text_det_limit_side_len=960)
+            
+            if roi_results and roi_results[0]:
+                target_dict = roi_results[0]
+                if isinstance(target_dict, dict) and "rec_texts" in target_dict:
+                    r_texts = target_dict.get("rec_texts", [])
+                    r_scores = target_dict.get("rec_scores", [])
+                    r_boxes = target_dict.get("dt_polys") or target_dict.get("rec_boxes") or target_dict.get("rec_polys")
+                    
+                    for i in range(len(r_texts)):
+                        text_val = r_texts[i] or ""
+                        if not text_val.strip(): continue
+                        score_val = float(r_scores[i])
+                        coords = r_boxes[i]
+                        
+                        flat_coords = coords.tolist() if hasattr(coords, "tolist") else coords
+                        original_box = [[float(p[0]) + x1, float(p[1]) + y1] for p in flat_coords]
+                        
+                        Log.info(f"   📄 Text: {text_val} ({score_val:.2f})")
+                        
+                        ocr_data.append({
+                            "text": text_val, 
+                            "box": original_box, 
+                            "score": score_val,
+                            "label": mapped_label
+                        })
+        except Exception as e:
+            Log.error(f"[LAYOUT-OCR] ❌ Lỗi xử lý vùng #{idx}: {e}")
+
+    texts = [item["text"] for item in ocr_data]
+    
+    total_time = time.time() - start
+    Log.info(f"[LAYOUT-OCR] ✅ Hoàn tất trong {total_time:.2f}s (YOLO: {yolo_time:.2f}s). Thu được {len(ocr_data)} lines.")
     return ocr_data, texts
 
 
@@ -149,4 +240,30 @@ def filter_useless_lines(ocr_data):
     
     Log.info(f"[FILTER] 📊 Kết quả: Loại bỏ {removed_count} dòng, Còn lại {len(filtered)} dòng")
     
+    return filtered
+
+
+def filter_back_side_lines(ocr_data):
+    """
+    Lọc các dòng text ở mặt sau, chỉ giữ lại những dòng chứa BACK_KEYWORDS
+    """
+    from src.config import BACK_KEYWORDS
+    from rapidfuzz import fuzz
+    
+    Log.info(f"[FILTER-BACK] 🗑️  Lọc mặt sau theo BACK_KEYWORDS. Số dòng: {len(ocr_data)}")
+    
+    filtered = []
+    for item in ocr_data:
+        line_text = item.get("text", "").lower().strip()
+        
+        is_relevant = False
+        for kw in BACK_KEYWORDS:
+            if kw.lower() in line_text or fuzz.partial_ratio(kw.lower(), line_text) >= 80:
+                is_relevant = True
+                break
+        
+        if is_relevant:
+            filtered.append(item)
+            
+    Log.info(f"[FILTER-BACK] 📊 Còn lại: {len(filtered)} dòng")
     return filtered

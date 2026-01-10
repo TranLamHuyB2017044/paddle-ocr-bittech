@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 class Log:
@@ -10,7 +11,8 @@ class Log:
             return cls._logger
             
         logger = logging.getLogger("CCCD_OCR")
-        logger.setLevel(logging.INFO)
+        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        logger.setLevel(getattr(logging, log_level, logging.INFO))
         
         if not logger.handlers:
             handler = logging.StreamHandler(sys.stdout)

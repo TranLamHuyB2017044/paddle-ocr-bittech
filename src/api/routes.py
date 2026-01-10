@@ -10,16 +10,16 @@ from src.utils.redis_client import rag_queue
 from src.tasks.document_tasks import process_detection_task
 from src.repositories.documents_repository import documents_repo
 from src.utils.logger import Log
+from src.config import MAX_OCR_FILE_SIZE, DocStatus
 
 ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments'}
-MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB limit
 
 def validate_request_params(req):
     """
     Validate request parameters and files
     """
-    if req.content_length and req.content_length > MAX_CONTENT_LENGTH:
-        return None, jsonify({"statusCode": 413, "message": f"File quá lớn. Giới hạn {MAX_CONTENT_LENGTH/1024/1024}MB"}), 413
+    if req.content_length and req.content_length > MAX_OCR_FILE_SIZE:
+        return None, jsonify({"statusCode": 413, "message": f"File quá lớn. Giới hạn {MAX_OCR_FILE_SIZE/1024/1024}MB"}), 413
 
     doc_type = req.form.get("type")
     
@@ -114,8 +114,17 @@ def register_routes(app):
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,
                 filename=os.path.basename(all_temp_files[0]),
-                status="UPLOADED"
+                status=DocStatus.UPLOADED
             )
+
+            # Inform SSE about the new task
+            from src.utils.redis_client import publish_event
+            publish_event(user_id, "detection_status", {
+                "document_id": doc_id,
+                "status": DocStatus.UPLOADED,
+                "type": doc_type,
+                "message": "Task received and enqueued"
+            })
 
             rag_queue.enqueue(
                 process_detection_task,
@@ -155,8 +164,17 @@ def register_routes(app):
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,
                 filename=os.path.basename(all_temp_files[0]) if all_temp_files else "unknown",
-                status="UPLOADED"
+                status=DocStatus.UPLOADED
             )
+
+            # Inform SSE about the new task
+            from src.utils.redis_client import publish_event
+            publish_event(user_id, "detection_status", {
+                "document_id": doc_id,
+                "status": DocStatus.UPLOADED,
+                "type": doc_type,
+                "message": "Grok task received and enqueued"
+            })
 
             rag_queue.enqueue(
                 process_detection_task,
@@ -198,8 +216,18 @@ def register_routes(app):
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,
                 filename=os.path.basename(all_temp_files[0]) if all_temp_files else "unknown",
-                status="UPLOADED"
+                status=DocStatus.UPLOADED
             )
+
+            # Inform SSE about the new task
+            from src.utils.redis_client import publish_event
+            publish_event(user_id, "detection_status", {
+                "document_id": doc_id,
+                "status": DocStatus.UPLOADED,
+                "type": doc_type,
+                "provider": provider,
+                "message": "Task received and enqueued"
+            })
 
             rag_queue.enqueue(
                 process_detection_task,

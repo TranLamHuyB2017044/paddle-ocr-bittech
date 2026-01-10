@@ -23,6 +23,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./storage:/app/storage
+      - ./yolo_model:/app/yolo_model
 
   # Flask API - Chỉ nhận file và trả về 202
   ocr-api:
@@ -39,6 +40,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./storage:/app/storage
+      - ./yolo_model:/app/yolo_model
     env_file:
       - .env
     environment:

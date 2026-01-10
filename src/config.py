@@ -19,8 +19,29 @@ os.environ["ONEDNN_PRIMITIVE_CACHE_CAPACITY"] = "10"
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc'}
 MAX_RAG_FILE_SIZE = 5 * 1024 * 1024  # 5 MB per file for RAG
+MAX_OCR_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit for general OCR
+MAX_FILE_COUNT = 5 # Maximum files per upload
+MAX_DOCUMENTS_PER_WORKSPACE = 10 # Maximum documents per workspace
+ 
+ # ========== DOCUMENT STATUS ==========
+class DocStatus:
+    UPLOADED = "UPLOADED"
+    PROCESSING = "PROCESSING"
+    READY = "READY"
+    FAILED = "FAILED"
 
 # ========== MODEL CONFIG ==========
+YOLO_MODEL_PATH = "yolo_model/yolo_v8n_model.pt"  # Đường dẫn tới file .pt của bạn
+YOLO_LABEL_MAP = {
+    "id": "idNumber",
+    "name": "fullName",
+    "dob": "dob",
+    "gender": "gender",
+    "nationality": "nationality",
+    "origin_place": "hometown",
+    "current_place": "address",
+    "expire_date": "expiryDate"
+}
 MODEL_PATH = "protonx-models/nano-protonx-legal-tc" # Old online path
 # Model is located in cccd/local-protonx-model/protonx-legal-tc
 # MODEL_PATH = os.path.join(root_dir, "local-protonx-model", "protonx-legal-tc")
@@ -32,12 +53,14 @@ OCR_CONFIG = {
     "use_doc_orientation_classify": True, # Native orientation detection
     "use_doc_unwarping": False,
     "enable_mkldnn": True, # Acceleration for Intel CPUs
-    "cpu_threads": 4, # Parallel processing
+    "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 960, # Reduced from 1280 for faster detection
     "det_db_unclip_ratio": 1.8, # Balanced for speed/accuracy
 }
 
 # ========== TEXT CLEANING CONFIG ==========
+# LƯU Ý: Với CCCD Mặt trước, các flow USELESS_KEYWORDS và FRONT_KEYWORDS sẽ bị bỏ qua 
+# để sử dụng Layout Detection (YOLOv8) thay thế.
 # Từ khóa chung cần loại bỏ
 USELESS_KEYWORDS = [
     # Tiêu đề quốc gia

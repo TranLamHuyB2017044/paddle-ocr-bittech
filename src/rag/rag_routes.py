@@ -10,6 +10,7 @@ from src.rag.qdrant_service import qdrant_service
 from src.utils.redis_client import rag_queue
 from src.tasks.document_tasks import process_document_task
 from src.utils.logger import Log
+from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus
 
 rag_bp = Blueprint('rag_bp', __name__)
 
@@ -245,13 +246,26 @@ def upload_to_workspace(workspace_id):
         if not files:
             return jsonify({"statusCode": 400, "message": "No files uploaded"}), 400
             
-        if len(files) > 5:
-            return jsonify({"statusCode": 400, "message": "Tối đa 5 file mỗi lần upload"}), 400
+        if len(files) > MAX_FILE_COUNT:
+            return jsonify({"statusCode": 400, "message": f"Tối đa {MAX_FILE_COUNT} file mỗi lần upload"}), 400
+
+        # 3. Check individual file size
+        for file in files:
+            # Di chuyển con trỏ đến cuối file để lấy kích thước
+            file.seek(0, os.SEEK_END)
+            file_size = file.tell()
+            file.seek(0) # Đưa con trỏ về đầu file để có thể đọc sau này
+            
+            if file_size > MAX_RAG_FILE_SIZE:
+                 return jsonify({
+                     "statusCode": 413, 
+                     "message": f"File '{file.filename}' quá lớn. Giới hạn {MAX_RAG_FILE_SIZE/1024/1024}MB"
+                 }), 413
 
         # Check document limit
         current_docs = documents_repo.find_by_workspace(workspace_id)
-        if len(list(current_docs)) >= 5: # Updated limit to 20 for more flexibility
-             return jsonify({"statusCode": 400, "message": "Workspace đã đạt giới hạn 5 tài liệu"}), 400
+        if len(list(current_docs)) >= MAX_DOCUMENTS_PER_WORKSPACE:
+             return jsonify({"statusCode": 400, "message": f"Workspace đã đạt giới hạn {MAX_DOCUMENTS_PER_WORKSPACE} tài liệu"}), 400
 
         from src.utils.file_utils import save_uploaded_file_list
         saved_paths = save_uploaded_file_list(files)
@@ -270,21 +284,30 @@ def upload_to_workspace(workspace_id):
                 user_id=g.user_id,
                 workspace_id=workspace_id,
                 filename=original_filename,
-                status="UPLOADED"
+                status=DocStatus.UPLOADED
             )
             
             # Enqueue Background Task
             # retry=Retry(max=3) # Optional: RQ retry logic
+            from src.utils.redis_client import publish_event
+            publish_event(g.user_id, "document_status", {
+                "document_id": doc_id,
+                "status": DocStatus.UPLOADED,
+                "filename": original_filename,
+                "workspace_id": workspace_id,
+                "message": "Document uploaded and enqueued"
+            })
+
             rag_queue.enqueue(
                 process_document_task,
-                args=(doc_id, workspace_id, file_path, original_filename),
+                args=(doc_id, workspace_id, file_path, original_filename, g.user_id),
                 job_timeout='10m' # Allow up to 10 mins for heavy OCR
             )
             
             enqueued_docs.append({
                 "document_id": doc_id,
                 "filename": original_filename,
-                "status": "UPLOADED"
+                "status": DocStatus.UPLOADED
             })
             
             Log.info(f"[RAG-API] Enqueued document {original_filename} (ID: {doc_id})")

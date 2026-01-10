@@ -2,10 +2,12 @@
 Model Loader
 Load và quản lý OCR và AI models
 """
+import os
 from paddleocr import PaddleOCR
 import torch
+from ultralytics import YOLO
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from src.config import MODEL_PATH, OCR_CONFIG
+from src.config import MODEL_PATH, OCR_CONFIG, YOLO_MODEL_PATH
 from src.utils.logger import Log
 
 
@@ -14,6 +16,7 @@ class ModelLoader:
     
     _instance = None
     _ocr = None
+    _yolo = None
     _tokenizer = None
     _model = None
     _device = None
@@ -35,6 +38,13 @@ class ModelLoader:
         Log.info("📖 Loading PaddleOCR...")
         self._ocr = PaddleOCR(**OCR_CONFIG)
         
+        # Load YOLO
+        if os.path.exists(YOLO_MODEL_PATH):
+            Log.info(f"🎯 Loading YOLO model from {YOLO_MODEL_PATH}...")
+            self._yolo = YOLO(YOLO_MODEL_PATH)
+        else:
+            Log.warning(f"⚠️ YOLO model not found at {YOLO_MODEL_PATH}. Layout detection will be skipped.")
+
         # Setup device
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         Log.info(f"🖥️  Device: {self._device}")
@@ -54,6 +64,13 @@ class ModelLoader:
             self._load_models()
         return self._ocr
     
+    @property
+    def yolo(self):
+        """Get YOLO instance, loading it if necessary"""
+        if self._yolo is None:
+            self._load_models()
+        return self._yolo
+
     @property
     def tokenizer(self):
         """Get tokenizer instance, loading it if necessary"""
