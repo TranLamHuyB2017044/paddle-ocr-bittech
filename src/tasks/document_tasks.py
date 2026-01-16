@@ -171,15 +171,16 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
             p1 = file_paths[0]
             t = time.time()
             img1 = preprocess_for_ocr(p1)
-            if doc_type == 'idCard':
-                Log.info("[Worker-Detect] 🛡️ Applying Layout OCR for CCCD Front")
-                raw_front, _ = layout_ocr_extract(p1, img=img1)
-                # Fallback to normal OCR if layout failed or returned nothing
-                if not raw_front:
-                    Log.warning("[Worker-Detect] ⚠️ Layout OCR returned nothing, falling back to normal OCR")
-                    raw_front, _ = ocr_extract(p1, img=img1)
-            else:
-                raw_front, _ = ocr_extract(p1, img=img1)
+            # if doc_type == 'idCard':
+            #     Log.info("[Worker-Detect] 🛡️ Applying Layout OCR for CCCD Front")
+            #     raw_front, _ = layout_ocr_extract(p1, img=img1)
+            #     # Fallback to normal OCR if layout failed or returned nothing
+            #     if not raw_front:
+            #         Log.warning("[Worker-Detect] ⚠️ Layout OCR returned nothing, falling back to normal OCR")
+            #         raw_front, _ = ocr_extract(p1, img=img1)
+            # else:
+            #     raw_front, _ = ocr_extract(p1, img=img1)
+            raw_front, _ = ocr_extract(p1, img=img1)
             ocr_front_time = time.time() - t
             
         if len(file_paths) > 1:
