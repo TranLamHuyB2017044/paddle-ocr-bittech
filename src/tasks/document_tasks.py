@@ -116,7 +116,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
         if 'file_path' in locals():
             silent_cleanup_files(file_path)
 
-def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok"):
+def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok", raw_text=None):
     """
     Background task to process document detection (ID Card, License, etc.)
     """
@@ -167,19 +167,15 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider="grok
         ocr_front_time = 0.0
         ocr_back_time = 0.0
         
-        if len(file_paths) > 0:
+        if raw_text:
+            Log.info(f"[Worker-Detect] � Using provided raw_text (Skipping OCR)")
+            for line in raw_text.split('\n'):
+                if line.strip():
+                    raw_front.append({"text": line.strip(), "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0})
+        elif len(file_paths) > 0:
             p1 = file_paths[0]
             t = time.time()
             img1 = preprocess_for_ocr(p1)
-            # if doc_type == 'idCard':
-            #     Log.info("[Worker-Detect] 🛡️ Applying Layout OCR for CCCD Front")
-            #     raw_front, _ = layout_ocr_extract(p1, img=img1)
-            #     # Fallback to normal OCR if layout failed or returned nothing
-            #     if not raw_front:
-            #         Log.warning("[Worker-Detect] ⚠️ Layout OCR returned nothing, falling back to normal OCR")
-            #         raw_front, _ = ocr_extract(p1, img=img1)
-            # else:
-            #     raw_front, _ = ocr_extract(p1, img=img1)
             raw_front, _ = ocr_extract(p1, img=img1)
             ocr_front_time = time.time() - t
             

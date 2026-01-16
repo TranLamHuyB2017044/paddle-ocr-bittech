@@ -195,74 +195,80 @@ def register_routes(app):
     @require_auth
     def detect_sync():
         """
-        [SYNC-VIA-WORKER] 🕒 Đẩy task xuống worker và CHỜ kết quả qua Redis Pub/Sub.
-        Giúp Frontend nhận kết quả ngay lập tức trong 1 request HTTP.
+        [SYNC-VIA-WORKER]
+        Cho phép xử lý chỉ với raw_text (không cần hình)
         """
         import time
         import json
-        from src.utils.redis_client import redis_conn, publish_event
-        
+        from src.utils.redis_client import redis_conn
+
         try:
             doc_type, error_resp, status_code = validate_request_params(request)
-            if error_resp: return error_resp, status_code
+            if error_resp:
+                return error_resp, status_code
 
-            # 1. Thu thập file
-            all_temp_files = []
+            # ===== 1. Thu thập raw_text + files (OPTIONAL) =====
+            raw_text = request.form.get("raw_text")
             files = request.files.getlist('files')
+
+            all_temp_files = []
             if files:
                 from src.utils.file_utils import save_uploaded_file_list
                 all_temp_files = save_uploaded_file_list(files)
-            else:
-                f1 = request.files.get("first_image")
-                f2 = request.files.get("second_image")
-                p1, p2 = save_uploaded_files(f1, f2)
-                if p1: all_temp_files.append(p1)
-                if p2: all_temp_files.append(p2)
 
-            if not all_temp_files:
-                return jsonify({"statusCode": 400, "message": "No images provided"}), 400
+            # ❗ CHỈ FAIL nếu CẢ HAI đều không có
+            if not raw_text and not all_temp_files:
+                return jsonify({
+                    "statusCode": 400,
+                    "message": "raw_text or images is required"
+                }), 400
 
-            provider = request.form.get("provider", "traditional")
+            provider = request.form.get("provider", "grok")
             user_id = getattr(g, 'user_id', None)
 
-            # 2. Lưu document vào DB (Trạng thái UPLOADED)
+            # ===== 2. Lưu document =====
             doc_id = documents_repo.save_document(
-                user_id=user_id, doc_type=doc_type,
-                filename=os.path.basename(all_temp_files[0]),
+                user_id=user_id,
+                doc_type=doc_type,
+                filename=(
+                    os.path.basename(all_temp_files[0])
+                    if all_temp_files else "raw_text_input"
+                ),
                 status=DocStatus.UPLOADED
             )
 
-            # 3. Đẩy vào Queue cho Worker xử lý
+            # ===== 3. Enqueue worker =====
             rag_queue.enqueue(
                 process_detection_task,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
+                kwargs={"raw_text": raw_text},
                 job_timeout='5m'
             )
-            Log.info(f"[SYNC-API] 🚀 Task {doc_id} đã đẩy vào queue. Đang chờ kết quả...")
 
-            # 4. Lắng nghe kết quả qua Redis Pub/Sub (Channel dùng chung cho SSE)
+            # ===== 4. Lắng nghe Redis =====
             pubsub = redis_conn.pubsub()
             channel = f"sse_user_{user_id}"
             pubsub.subscribe(channel)
-            
-            wait_timeout = 120 # Chờ tối đa 120 giây
+
+            wait_timeout = 120
             start_wait = time.time()
-            
             final_result = None
+
             while time.time() - start_wait < wait_timeout:
-                # Kiểm tra message từ Redis (Non-blocking với timeout 1.0s)
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                message = pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0
+                )
+
                 if message:
                     try:
                         payload = json.loads(message['data'])
                         data = payload.get("data", {})
-                        
-                        # Chỉ xử lý nếu đúng ID document đang chờ
+
                         if str(data.get("document_id")) == str(doc_id):
                             status = data.get("status")
-                            
+
                             if status == DocStatus.READY:
-                                Log.info(f"[SYNC-API] ✅ Đã nhận kết quả cho {doc_id}")
                                 final_result = {
                                     "statusCode": 200,
                                     "message": "Success (Synchronized)",
@@ -270,33 +276,32 @@ def register_routes(app):
                                     "debug": data.get("debug")
                                 }
                                 break
+
                             elif status == DocStatus.FAILED:
-                                Log.error(f"[SYNC-API] ❌ Worker báo lỗi cho {doc_id}")
                                 final_result = {
                                     "statusCode": 500,
                                     "message": f"Processing failed: {data.get('error')}"
                                 }
                                 break
-                    except Exception as parse_err:
-                        Log.debug(f"[SYNC-API] Skip event không hợp lệ: {parse_err}")
-                
+                    except Exception:
+                        pass
+
                 time.sleep(0.1)
 
             pubsub.unsubscribe(channel)
-            
+
             if final_result:
                 return jsonify(final_result), final_result["statusCode"]
-            else:
-                Log.warning(f"[SYNC-API] ⏳ Hết thời gian chờ (Timeout) cho {doc_id}")
-                return jsonify({
-                    "statusCode": 504,
-                    "message": "Processing timeout. Task vẫn đang chạy dưới nền.",
-                    "data": {"document_id": doc_id}
-                }), 504
+
+            return jsonify({
+                "statusCode": 504,
+                "message": "Processing timeout. Task still running.",
+                "data": {"document_id": doc_id}
+            }), 504
 
         except Exception as e:
-            Log.error(f"[SYNC-API] ❌ Lỗi: {e}")
             return jsonify({"statusCode": 500, "message": str(e)}), 500
+
 
     @app.route("/api/detect", methods=["POST"])
     @require_auth
@@ -319,10 +324,14 @@ def register_routes(app):
 
             user_id = getattr(g, 'user_id', None)
             provider = request.form.get("provider", "grok")
+            raw_text = request.form.get("raw_text")
+
+            if not all_temp_files and not raw_text:
+                return jsonify({"statusCode": 400, "message": "No images or raw_text provided"}), 400
             
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,
-                filename=os.path.basename(all_temp_files[0]) if all_temp_files else "unknown",
+                filename=os.path.basename(all_temp_files[0]) if all_temp_files else "raw_text_input",
                 status=DocStatus.UPLOADED
             )
 
@@ -339,6 +348,7 @@ def register_routes(app):
             rag_queue.enqueue(
                 process_detection_task,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
+                kwargs={"raw_text": raw_text},
                 job_timeout='5m'
             )
 
