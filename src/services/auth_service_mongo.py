@@ -27,8 +27,8 @@ class AuthService:
         )
         
         # 3. Lưu
-        user_id = users_repo.create_user(user)
-        return user_id
+        object_id = users_repo.create_user(user)
+        return object_id, user.user_id
 
     def login(self, username, password, user_agent, ip, device_id=None):
         # 1. Tìm user
@@ -78,9 +78,9 @@ class AuthService:
             )
             # username is optional, maybe leave it empty or generate one?
             
-            user_id = users_repo.create_user(user)
+            object_id = users_repo.create_user(user)
             # Populate ID back to user object for session creation
-            user.id = user_id 
+            user.id = object_id
         else:
             user = User(**user_data)
             
@@ -156,7 +156,9 @@ class AuthService:
                 "id": str(user.id),
                 "email": user.email,
                 "fullname": user.fullname,
-                "avatar_url": getattr(user, "avatar_url", None)
+                "avatar_url": getattr(user, "avatar_url", None),
+                "group_key": getattr(user, "group_key", None),
+                "user_id": int(user.user_id) if user.user_id else None
             }
         }
 
