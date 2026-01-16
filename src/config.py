@@ -206,3 +206,6 @@ RAG_COLLECTION_NAME = "documents_rag"
 RAG_CHUNK_SIZE = 800
 RAG_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
+
+
+AUTH_API_URL = os.getenv("AUTH_SERVICE_URL", "")

@@ -1,5 +1,6 @@
 from src.database.base_repository import BaseRepository
 from src.models.user import User
+from pymongo import ReturnDocument
 
 class UsersRepository(BaseRepository):
     def __init__(self):
@@ -8,13 +9,34 @@ class UsersRepository(BaseRepository):
         self.collection.create_index("username", unique=True, sparse=True)
         self.collection.create_index("api_key.access_key", unique=True, sparse=True)
         self.collection.create_index("deviceId", unique=True, sparse=True)
+        # Unique index for user_id
+        self.collection.create_index("user_id", unique=True, sparse=True)
+
+    def _get_next_user_id(self) -> int:
+        """
+        Get the next auto-incrementing user_id from the counters collection.
+        Atomic operation.
+        """
+        # Using the same DB as the collection
+        ret = self.db["counters"].find_one_and_update(
+            {"_id": "userid"},
+            {"$inc": {"seq": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        return ret["seq"]
 
     def create_user(self, user: User):
         """
         Validate data using Pydantic model before inserting
         """
+        # Generate auto-increment ID
+        if user.user_id is None:
+            user.user_id = self._get_next_user_id()
+
         user_dict = user.model_dump(by_alias=True, exclude_none=True)
         return self.create(user_dict)
+
 
     def find_by_username(self, username):
         return self.find_one({"username": username})

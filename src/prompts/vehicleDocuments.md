@@ -10,7 +10,8 @@ Dựa trên văn bản OCR được cung cấp, hãy phân loại và trích xu�
 
 ### Định dạng JSON trả về:
 {
-    "documentType": "Giấy đăng kiểm / Bảo hiểm xe / Cà vẹt xe",
+    "documentType": "INSPECTION/INSURANCE/REGISTRATION",
+    "documentName": "Giấy đăng kiểm / Bảo hiểm xe / Cà vẹt xe",
     "plateNumber": "Biển số xe (ví dụ: 65A-750.23)",
     "ownerName": "Họ tên (Sửa lỗi chính tả tiếng Việt nếu OCR sai)",
     "address": "Địa chỉ (Sửa lỗi chính tả tiếng Việt, ví dụ: 'Tp. H6 Chi Minh' -> 'TP. Hồ Chí Minh')",

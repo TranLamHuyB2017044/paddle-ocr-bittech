@@ -27,6 +27,7 @@ class UserApiKey(BaseModel):
 
 class User(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    user_id: Optional[int] = Field(default=None)
     username: Optional[str] = Field(default=None)
     fullname: Optional[str] = Field(default=None)
     email: EmailStr
@@ -44,6 +45,8 @@ class User(BaseModel):
     
     active: bool = True
     deviceId: Optional[str] = Field(default=None)
+    group_key: Optional[str] = Field(default=None)
+
 
     class Config:
         populate_by_name = True
