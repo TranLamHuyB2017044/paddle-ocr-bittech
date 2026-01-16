@@ -1,8 +1,8 @@
 flask
 flask-cors
 gunicorn
-paddleocr
-paddlepaddle
+paddleocr==3.3.0
+paddlepaddle==2.6.2
 opencv-python-headless
 Pillow
 numpy<2.0.0
