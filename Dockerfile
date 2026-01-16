@@ -5,19 +5,22 @@ FROM python:3.10-slim AS builder
 
 WORKDIR /app
 
-# Build dependencies
+# Build dependencies (chỉ thứ cần)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ wget \
+    gcc g++ curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first
-COPY requirements.txt .
 
 # Create virtual env
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install CPU-only PyTorch
+# Copy requirements FIRST (để cache pip)
+COPY requirements.txt .
+
+# Upgrade pip once (không đổi version lib)
+RUN pip install --upgrade pip setuptools wheel
+
+# Install CPU-only PyTorch (giữ nguyên cách cài)
 RUN pip install --no-cache-dir torch \
     --index-url https://download.pytorch.org/whl/cpu
 
@@ -32,54 +35,49 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Runtime env vars
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8080 \
     PATH="/opt/venv/bin:$PATH"
 
-# Install Production System Libs
-# 1. OCR libs (OpenCV, Paddle)
-# 2. LibreOffice (The Doc/Docx Converter)
-# 3. Fonts (Crucial for correct text rendering during conversion)
+# Runtime system libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
     libsm6 \
     libxext6 \
     libxrender1 \
-    # LibreOffice Headless
     libreoffice-writer \
     libreoffice-java-common \
     default-jre \
-    # Asian/Vietnam Fonts
     fonts-liberation \
     fontconfig \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy venv from builder
+# Copy venv (cache tốt nhất)
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy application source
-COPY . .
+# Copy source code LAST (chỉ sửa code → build cực nhanh)
+COPY src ./src
+COPY yolo_model ./yolo_model
+COPY app.py .
+COPY run_worker.py .
 
-# Create dirs & non-root user
+# Create dirs & user
 RUN mkdir -p uploads logs storage && \
     useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
 USER appuser
 
-# Healthcheck
+EXPOSE ${PORT}
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/ || exit 1
 
-EXPOSE ${PORT}
-
-# START APP
 CMD ["gunicorn", \
      "--bind", "0.0.0.0:8080", \
      "--workers", "1", \
