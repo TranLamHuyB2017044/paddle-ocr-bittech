@@ -154,6 +154,7 @@ class AuthService:
             "api_key": full_key_response, # Always Full Key
             "user": {
                 "id": str(user.id),
+                "user_id": getattr(user, "user_id", None),
                 "email": user.email,
                 "fullname": user.fullname,
                 "avatar_url": getattr(user, "avatar_url", None),

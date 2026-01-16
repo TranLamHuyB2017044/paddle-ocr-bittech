@@ -27,7 +27,7 @@ class UserApiKey(BaseModel):
 
 class User(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    user_id: Optional[int] = Field(default=None)
+    user_id: Optional[int] = Field(default=None, description="Auto-incrementing user ID")
     username: Optional[str] = Field(default=None)
     fullname: Optional[str] = Field(default=None)
     email: EmailStr

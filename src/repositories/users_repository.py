@@ -26,6 +26,7 @@ class UsersRepository(BaseRepository):
         )
         return ret["seq"]
 
+
     def create_user(self, user: User):
         """
         Validate data using Pydantic model before inserting

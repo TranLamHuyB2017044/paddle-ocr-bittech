@@ -196,11 +196,17 @@ def register_routes(app):
     def detect_sync():
         """
         [SYNC-VIA-WORKER]
-        Cho phép xử lý chỉ với raw_text (không cần hình)
+        Cho phép xử lý với:
+        - raw_text
+        - files[]
+        - first_image (optional)
+        - second_image (optional)
         """
         import time
         import json
+        import os
         from src.utils.redis_client import redis_conn
+        from src.utils.file_utils import save_uploaded_files
 
         try:
             doc_type, error_resp, status_code = validate_request_params(request)
@@ -209,14 +215,29 @@ def register_routes(app):
 
             # ===== 1. Thu thập raw_text + files (OPTIONAL) =====
             raw_text = request.form.get("raw_text")
-            files = request.files.getlist('files')
 
             all_temp_files = []
-            if files:
+
+            # (1) files[]
+            files = request.files.getlist("files")
+            if files and len(files) > 0:
                 from src.utils.file_utils import save_uploaded_file_list
                 all_temp_files = save_uploaded_file_list(files)
 
-            # ❗ CHỈ FAIL nếu CẢ HAI đều không có
+            # (2) fallback: first_image / second_image
+            else:
+                f1 = request.files.get("first_image")
+                f2 = request.files.get("second_image")
+
+                # GIỮ NGUYÊN pattern p1, p2
+                p1, p2 = save_uploaded_files(f1, f2)
+
+                if p1:
+                    all_temp_files.append(p1)
+                if p2:
+                    all_temp_files.append(p2)
+
+            # ❗ CHỈ FAIL nếu KHÔNG có raw_text và KHÔNG có ảnh
             if not raw_text and not all_temp_files:
                 return jsonify({
                     "statusCode": 400,
@@ -224,7 +245,7 @@ def register_routes(app):
                 }), 400
 
             provider = request.form.get("provider", "grok")
-            user_id = getattr(g, 'user_id', None)
+            user_id = getattr(g, "user_id", None)
 
             # ===== 2. Lưu document =====
             doc_id = documents_repo.save_document(
@@ -242,7 +263,7 @@ def register_routes(app):
                 process_detection_task,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
                 kwargs={"raw_text": raw_text},
-                job_timeout='5m'
+                job_timeout="5m"
             )
 
             # ===== 4. Lắng nghe Redis =====
@@ -262,7 +283,7 @@ def register_routes(app):
 
                 if message:
                     try:
-                        payload = json.loads(message['data'])
+                        payload = json.loads(message["data"])
                         data = payload.get("data", {})
 
                         if str(data.get("document_id")) == str(doc_id):
@@ -289,6 +310,7 @@ def register_routes(app):
                 time.sleep(0.1)
 
             pubsub.unsubscribe(channel)
+            pubsub.close()
 
             if final_result:
                 return jsonify(final_result), final_result["statusCode"]
@@ -300,7 +322,11 @@ def register_routes(app):
             }), 504
 
         except Exception as e:
-            return jsonify({"statusCode": 500, "message": str(e)}), 500
+            return jsonify({
+                "statusCode": 500,
+                "message": str(e)
+            }), 500
+
 
 
     @app.route("/api/detect", methods=["POST"])
@@ -328,7 +354,7 @@ def register_routes(app):
 
             if not all_temp_files and not raw_text:
                 return jsonify({"statusCode": 400, "message": "No images or raw_text provided"}), 400
-            
+           
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,
                 filename=os.path.basename(all_temp_files[0]) if all_temp_files else "raw_text_input",
