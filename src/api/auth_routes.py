@@ -1,9 +1,9 @@
-
+import json
 from flask import Blueprint, request, jsonify, g
 from src.services.oauth_service import oauth_service
 from src.services.token_service import token_service
 from src.services.auth_service_mongo import auth_service
-from src.services.multi_connect_service import call_client_register_post, call_system_connections_get, call_revoke_api_key
+from src.services.multi_connect_service import call_client_register_post, call_system_connections_get, call_revoke_api_key, call_auth_token, upload_document
 from src.repositories.users_repository import users_repo
 from src.repositories.auth_service_repository import auth_service_repo
 from src.models.user import User
@@ -397,8 +397,16 @@ def client_register():
         # 2. Prepare Data
         external_id = user.user_id if user.user_id else str(user.id)
         
-        # user_info as JSON string
-        user_info_str = user.model_dump_json(by_alias=True)
+        # user_info as JSON string (Convert from FE dict to string)
+        user_info_raw = data.get('user_info')
+        if isinstance(user_info_raw, dict):
+            user_info_str = json.dumps(user_info_raw, ensure_ascii=False)
+        elif isinstance(user_info_raw, str):
+            user_info_str = user_info_raw
+        else:
+            user_info_str = user.model_dump_json(by_alias=True)
+        
+        Log.info(f"[Auth] 📋 User Info being sent: {user_info_str}")
         
         # 3. Call Service
         result = call_client_register_post(
@@ -419,38 +427,48 @@ def client_register():
 
         # --- NEW: Save record to local auth_services collection ---
         try:
-            # Result is expected to be a dict. Successful structure: result["data"]["data"]
-            if result and isinstance(result, dict) and result.get("data"):
-                nested_data = result.get("data", {})
-                # The actual fields are in result["data"]["data"] based on sample
-                payload_data = nested_data.get("data") if isinstance(nested_data, dict) else None
+            # Check if registration was successful
+            # Response structure from service: {"status": "success", "data": {"data": {...}, ...}, "version": ""}
+            if result and isinstance(result, dict) and result.get("status") == "success":
+                # First level: result["data"]
+                first_level = result.get("data")
                 
-                if payload_data and isinstance(payload_data, dict):
-                    sys_conn = payload_data.get("system_connection", {})
+                if first_level and isinstance(first_level, dict):
+                    # Second level: result["data"]["data"] contains the actual payload
+                    payload_data = first_level.get("data")
                     
-                    # Mapping according to user requirement:
-                    # uuid is system_id
-                    # userid is external_id
-                    # app name is name
-                    # key is api key
-                    # app info is system_connection
-                    
-                    auth_svc = AuthService(
-                        uuid=sys_conn.get("system_id"),
-                        endpoint=sys_conn.get("endpoint"),
-                        connection_type="hkb",
-                        key=payload_data.get("api_key"),
-                        user_id=payload_data.get("external_id"),
-                        app_name=sys_conn.get("name"),
-                        app_info=json.dumps(sys_conn, ensure_ascii=False)
-                    )
-                    
-                    # Store in DB
-                    auth_service_repo.create(auth_svc.model_dump(by_alias=True, exclude_none=True))
-                    Log.info(f"[Auth] 💾 Saved AuthService record for user {auth_svc.user_id}, uuid: {auth_svc.uuid}")
+                    if payload_data and isinstance(payload_data, dict):
+                        sys_conn = payload_data.get("system_connection", {})
+                        
+                        # Mapping according to user requirement:
+                        # uuid is system_id
+                        # userid is external_id
+                        # app name is name
+                        # key is api key
+                        # app info is system_connection
+                        
+                        auth_svc = AuthService(
+                            uuid=sys_conn.get("system_id"),
+                            endpoint=sys_conn.get("endpoint"),
+                            connection_type="hkb",
+                            key=payload_data.get("api_key"),
+                            user_id=payload_data.get("external_id"),
+                            app_name=sys_conn.get("name"),
+                            app_info=json.dumps(sys_conn, ensure_ascii=False)
+                        )
+                        
+                        # Store in DB
+                        auth_service_repo.create(auth_svc.model_dump(by_alias=True, exclude_none=True))
+                        Log.info(f"[Auth] 💾 Saved AuthService record for user {auth_svc.user_id}, uuid: {auth_svc.uuid}")
+                    else:
+                        Log.warning(f"[Auth] ⚠️ payload_data not found or invalid in response")
+                else:
+                    Log.warning(f"[Auth] ⚠️ first_level data not found or invalid in response")
 
         except Exception as save_err:
+            import traceback
             Log.error(f"[Auth] ⚠️ Failed to save AuthService record locally: {save_err}")
+            Log.error(f"[Auth] Traceback: {traceback.format_exc()}")
             # We don't return error here because the external registration was successful
 
         return jsonify({
@@ -482,6 +500,7 @@ def system_connections_get():
         
         # Get all UUIDs from auth_services for this user
         connections = auth_service_repo.find_all({"user_id": user_id_int})
+        Log.info(f"[Auth] 🔍 Found {len(connections)} connections for user_id={user_id_int}: {connections}")
         client_register_uuids = [c.get("uuid") for c in connections if c.get("uuid")]
         
         if not client_register_uuids:
@@ -579,5 +598,132 @@ def revoke_api_key():
 
     except Exception as e:
         Log.error(f"[Auth] ❌ Revoke API Key failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@auth_bp.route('/api/auth/external-token', methods=['POST'])
+def external_auth_token():
+    """
+    Proxy authentication request to external HKB Auth system.
+    Expects: {system_id, api_key, user_id}
+    """
+    try:
+        # Try getting data from JSON body first, then form data
+        data = request.json if request.is_json else request.form.to_dict()
+        
+        system_id = data.get("system_id")
+        api_key = data.get("api_key")
+        user_id = data.get("user_id")
+
+        if not all([system_id, api_key, user_id]):
+            return jsonify({
+                "statusCode": 400, 
+                "message": "Missing required fields: system_id, api_key, user_id"
+            }), 400
+
+        # Call Service (No need to import inside function, we imported at top)
+        response_data = call_auth_token(system_id, api_key, user_id)
+        
+        # Helper to determine status code from response
+        status_code = 200
+        if isinstance(response_data, dict):
+             if not response_data.get("success", True): 
+                 if "status_code" in response_data:
+                     status_code = response_data.get("status_code", 500)
+                 else:
+                     status_code = 401 if "Unauthorized" in str(response_data) else 200
+
+        return jsonify(response_data), status_code
+
+    except Exception as e:
+        Log.error(f"[Auth] ❌ External Token Error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@auth_bp.route('/api/auth/upload-document', methods=['POST'])
+@require_auth
+def upload_document_route():
+    """
+    Uploads a document to an external system.
+    Expects: {user_id, system_id, payload}
+    
+    The route will:
+    1. Fetch connection details (endpoint, api_key) from auth_services collection
+    2. Call the external API with authentication and payload
+    """
+    try:
+        data = request.json
+        
+        # Get parameters from request
+        request_user_id = data.get("user_id")  # external_id in auth_services
+        system_id = data.get("system_id")
+        payload = data.get("payload")
+        
+        # Validate required fields
+        if not all([request_user_id, system_id, payload]):
+            return jsonify({
+                "statusCode": 400,
+                "message": "Missing required fields: user_id, system_id, payload"
+            }), 400
+        
+        # Fetch connection details from database
+        auth_record = auth_service_repo.collection.find_one({
+            "user_id": request_user_id,
+            "uuid": system_id
+        })
+        
+        if not auth_record:
+            return jsonify({
+                "statusCode": 404,
+                "message": f"No connection found for user_id={request_user_id} and system_id={system_id}"
+            }), 404
+        
+        # Extract connection details
+        endpoint = auth_record.get("endpoint")
+        api_key = auth_record.get("key")
+        
+        if not endpoint or not api_key:
+            return jsonify({
+                "statusCode": 400,
+                "message": "Connection record is missing endpoint or api_key"
+            }), 400
+        
+        Log.info(f"[Auth] 📤 Uploading document for user {request_user_id} to system {system_id}")
+        
+        # Call upload service
+        result = upload_document(
+            endpoint=endpoint,
+            system_id=system_id,
+            api_key=api_key,
+            user_id=request_user_id,
+            payload=payload
+        )
+        
+        # Determine response status
+        if result and isinstance(result, dict):
+            if result.get("success") is False:
+                status_code = result.get("status_code", 400)
+                return jsonify({
+                    "statusCode": status_code,
+                    "message": result.get("message", "Upload failed"),
+                    "data": result
+                }), status_code
+            
+            # Success case
+            return jsonify({
+                "statusCode": 200,
+                "message": "Document uploaded successfully",
+                "data": result
+            }), 200
+        else:
+            return jsonify({
+                "statusCode": 500,
+                "message": "Unexpected response from upload service",
+                "data": result
+            }), 500
+    
+    except Exception as e:
+        import traceback
+        Log.error(f"[Auth] ❌ Upload Document Error: {e}")
+        Log.error(f"[Auth] Traceback: {traceback.format_exc()}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 

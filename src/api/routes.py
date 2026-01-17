@@ -4,6 +4,7 @@ API Routes
 """
 import os
 from flask import request, jsonify, send_from_directory, g
+import requests
 from src.utils.auth_middleware import require_auth
 from src.utils.file_utils import save_uploaded_files
 from src.utils.redis_client import rag_queue

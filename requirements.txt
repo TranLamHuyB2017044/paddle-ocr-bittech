@@ -35,3 +35,4 @@ pymupdf
 redis
 rq
 # ultralytics
+requests
