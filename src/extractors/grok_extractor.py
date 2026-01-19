@@ -137,14 +137,14 @@ class GrokExtractor:
                 }
 
             if data:
-                Log.info(f"[GROK] ✅ Extraction successful.")
+                Log.info(f"[GROK] ✅ Extraction successful. Tokens: P={metadata.get('prompt_token_count', 0)}, C={metadata.get('candidates_token_count', 0)}, T={metadata.get('total_token_count', 0)}")
                 return {
                     "data": data,
                     "metadata": metadata
                 }
             else:
-                Log.error(f"[GROK] ❌ No parsed data available.")
-                return {"data": {}, "metadata": {}}
+                Log.error(f"[GROK] ❌ No parsed data available. Tokens: P={metadata.get('prompt_token_count', 0)}, C={metadata.get('candidates_token_count', 0)}, T={metadata.get('total_token_count', 0)}")
+                return {"data": {}, "metadata": metadata}
 
         except Exception as e:
             Log.error(f"[GROK] ❌ Generation Error: {e}")

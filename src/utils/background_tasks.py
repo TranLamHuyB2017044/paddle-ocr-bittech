@@ -5,7 +5,7 @@ from src.utils.logger import Log
 from src.utils.cloudinary_utils import cloudinary_service
 from src.services.log_service import log_service
 
-def run_background_upload_and_log(user_id, doc_type, file_paths, info):
+def run_background_upload_and_log(user_id, doc_type, file_paths, info, metadata=None):
     """
     Spawns a background thread to upload files to Cloudinary 
     and save logs to MongoDB, then cleans up temporary files.
@@ -28,7 +28,7 @@ def run_background_upload_and_log(user_id, doc_type, file_paths, info):
                     Log.info(f"[BG-TASK] ☁️ Upload complete. URLs: {len(upload_urls)}")
 
             # 2. Log to DB
-            doc_id = log_service.save_logs(user_id, doc_type, final_file_paths, info)
+            doc_id = log_service.save_logs(user_id, doc_type, final_file_paths, info, metadata=metadata)
             Log.info(f"[BG-TASK] 💾 Database logs saved. Doc ID: {doc_id}")
 
         except Exception as e:

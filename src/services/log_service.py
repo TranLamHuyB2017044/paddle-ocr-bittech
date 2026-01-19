@@ -3,7 +3,7 @@ from src.repositories.documents_repository import documents_repo
 import os
 
 class LogService:
-    def save_logs(self, user_id, doc_type, file_paths, extraction_data=None):
+    def save_logs(self, user_id, doc_type, file_paths, extraction_data=None, metadata=None):
         """
         Save extraction logs and document metadata to MongoDB.
         
@@ -12,6 +12,7 @@ class LogService:
             doc_type: Type of document
             file_paths: List of temporary file paths used in detection
             extraction_data: Dictionary containing extracted data (optional info for sheet)
+            metadata: Usage metadata (token counts)
         """
         if not user_id:
             # We can log anonymously or skip if strict.
@@ -66,7 +67,8 @@ class LogService:
             user_id=user_id,
             doc_type=doc_type,
             saved_to_sheet=bool(sheet_info.get("sheet_id")),
-            sheet_id=sheet_info.get("sheet_id")
+            sheet_id=sheet_info.get("sheet_id"),
+            metadata=metadata
         )
 
         return document_id

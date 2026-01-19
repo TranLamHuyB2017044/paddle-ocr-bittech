@@ -52,7 +52,7 @@ def process_with_grok(raw_front, raw_back, timer_info, doc_type, user_id=None, f
             Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
             
         # Trigger Background Upload and Logging
-        run_background_upload_and_log(user_id, doc_type, file_paths, info)
+        run_background_upload_and_log(user_id, doc_type, file_paths, info, metadata=metadata)
 
         Log.info("[API] 🎉 Trả về kết quả Grok (Background Upload active)")
         return {
@@ -129,7 +129,7 @@ def process_with_gemini(raw_front, raw_back, timer_info, doc_type, user_id=None,
             Log.info(f"[API] 📊 Updated extraction stats for user {user_id}")
             
         # Trigger Background Upload and Logging
-        run_background_upload_and_log(user_id, doc_type, file_paths, info)
+        run_background_upload_and_log(user_id, doc_type, file_paths, info, metadata=metadata)
 
         Log.info("[API] 🎉 Trả về kết quả Gemini (Background Upload active)")
         return {

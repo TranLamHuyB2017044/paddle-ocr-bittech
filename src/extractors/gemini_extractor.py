@@ -87,12 +87,12 @@ class GeminiExtractor:
                 maxOutputTokens = 5000
             )
             
-            # Add thinking config only for idCard (optimization)
-            if doc_type == "idCard":
-                 config.thinking_config = types.ThinkingConfig(thinking_budget=1024) 
+            # Add thinking config only for idCard (optimization) - DISABLED
+            # if doc_type == "idCard":
+            #      config.thinking_config = types.ThinkingConfig(thinking_budget=1024) 
 
             response = self.client.models.generate_content(
-                model="gemini-3-flash-preview", 
+                model="gemini-2.5-flash", 
                 contents=prompt,
                 config=config,
             )
@@ -135,14 +135,14 @@ class GeminiExtractor:
                 }
 
             if data:
-                Log.info(f"[GEMINI] ✅ Extraction successful.")
+                Log.info(f"[GEMINI] ✅ Extraction successful. Tokens: P={metadata.get('prompt_token_count', 0)}, C={metadata.get('candidates_token_count', 0)}, T={metadata.get('total_token_count', 0)}")
                 return {
                     "data": data,
                     "metadata": metadata
                 }
             else:
-                Log.error(f"[GEMINI] ❌ No parsed data available.")
-                return {"data": {}, "metadata": {}}
+                Log.error(f"[GEMINI] ❌ No parsed data available. Tokens: P={metadata.get('prompt_token_count', 0)}, C={metadata.get('candidates_token_count', 0)}, T={metadata.get('total_token_count', 0)}")
+                return {"data": {}, "metadata": metadata}
 
         except Exception as e:
             Log.error(f"[GEMINI] ❌ Generation Error: {e}")

@@ -6,7 +6,7 @@ class ExtractionLogsRepository(BaseRepository):
     def __init__(self):
         super().__init__("extraction_logs")
     
-    def log_extraction(self, user_id, doc_type, saved_to_sheet=False, sheet_id=None):
+    def log_extraction(self, user_id, doc_type, saved_to_sheet=False, sheet_id=None, metadata=None):
         """
         Create a new extraction log
         """
@@ -15,6 +15,7 @@ class ExtractionLogsRepository(BaseRepository):
             "document_type": doc_type,
             "saved_to_sheet": saved_to_sheet,
             "sheet_id": sheet_id,
+            "metadata": metadata,
             "created_at": datetime.now()
         }
         return self.create(data)
