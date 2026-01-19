@@ -92,6 +92,10 @@ def register_routes(app):
     @app.route("/api/traditional", methods=["POST"])
     @require_auth
     def detect_traditional():
+        import time
+        import json
+        from src.utils.redis_client import redis_conn, publish_event
+
         try:
             doc_type, error_resp, status_code = validate_request_params(request)
             if error_resp: return error_resp, status_code
@@ -119,12 +123,11 @@ def register_routes(app):
             )
 
             # Inform SSE about the new task
-            from src.utils.redis_client import publish_event
             publish_event(user_id, "detection_status", {
                 "document_id": doc_id,
                 "status": DocStatus.UPLOADED,
                 "type": doc_type,
-                "message": "Task received and enqueued"
+                "message": "Task received and enqueued (Traditional)"
             })
 
             rag_queue.enqueue(
@@ -133,64 +136,65 @@ def register_routes(app):
                 job_timeout='5m'
             )
 
+            # ===== Lắng nghe Redis giống detect_sync =====
+            pubsub = redis_conn.pubsub()
+            channel = f"sse_user_{user_id}"
+            pubsub.subscribe(channel)
+
+            wait_timeout = 120
+            start_wait = time.time()
+            final_result = None
+
+            while time.time() - start_wait < wait_timeout:
+                message = pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0
+                )
+
+                if message:
+                    try:
+                        payload = json.loads(message["data"])
+                        data = payload.get("data", {})
+
+                        if str(data.get("document_id")) == str(doc_id):
+                            status = data.get("status")
+
+                            if status == DocStatus.READY:
+                                final_result = {
+                                    "statusCode": 200,
+                                    "message": "Success (Traditional Synchronized)",
+                                    "data": data.get("result"),
+                                    "debug": data.get("debug")
+                                }
+                                break
+
+                            elif status == DocStatus.FAILED:
+                                final_result = {
+                                    "statusCode": 500,
+                                    "message": f"Processing failed: {data.get('error')}"
+                                }
+                                break
+                    except Exception:
+                        pass
+
+                time.sleep(0.1)
+
+            pubsub.unsubscribe(channel)
+            pubsub.close()
+
+            if final_result:
+                return jsonify(final_result), final_result["statusCode"]
+
             return jsonify({
                 "statusCode": 202,
-                "message": "Detection task enqueued",
+                "message": "Detection task enqueued (Wait Timeout)",
                 "data": {"document_id": doc_id}
             }), 202
+
         except Exception as e:
             Log.error(f"[API-TRAD] ❌ Error: {e}")
             return jsonify({"statusCode": 500, "message": str(e)}), 500
 
-    @app.route("/api/grok", methods=["POST"])
-    @require_auth
-    def detect_grok():
-        try:
-            doc_type, error_resp, status_code = validate_request_params(request)
-            if error_resp: return error_resp, status_code
-
-            all_temp_files = []
-            files = request.files.getlist('files')
-            if files:
-                from src.utils.file_utils import save_uploaded_file_list
-                all_temp_files = save_uploaded_file_list(files)
-            else:
-                f1 = request.files.get("first_image")
-                f2 = request.files.get("second_image")
-                p1, p2 = save_uploaded_files(f1, f2)
-                if p1: all_temp_files.append(p1)
-                if p2: all_temp_files.append(p2)
-
-            user_id = getattr(g, 'user_id', None)
-            doc_id = documents_repo.save_document(
-                user_id=user_id, doc_type=doc_type,
-                filename=os.path.basename(all_temp_files[0]) if all_temp_files else "unknown",
-                status=DocStatus.UPLOADED
-            )
-
-            # Inform SSE about the new task
-            from src.utils.redis_client import publish_event
-            publish_event(user_id, "detection_status", {
-                "document_id": doc_id,
-                "status": DocStatus.UPLOADED,
-                "type": doc_type,
-                "message": "Grok task received and enqueued"
-            })
-
-            rag_queue.enqueue(
-                process_detection_task,
-                args=(doc_id, user_id, doc_type, all_temp_files, "grok"),
-                job_timeout='5m'
-            )
-
-            return jsonify({
-                "statusCode": 202,
-                "message": "Grok detection enqueued",
-                "data": {"document_id": doc_id}
-            }), 202
-        except Exception as e:
-            Log.error(f"[API-GROK] ❌ Error: {e}")
-            return jsonify({"statusCode": 500, "message": str(e)}), 500
 
     @app.route("/api/detect-sync", methods=["POST"])
     @require_auth
@@ -245,7 +249,7 @@ def register_routes(app):
                     "message": "raw_text or images is required"
                 }), 400
 
-            provider = request.form.get("provider", "grok")
+            provider = request.form.get("provider", "openai")
             user_id = getattr(g, "user_id", None)
 
             # ===== 2. Lưu document =====
@@ -350,7 +354,7 @@ def register_routes(app):
                 if p2: all_temp_files.append(p2)
 
             user_id = getattr(g, 'user_id', None)
-            provider = request.form.get("provider", "grok")
+            provider = request.form.get("provider", "openai")
             raw_text = request.form.get("raw_text")
 
             if not all_temp_files and not raw_text:

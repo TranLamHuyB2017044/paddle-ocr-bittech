@@ -42,13 +42,12 @@ YOLO_LABEL_MAP = {
     "current_place": "address",
     "expire_date": "expiryDate"
 }
-MODEL_PATH = "protonx-models/nano-protonx-legal-tc" # Old online path
+MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Old online path
 # Model is located in cccd/local-protonx-model/protonx-legal-tc
 # MODEL_PATH = os.path.join(root_dir, "local-protonx-model", "protonx-legal-tc")
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
-    "lang": "vi",
     "enable_mkldnn": True, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 960, # Reduced from 1280 for faster detection
@@ -181,8 +180,7 @@ DEFAULT_NATIONALITY = "Việt Nam"
 DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
 
 # ========== AI API KEY CONFIG ==========
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-OPENROUTER_GROK_API_KEY = os.getenv("OPENROUTER_GROK_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # ========== MONGODB CONFIG ==========
 MONGODB_URI = os.getenv("MONGODB_URI", "")
