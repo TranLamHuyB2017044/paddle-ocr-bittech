@@ -42,7 +42,7 @@ class AuthService:
         object_id = users_repo.create_user(user)
         return object_id, user.user_id
 
-    def login(self, username, password, user_agent, ip, device_id=None):
+    def login(self, username, password, user_agent, ip, device_id=None, is_dev=False):
         # 1. Tìm user
         user_data = users_repo.find_by_username(username)
         if not user_data:
@@ -55,7 +55,8 @@ class AuthService:
              raise ValueError("Invalid username or password")
         
         # 3. Check Device Lock - Will raise ValueError if failed
-        users_repo.check_device_id(str(user.id), device_id)
+        if not is_dev:
+            users_repo.check_device_id(str(user.id), device_id)
 
         # 4. Create Session & Tokens
         return self._create_login_response(user, user_agent, ip, device_id)

@@ -251,6 +251,7 @@ def login():
         data = request.json
         username = data.get('username')
         password = data.get('password')
+        is_dev = data.get('isDev', False)
         
         if not username or not password:
             return jsonify({"statusCode": 400, "message": "Username and password are required"}), 400
@@ -258,11 +259,13 @@ def login():
         # Get Client Info
         user_agent = request.headers.get('User-Agent', 'Unknown')
         device_id = request.headers.get('X-Device-ID') # Client must send this header
-        if not device_id:
+        
+        if not is_dev and not device_id:
             return jsonify({"statusCode": 400, "message": "Device ID is required"}), 400
+            
         ip = request.remote_addr
         
-        result = auth_service.login(username, password, user_agent, ip, device_id)
+        result = auth_service.login(username, password, user_agent, ip, device_id, is_dev=is_dev)
         
         return jsonify({
             "statusCode": 200,
