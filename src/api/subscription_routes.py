@@ -104,6 +104,42 @@ def get_manager_sub_users_usage():
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
+@subscription_bp.route('/api/subscription/cancel', methods=['POST'])
+@require_auth
+def cancel_subscription():
+    """
+    User cancels their current paid subscription and returns to Free plan (ID 0).
+    Note: used_requests is NOT reset to prevent abuse.
+    """
+    try:
+        if not g.user:
+            return jsonify({"statusCode": 401, "message": "User context missing"}), 401
+
+        account_id = g.user.get('account_id')
+        if not account_id:
+            return jsonify({"statusCode": 404, "message": "No account associated with user"}), 404
+
+        # Update account to Free plan (0)
+        success = accounts_repo.update(account_id, {"plan": 0})
+        
+        if success:
+            Log.info(f"[Sub] User {g.user_id} cancelled subscription for account {account_id}")
+            return jsonify({
+                "statusCode": 200,
+                "message": "Đã hủy gói dịch vụ thành công. Tài khoản của bạn đã được chuyển về gói Free.",
+                "data": {
+                    "account_id": str(account_id),
+                    "new_plan": 0
+                }
+            }), 200
+        else:
+            return jsonify({"statusCode": 400, "message": "Không thể hủy gói vào lúc này."}), 400
+
+    except Exception as e:
+        Log.error(f"[Sub] cancel_subscription error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
 @subscription_bp.route('/api/subscription/admin/overview', methods=['GET'])
 @require_auth
 @require_role(0) # Admin ONLY
@@ -178,3 +214,129 @@ def get_plans():
         "statusCode": 200,
         "data": plans_list
     }), 200
+
+@subscription_bp.route('/api/subscription/admin/upgrade-plan', methods=['POST'])
+@require_auth
+@require_role(0) # Admin ONLY
+def admin_upgrade_plan():
+    """
+    Upgrade an account's plan by user_id or account_id.
+    Resets usage to 0 and updates the plan.
+    """
+    try:
+        data = request.json
+        user_id_int = data.get('user_id')
+        account_id = data.get('account_id')
+        new_plan = data.get('plan')
+        target_account_id = account_id
+        
+        # 1. Determine the Account ID
+        if user_id_int and not target_account_id:
+            user = users_repo.collection.find_one({"user_id": user_id_int})
+            if not user:
+                user = users_repo.find_by_id(str(user_id_int))
+            
+            if user:
+                target_account_id = user.get('account_id')
+            else:
+                return jsonify({"statusCode": 404, "message": f"User {user_id_int} not found"}), 404
+
+        if not target_account_id:
+            return jsonify({"statusCode": 400, "message": "Could not determine account_id"}), 400
+
+        # 2. Get current account info (to reuse plan if new_plan is not provided)
+        account = accounts_repo.find_by_id(target_account_id)
+        if not account:
+            return jsonify({"statusCode": 404, "message": "Account not found"}), 404
+
+        # Use existing plan if new_plan is not specified
+        final_plan = new_plan if new_plan is not None else account.get('plan', 0)
+
+        if final_plan == 0:
+            return jsonify({"statusCode": 400, "message": "Gói Free không được phép gia hạn hoặc làm mới lượt dùng."}), 400
+
+        from src.config import PLANS_CONFIG
+        if final_plan not in PLANS_CONFIG:
+            return jsonify({"statusCode": 400, "message": f"Invalid plan ID: {final_plan}"}), 400
+
+        # 3. Update Account & Reset Quota
+        update_data = {"plan": final_plan}
+        success = accounts_repo.update(target_account_id, update_data)
+        
+        if success:
+            # Also reset quota (this puts used_requests to 0 and adds +30 days)
+            accounts_repo.reset_quota(target_account_id)
+            
+            action = "upgraded" if new_plan is not None else "renewed"
+            Log.info(f"[Admin] Account {target_account_id} {action} to plan {final_plan}")
+            
+            return jsonify({
+                "statusCode": 200,
+                "message": f"Successfully {action} account to plan {PLANS_CONFIG[final_plan]['name']}",
+                "data": {
+                    "account_id": str(target_account_id),
+                    "new_plan": final_plan,
+                    "plan_name": PLANS_CONFIG[final_plan]['name'],
+                    "action": action
+                }
+            }), 200
+        else:
+            return jsonify({"statusCode": 400, "message": "Failed to update account"}), 400
+
+    except Exception as e:
+        Log.error(f"[Sub] admin_upgrade_plan error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@subscription_bp.route('/api/subscription/admin/reset-account', methods=['POST'])
+@require_auth
+@require_role(0) # Admin ONLY
+def admin_reset_account():
+    """
+    Force reset an account to Free plan (0) and reset usage to 0.
+    Used for administrative actions/penalties.
+    """
+    try:
+        data = request.json
+        user_id_int = data.get('user_id')
+        account_id = data.get('account_id')
+
+        target_account_id = account_id
+        
+        # 1. Determine the Account ID
+        if user_id_int and not target_account_id:
+            user = users_repo.collection.find_one({"user_id": user_id_int})
+            if not user:
+                user = users_repo.find_by_id(str(user_id_int))
+            
+            if user:
+                target_account_id = user.get('account_id')
+            else:
+                return jsonify({"statusCode": 404, "message": f"User {user_id_int} not found"}), 404
+
+        if not target_account_id:
+            return jsonify({"statusCode": 400, "message": "Could not determine account_id"}), 400
+
+        # 2. Reset to Free Plan and 0 Usage
+        # Update plan to 0
+        accounts_repo.update(target_account_id, {"plan": 0})
+        # Reset usage to 0 using existing repo method
+        success = accounts_repo.reset_quota(target_account_id)
+        
+        if success:
+            Log.info(f"[Admin] Account {target_account_id} has been FORCE RESET to Free plan with 0 usage.")
+            return jsonify({
+                "statusCode": 200,
+                "message": "Tài khoản đã được đặt lại về gói Free với 0 lượt sử dụng.",
+                "data": {
+                    "account_id": str(target_account_id),
+                    "plan": 0,
+                    "used_requests": 0
+                }
+            }), 200
+        else:
+            return jsonify({"statusCode": 400, "message": "Không thể thực hiện reset tài khoản."}), 400
+
+    except Exception as e:
+        Log.error(f"[Sub] admin_reset_account error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500

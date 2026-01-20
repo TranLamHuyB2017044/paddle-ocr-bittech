@@ -15,9 +15,13 @@ class AuthService:
             raise ValueError("Username already exists")
         if users_repo.find_by_email(email):
             raise ValueError("Email already exists")
+        if phone and users_repo.collection.find_one({"phone": phone}):
+            raise ValueError("Số điện thoại đã tồn tại")
             
         # 1. Handle Account creation (Every new self-registered user gets an account)
         from src.repositories.accounts_repository import accounts_repo
+        
+        is_new_account = False
         if not account_id:
             account_data = {
                 "plan": plan, # Use provided plan or default to 0 (free)
@@ -25,22 +29,42 @@ class AuthService:
                 "created_at": datetime.utcnow()
             }
             account_id = accounts_repo.create(account_data)
+            is_new_account = True
         
-        # 2. Tạo user mới
-        user = User(
-            username=username,
-            email=email,
-            password=hash_password(password),
-            fullname=fullname,
-            phone=phone,
-            role=role,
-            account_id=account_id,
-            auth_provider="local"
-        )
-        
-        # 3. Lưu
-        object_id = users_repo.create_user(user)
-        return object_id, user.user_id
+        try:
+            # 2. Tạo user mới
+            user = User(
+                username=username,
+                email=email,
+                password=hash_password(password),
+                fullname=fullname,
+                phone=phone,
+                role=role,
+                account_id=account_id,
+                auth_provider="local"
+            )
+            
+            # 3. Lưu
+            object_id = users_repo.create_user(user)
+            return object_id, user.user_id
+        except Exception as e:
+            # Rollback: delete account if user creation failed and we created this account
+            if is_new_account and account_id:
+                try:
+                    accounts_repo.delete(str(account_id))
+                    Log.info(f"[Auth] Rollback: Deleted orphaned account {account_id} due to user register error")
+                except Exception as rollback_err:
+                    Log.error(f"[Auth] Rollback failed for account {account_id}: {rollback_err}")
+            
+            # Re-raise the original error (e.g. Unique index violation)
+            if "duplicate key error" in str(e).lower():
+                if "phone" in str(e).lower():
+                    raise ValueError("Số điện thoại đã được đăng ký cho tài khoản khác")
+                if "username" in str(e).lower():
+                    raise ValueError("Username đã tồn tại")
+                if "email" in str(e).lower():
+                    raise ValueError("Email đã tồn tại")
+            raise e
 
     def login(self, username, password, user_agent, ip, device_id=None, is_dev=False):
         # 1. Tìm user
