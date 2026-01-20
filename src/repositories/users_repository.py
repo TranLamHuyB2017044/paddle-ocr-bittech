@@ -95,23 +95,43 @@ class UsersRepository(BaseRepository):
         Kiểm tra thiết bị của user.
         - Nếu user chưa có deviceId: lưu device_id hiện tại và trả về True (cho phép).
         - Nếu đã có: so sánh với device_id hiện tại.
-        Trả về True nếu hợp lệ, False nếu bị khóa thiết bị khác.
+        Trả về True nếu hợp lệ, raise ValueError nếu bị lỗi hoặc sai thiết bị.
         """
+        from src.utils.logger import Log
         if not device_id:
-            return False  
+            Log.warning(f"[UserRepo] ⚠️ No device_id provided for user {user_id}")
+            raise ValueError("Device ID là bắt buộc để đăng nhập")
+            
         user_data = self.find_by_id(user_id)
         if not user_data:
-            return False
+            Log.error(f"[UserRepo] ❌ User {user_id} not found")
+            raise ValueError("Không tìm thấy thông tin người dùng")
 
         saved_device_id = user_data.get("deviceId")
+        Log.info(f"[UserRepo] 🔍 Checking device_id for user {user_data.get('username')}: Current={device_id}, Saved={saved_device_id}")
 
         if not saved_device_id:
-            # Liên kết thiết bị lần đầu
-            self.update(user_id, {"deviceId": device_id})
+            # 1. Kiểm tra xem device_id này đã được tài khoản nào khác sử dụng chưa
+            # Vì deviceId là unique, nếu update lỗi thường là do đã tồn tại ở account khác
+            existing_owner = self.collection.find_one({"deviceId": device_id})
+            if existing_owner:
+                Log.error(f"[UserRepo] ❌ Device {device_id} is already linked to user {existing_owner.get('username')}")
+                raise ValueError(f"Thiết bị này đã được liên kết với tài khoản '{existing_owner.get('username')}'. Vui lòng dùng thiết bị khác.")
+
+            # 2. Liên kết thiết bị lần đầu
+            Log.info(f"[UserRepo] 🔗 Linking first device {device_id} to user {user_id}")
+            success = self.update(user_id, {"deviceId": device_id})
+            if not success:
+                Log.error(f"[UserRepo] ❌ Failed to update deviceId for user {user_id}")
+                raise ValueError("Không thể liên kết thiết bị. Vui lòng thử lại sau.")
             return True
         
         # Kiểm tra xem có trùng với thiết bị đã lưu không
-        return saved_device_id == device_id
+        if saved_device_id != device_id:
+            Log.warning(f"[UserRepo] ⛔ Device mismatch for user {user_id}: {device_id} != {saved_device_id}")
+            raise ValueError("Tài khoản này đã được liên kết với một thiết bị khác. Vui lòng đăng nhập đúng thiết bị.")
+            
+        return True
 
 
 # Global instance

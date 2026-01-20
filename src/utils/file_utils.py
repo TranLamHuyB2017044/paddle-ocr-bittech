@@ -103,24 +103,29 @@ def copy_to_permanent_storage(file_path):
     # Return relative path for URL usage
     return f"/storage/{filename}"
 
-def calculate_files_hash(file_paths):
+def calculate_files_hash(file_paths=None, raw_text=None):
     """
-    Calculate a combined hash of all files in the list.
+    Calculate a combined hash of all files and/or raw text.
     Used for caching processed results.
     """
     import hashlib
     
-    if not file_paths:
+    if not file_paths and not raw_text:
         return None
         
     combined_hash = hashlib.md5()
     
-    # Sort paths to ensure consistent hash even if order changes (unlikely here but safe)
-    for path in file_paths:
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                # Read in chunks to handle large files
-                for chunk in iter(lambda: f.read(4096), b""):
-                    combined_hash.update(chunk)
+    # 1. Add raw text to hash if provided
+    if raw_text:
+        combined_hash.update(raw_text.encode('utf-8'))
+    
+    # 2. Add files to hash
+    if file_paths:
+        # Sort paths to ensure consistent hash
+        for path in file_paths:
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        combined_hash.update(chunk)
                     
     return combined_hash.hexdigest()

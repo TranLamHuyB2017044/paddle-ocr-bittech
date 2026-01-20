@@ -10,27 +10,63 @@ from src.utils.security import (
 from src.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 class AuthService:
-    def register(self, username, email, password, fullname=None, phone=None):
+    def register(self, username, email, password, fullname=None, phone=None, role=2, account_id=None, plan=0):
         if users_repo.find_by_username(username):
             raise ValueError("Username already exists")
         if users_repo.find_by_email(email):
             raise ValueError("Email already exists")
+        if phone and users_repo.collection.find_one({"phone": phone}):
+            raise ValueError("Số điện thoại đã tồn tại")
             
-        # 2. Tạo user mới
-        user = User(
-            username=username,
-            email=email,
-            password=hash_password(password),
-            fullname=fullname,
-            phone=phone,
-            auth_provider="local"
-        )
+        # 1. Handle Account creation (Every new self-registered user gets an account)
+        from src.repositories.accounts_repository import accounts_repo
         
-        # 3. Lưu
-        object_id = users_repo.create_user(user)
-        return object_id, user.user_id
+        is_new_account = False
+        if not account_id:
+            account_data = {
+                "plan": plan, # Use provided plan or default to 0 (free)
+                "used_requests": 0,
+                "created_at": datetime.utcnow()
+            }
+            account_id = accounts_repo.create(account_data)
+            is_new_account = True
+        
+        try:
+            # 2. Tạo user mới
+            user = User(
+                username=username,
+                email=email,
+                password=hash_password(password),
+                fullname=fullname,
+                phone=phone,
+                role=role,
+                account_id=account_id,
+                auth_provider="local"
+            )
+            
+            # 3. Lưu
+            object_id = users_repo.create_user(user)
+            return object_id, user.user_id
+        except Exception as e:
+            # Rollback: delete account if user creation failed and we created this account
+            if is_new_account and account_id:
+                try:
+                    accounts_repo.delete(str(account_id))
+                    Log.info(f"[Auth] Rollback: Deleted orphaned account {account_id} due to user register error")
+                except Exception as rollback_err:
+                    Log.error(f"[Auth] Rollback failed for account {account_id}: {rollback_err}")
+            
+            # Re-raise the original error (e.g. Unique index violation)
+            if "duplicate key error" in str(e).lower():
+                if "phone" in str(e).lower():
+                    raise ValueError("Số điện thoại đã được đăng ký cho tài khoản khác")
+                if "username" in str(e).lower():
+                    raise ValueError("Username đã tồn tại")
+                if "email" in str(e).lower():
+                    raise ValueError("Email đã tồn tại")
+            raise e
 
-    def login(self, username, password, user_agent, ip, device_id=None):
+    def login(self, username, password, user_agent, ip, device_id=None, is_dev=False):
         # 1. Tìm user
         user_data = users_repo.find_by_username(username)
         if not user_data:
@@ -42,9 +78,11 @@ class AuthService:
         if not user.password or not verify_password(password, user.password):
              raise ValueError("Invalid username or password")
         
-        if not users_repo.check_device_id(str(user.id), device_id):
-            raise ValueError("Tài khoản đã được đăng nhập trên thiết bị khác")
-        # 3. Create Session & Tokens
+        # 3. Check Device Lock - Will raise ValueError if failed
+        if not is_dev:
+            users_repo.check_device_id(str(user.id), device_id)
+
+        # 4. Create Session & Tokens
         return self._create_login_response(user, user_agent, ip, device_id)
 
     def login_with_google(self, email, fullname, user_agent, ip, avatar_url=None, device_id=None):
@@ -97,9 +135,8 @@ class AuthService:
             if update_data:
                  users_repo.update(str(user.id), update_data)
 
-        # 2. Check Device Lock
-        if not users_repo.check_device_id(str(user.id), device_id):
-            raise ValueError("Tài khoản đã được đăng nhập trên thiết bị khác")
+        # 2. Check Device Lock - Will raise ValueError if failed
+        users_repo.check_device_id(str(user.id), device_id)
 
         # 3. Return Tokens
         return self._create_login_response(user, user_agent, ip, device_id)
@@ -148,18 +185,26 @@ class AuthService:
             })
             full_key_response = full_key
 
+        # 4. Get Account Info
+        from src.services.subscription_service import subscription_service
+        quota_data = None
+        if user.account_id:
+            quota_data = subscription_service.get_quota_info(user.account_id)
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "api_key": full_key_response, # Always Full Key
             "user": {
                 "id": str(user.id),
-                "user_id": getattr(user, "user_id", None),
+                "user_id": int(user.user_id) if user.user_id else None,
                 "email": user.email,
                 "fullname": user.fullname,
+                "role": user.role,
+                "account_id": str(user.account_id) if user.account_id else None,
                 "avatar_url": getattr(user, "avatar_url", None),
                 "group_key": getattr(user, "group_key", None),
-                "user_id": int(user.user_id) if user.user_id else None
+                "quota": quota_data
             }
         }
 

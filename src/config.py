@@ -206,4 +206,45 @@ RAG_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
 
 
+# ========== SAAS PLANS CONFIG ==========
+# 0: free, 1: basic, 2: pro, 3: business
+PLANS_CONFIG = {
+    0: {
+        'name': 'Free',
+        'description': 'Gói dùng thử cho cá nhân',
+        'max_requests_per_month': 10,
+        'max_users': 1,
+        'price': 0,
+        'is_unlimited': False,
+        'features': ['10 lượt/tháng', '1 tài khoản', 'Dữ liệu lưu 7 ngày']
+    },
+    1: {
+        'name': 'Basic',
+        'description': 'Phù hợp cho cửa hàng nhỏ',
+        'max_requests_per_month': 500,
+        'max_users': 3,
+        'price': 100000,
+        'is_unlimited': False,
+        'features': ['500 lượt/tháng', '3 tài khoản', 'Dữ liệu lưu 30 ngày', 'Hỗ trợ email']
+    },
+    2: {
+        'name': 'Pro',
+        'description': 'Dành cho doanh nghiệp vừa',
+        'max_requests_per_month': 1500,
+        'max_users': 5,
+        'price': 200000,
+        'is_unlimited': False,
+        'features': ['1.500 lượt/tháng', '5 tài khoản', 'Dữ liệu lưu 90 ngày', 'Hỗ trợ 24/7']
+    },
+    3: {
+        'name': 'Business',
+        'description': 'Giải pháp may đo theo yêu cầu',
+        'max_requests_per_month': -1,
+        'max_users': -1,
+        'price': -1, # Liên hệ
+        'is_unlimited': True,
+        'features': ['Không giới hạn', 'Không giới hạn người dùng', 'Priority support', 'Tùy biến riêng']
+    }
+}
+
 AUTH_API_URL = os.getenv("AUTH_SERVICE_URL", "")
