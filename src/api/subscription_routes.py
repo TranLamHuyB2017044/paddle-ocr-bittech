@@ -3,6 +3,7 @@ from src.utils.auth_middleware import require_auth, require_role
 from src.repositories.users_repository import users_repo
 from src.repositories.accounts_repository import accounts_repo
 from src.services.subscription_service import subscription_service
+from src.repositories.subscription_logs_repository import sub_logs_repo
 from src.utils.logger import Log
 
 subscription_bp = Blueprint('subscription_bp', __name__)
@@ -119,11 +120,27 @@ def cancel_subscription():
         if not account_id:
             return jsonify({"statusCode": 404, "message": "No account associated with user"}), 404
 
+        # Get current plan before update for logging
+        from_plan = g.user.get('plan') # This might be stale if g.user is not synced, better fetch account
+        account = accounts_repo.find_by_id(account_id)
+        from_plan = account.get('plan', 0) if account else 0
+
         # Update account to Free plan (0)
         success = accounts_repo.update(account_id, {"plan": 0})
         
         if success:
             Log.info(f"[Sub] User {g.user_id} cancelled subscription for account {account_id}")
+            
+            # Log action
+            sub_logs_repo.log_action(
+                actor_id=g.user_id,
+                target_account_id=account_id,
+                action="cancel",
+                from_plan=from_plan,
+                to_plan=0,
+                details=f"User {g.user.get('username')} cancelled their own subscription"
+            )
+
             return jsonify({
                 "statusCode": 200,
                 "message": "Đã hủy gói dịch vụ thành công. Tài khoản của bạn đã được chuyển về gói Free.",
@@ -260,6 +277,7 @@ def admin_upgrade_plan():
             return jsonify({"statusCode": 400, "message": f"Invalid plan ID: {final_plan}"}), 400
 
         # 3. Update Account & Reset Quota
+        from_plan = account.get('plan', 0)
         update_data = {"plan": final_plan}
         success = accounts_repo.update(target_account_id, update_data)
         
@@ -270,6 +288,16 @@ def admin_upgrade_plan():
             action = "upgraded" if new_plan is not None else "renewed"
             Log.info(f"[Admin] Account {target_account_id} {action} to plan {final_plan}")
             
+            # Log action
+            sub_logs_repo.log_action(
+                actor_id=g.user_id,
+                target_account_id=target_account_id,
+                action=action,
+                from_plan=from_plan,
+                to_plan=final_plan,
+                details=f"Admin {g.user.get('username')} {action} account"
+            )
+
             return jsonify({
                 "statusCode": 200,
                 "message": f"Successfully {action} account to plan {PLANS_CONFIG[final_plan]['name']}",
@@ -318,6 +346,10 @@ def admin_reset_account():
             return jsonify({"statusCode": 400, "message": "Could not determine account_id"}), 400
 
         # 2. Reset to Free Plan and 0 Usage
+        # Get current plan for logging
+        account = accounts_repo.find_by_id(target_account_id)
+        from_plan = account.get('plan', 0) if account else 0
+
         # Update plan to 0
         accounts_repo.update(target_account_id, {"plan": 0})
         # Reset usage to 0 using existing repo method
@@ -325,6 +357,17 @@ def admin_reset_account():
         
         if success:
             Log.info(f"[Admin] Account {target_account_id} has been FORCE RESET to Free plan with 0 usage.")
+            
+            # Log action
+            sub_logs_repo.log_action(
+                actor_id=g.user_id,
+                target_account_id=target_account_id,
+                action="reset",
+                from_plan=from_plan,
+                to_plan=0,
+                details=f"Admin {g.user.get('username')} force reset account"
+            )
+
             return jsonify({
                 "statusCode": 200,
                 "message": "Tài khoản đã được đặt lại về gói Free với 0 lượt sử dụng.",
