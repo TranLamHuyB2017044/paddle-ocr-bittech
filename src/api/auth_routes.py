@@ -217,14 +217,6 @@ def get_quota():
     except Exception as e:
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
-@auth_bp.route('/api/auth/plans', methods=['GET'])
-def get_plans():
-    """Get static plan information."""
-    from src.config import PLANS_CONFIG
-    return jsonify({
-        "statusCode": 200,
-        "data": PLANS_CONFIG
-    })
 
 @auth_bp.route('/api/admin/accounts', methods=['GET'])
 @require_auth

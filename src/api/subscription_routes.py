@@ -159,3 +159,22 @@ def get_admin_overview():
     except Exception as e:
         Log.error(f"[Sub] get_admin_overview error: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
+        
+@subscription_bp.route('/api/subscription/plans', methods=['GET'])
+def get_plans():
+    """
+    Get detailed subscription plans for UI display.
+    """
+    from src.config import PLANS_CONFIG
+    
+    plans_list = []
+    for plan_id, config in PLANS_CONFIG.items():
+        plans_list.append({
+            "id": plan_id,
+            **config
+        })
+        
+    return jsonify({
+        "statusCode": 200,
+        "data": plans_list
+    }), 200
