@@ -54,9 +54,10 @@ class AuthService:
         if not user.password or not verify_password(password, user.password):
              raise ValueError("Invalid username or password")
         
-        if not users_repo.check_device_id(str(user.id), device_id):
-            raise ValueError("Tài khoản đã được đăng nhập trên thiết bị khác")
-        # 3. Create Session & Tokens
+        # 3. Check Device Lock - Will raise ValueError if failed
+        users_repo.check_device_id(str(user.id), device_id)
+
+        # 4. Create Session & Tokens
         return self._create_login_response(user, user_agent, ip, device_id)
 
     def login_with_google(self, email, fullname, user_agent, ip, avatar_url=None, device_id=None):
@@ -109,9 +110,8 @@ class AuthService:
             if update_data:
                  users_repo.update(str(user.id), update_data)
 
-        # 2. Check Device Lock
-        if not users_repo.check_device_id(str(user.id), device_id):
-            raise ValueError("Tài khoản đã được đăng nhập trên thiết bị khác")
+        # 2. Check Device Lock - Will raise ValueError if failed
+        users_repo.check_device_id(str(user.id), device_id)
 
         # 3. Return Tokens
         return self._create_login_response(user, user_agent, ip, device_id)
