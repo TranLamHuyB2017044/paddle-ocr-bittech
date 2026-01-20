@@ -80,8 +80,11 @@ class SubscriptionService:
         
         current_users_count = users_repo.collection.count_documents({"account_id": account_id})
         
-        if current_users_count >= plan_cfg.get('max_users', 1):
-            return False, f"User limit reached for plan {plan_key} ({current_users_count}/{plan_cfg.get('max_users')})"
+        max_users = plan_cfg.get('max_users', 1)
+        
+        # -1 means unlimited
+        if max_users != -1 and current_users_count >= max_users:
+            return False, f"User limit reached for plan {plan_key} ({current_users_count}/{max_users})"
             
         return True, "Success"
 

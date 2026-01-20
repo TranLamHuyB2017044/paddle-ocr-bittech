@@ -239,8 +239,8 @@ PLANS_CONFIG = {
     3: {
         'name': 'Business',
         'description': 'Giải pháp may đo theo yêu cầu',
-        'max_requests_per_month': float('inf'),
-        'max_users': float('inf'),
+        'max_requests_per_month': -1,
+        'max_users': -1,
         'price': -1, # Liên hệ
         'is_unlimited': True,
         'features': ['Không giới hạn', 'Không giới hạn người dùng', 'Priority support', 'Tùy biến riêng']
