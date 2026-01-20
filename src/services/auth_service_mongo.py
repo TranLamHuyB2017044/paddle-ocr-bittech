@@ -10,12 +10,22 @@ from src.utils.security import (
 from src.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 class AuthService:
-    def register(self, username, email, password, fullname=None, phone=None):
+    def register(self, username, email, password, fullname=None, phone=None, role=2, account_id=None):
         if users_repo.find_by_username(username):
             raise ValueError("Username already exists")
         if users_repo.find_by_email(email):
             raise ValueError("Email already exists")
             
+        # 1. Handle Account creation (Every new self-registered user gets an account)
+        from src.repositories.accounts_repository import accounts_repo
+        if not account_id:
+            account_data = {
+                "plan": "free", # New accounts start with free plan
+                "used_requests": 0,
+                "created_at": datetime.utcnow()
+            }
+            account_id = accounts_repo.create(account_data)
+        
         # 2. Tạo user mới
         user = User(
             username=username,
@@ -23,6 +33,8 @@ class AuthService:
             password=hash_password(password),
             fullname=fullname,
             phone=phone,
+            role=role,
+            account_id=account_id,
             auth_provider="local"
         )
         
@@ -148,18 +160,26 @@ class AuthService:
             })
             full_key_response = full_key
 
+        # 4. Get Account Info
+        from src.services.subscription_service import subscription_service
+        quota_data = None
+        if user.account_id:
+            quota_data = subscription_service.get_quota_info(user.account_id)
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "api_key": full_key_response, # Always Full Key
             "user": {
                 "id": str(user.id),
-                "user_id": getattr(user, "user_id", None),
+                "user_id": int(user.user_id) if user.user_id else None,
                 "email": user.email,
                 "fullname": user.fullname,
+                "role": user.role,
+                "account_id": str(user.account_id) if user.account_id else None,
                 "avatar_url": getattr(user, "avatar_url", None),
                 "group_key": getattr(user, "group_key", None),
-                "user_id": int(user.user_id) if user.user_id else None
+                "quota": quota_data
             }
         }
 

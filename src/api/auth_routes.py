@@ -60,10 +60,43 @@ def register():
         fullname = data.get('fullname')
         phone = data.get('phone')
         
+        # Default role is 2 (user)
+        role = data.get('role', 2)
+        account_id = data.get('account_id')
+
+        # RBAC Check: If Authorization header is present, handle manager creating sub-users
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            from src.repositories.users_repository import users_repo
+            from src.utils.security import decode_access_token
+            # Simple token extraction for permission check
+            try:
+                token = auth_header.split(" ")[1]
+                payload = decode_access_token(token)
+                if payload:
+                    creator = users_repo.find_by_id(payload.get("sub"))
+                    if creator:
+                        # Manager logic: Can only create role 2 and MUST use their own account_id
+                        if creator.get('role') == 1:
+                            from src.services.subscription_service import subscription_service
+                            
+                            # Check if manager can create more users
+                            can_create, msg = subscription_service.can_create_user(creator)
+                            if not can_create:
+                                return jsonify({"statusCode": 403, "message": msg}), 403
+                            
+                            # Force role and account_id
+                            role = 2
+                            account_id = creator.get('account_id')
+                        
+                        # Admin can specify role and account_id (already handled by data.get)
+            except Exception as e:
+                Log.error(f"[Auth] Permission check during register failed: {e}")
+
         if not email or not password or not username:
             return jsonify({"statusCode": 400, "message": "Email, password and username are required"}), 400
             
-        object_id, user_id_int = auth_service.register(username, email, password, fullname, phone)
+        object_id, user_id_int = auth_service.register(username, email, password, fullname, phone, role=role, account_id=account_id)
         
         return jsonify({
             "statusCode": 201,
@@ -78,6 +111,110 @@ def register():
     except Exception as e:
         Log.error(f"[Auth] Register failed: {e}")
         return jsonify({"statusCode": 500, "message": "Internal Server Error"}), 500
+
+@auth_bp.route('/api/admin/accounts/reset-quota', methods=['POST'])
+@require_auth
+def admin_reset_quota():
+    """Manually reset an account's quota. Admin only."""
+    from src.utils.auth_middleware import require_role
+    @require_role(0)
+    def protected_reset():
+        from src.repositories.accounts_repository import accounts_repo
+        data = request.json
+        account_id = data.get('account_id')
+        
+        if not account_id:
+            return jsonify({"statusCode": 400, "message": "account_id is required"}), 400
+            
+        success = accounts_repo.reset_quota(account_id)
+        if success:
+            return jsonify({"statusCode": 200, "message": f"Quota reset for account {account_id}"})
+        return jsonify({"statusCode": 400, "message": "Reset failed"}), 400
+    
+    return protected_reset()
+
+@auth_bp.route('/api/admin/accounts/upgrade-plan', methods=['POST'])
+@require_auth
+def admin_upgrade_plan():
+    """Upgrade an account's plan and reset their quota. Admin only."""
+    from src.utils.auth_middleware import require_role
+    @require_role(0)
+    def protected_upgrade():
+        from src.repositories.accounts_repository import accounts_repo
+        data = request.json
+        account_id = data.get('account_id')
+        new_plan = data.get('plan')
+        
+        if not account_id or not new_plan:
+            return jsonify({"statusCode": 400, "message": "account_id and plan are required"}), 400
+            
+        from src.config import PLANS_CONFIG
+        if new_plan not in PLANS_CONFIG:
+            return jsonify({"statusCode": 400, "message": f"Invalid plan: {new_plan}"}), 400
+            
+        # Upgrade plan AND reset usage (as requested: "khi upgrade mới reset")
+        accounts_repo.update(account_id, {"plan": new_plan})
+        accounts_repo.reset_quota(account_id)
+        
+        return jsonify({
+            "statusCode": 200, 
+            "message": f"Account {account_id} upgraded to {new_plan} and quota reset."
+        })
+    
+    return protected_upgrade()
+
+@auth_bp.route('/api/auth/quota', methods=['GET'])
+@require_auth
+def get_quota():
+    try:
+        from src.services.subscription_service import subscription_service
+        
+        # Admin can view any account
+        account_id = request.args.get('account_id')
+        if account_id:
+             if g.user.get('role') != 0:
+                 return jsonify({"statusCode": 403, "message": "Only admins can view other accounts"}), 403
+        else:
+            account_id = g.user.get('account_id')
+
+        if not account_id:
+             return jsonify({"statusCode": 404, "message": "No account associated with this user"}), 404
+             
+        quota_info = subscription_service.get_quota_info(account_id)
+        return jsonify({
+            "statusCode": 200,
+            "data": quota_info
+        })
+    except Exception as e:
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@auth_bp.route('/api/auth/plans', methods=['GET'])
+def get_plans():
+    """Get static plan information."""
+    from src.config import PLANS_CONFIG
+    return jsonify({
+        "statusCode": 200,
+        "data": PLANS_CONFIG
+    })
+
+@auth_bp.route('/api/admin/accounts', methods=['GET'])
+@require_auth
+def admin_get_accounts():
+    """List all accounts with their usage. Admin only."""
+    from src.utils.auth_middleware import require_role
+    @require_role(0)
+    def protected_get_accounts():
+        from src.repositories.accounts_repository import accounts_repo
+        # Paginated or limited list of accounts
+        accounts = list(accounts_repo.collection.find().limit(100))
+        for acc in accounts:
+            acc['_id'] = str(acc['_id'])
+            
+        return jsonify({
+            "statusCode": 200,
+            "data": accounts
+        })
+    return protected_get_accounts()
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
 def login():

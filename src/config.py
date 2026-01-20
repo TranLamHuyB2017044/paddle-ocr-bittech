@@ -206,4 +206,32 @@ RAG_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
 
 
+# ========== SAAS PLANS CONFIG ==========
+PLANS_CONFIG = {
+    'free': {
+        'max_requests_per_month': 10,
+        'max_users': 1,
+        'price': 0,
+        'is_unlimited': False
+    },
+    'basic': {
+        'max_requests_per_month': 500,
+        'max_users': 3,
+        'price': 100000,
+        'is_unlimited': False
+    },
+    'pro': {
+        'max_requests_per_month': 1500,
+        'max_users': 5,
+        'price': 200000,
+        'is_unlimited': False
+    },
+    'business': {
+        'max_requests_per_month': float('inf'),
+        'max_users': float('inf'),
+        'price': -1, # Contact for price
+        'is_unlimited': True
+    }
+}
+
 AUTH_API_URL = os.getenv("AUTH_SERVICE_URL", "")

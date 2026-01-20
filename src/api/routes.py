@@ -11,7 +11,9 @@ from src.utils.redis_client import rag_queue
 from src.tasks.document_tasks import process_detection_task
 from src.repositories.documents_repository import documents_repo
 from src.utils.logger import Log
-from src.config import MAX_OCR_FILE_SIZE, DocStatus
+from src.config import MAX_OCR_FILE_SIZE, DocStatus, PLANS_CONFIG
+from src.services.subscription_service import subscription_service
+from src.repositories.accounts_repository import accounts_repo
 
 ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments'}
 
@@ -122,13 +124,22 @@ def register_routes(app):
                 status=DocStatus.UPLOADED
             )
 
+            # Check quota
+            is_allowed, msg = subscription_service.check_quota(g.user)
+            if not is_allowed:
+                return jsonify({"statusCode": 403, "message": msg}), 403
+
             # Inform SSE about the new task
             publish_event(user_id, "detection_status", {
                 "document_id": doc_id,
                 "status": DocStatus.UPLOADED,
                 "type": doc_type,
-                "message": "Task received and enqueued (Traditional)"
+                "message": msg
             })
+
+            # Increment usage (Admin excluded in check_quota/increment)
+            if g.user.get('role') != 0 and g.user.get('account_id'):
+                accounts_repo.increment_usage(g.user.get('account_id'))
 
             rag_queue.enqueue(
                 process_detection_task,
@@ -263,6 +274,15 @@ def register_routes(app):
                 status=DocStatus.UPLOADED
             )
 
+            # Check quota
+            is_allowed, msg = subscription_service.check_quota(g.user)
+            if not is_allowed:
+                return jsonify({"statusCode": 403, "message": msg}), 403
+
+            # Increment usage 
+            if g.user.get('role') != 0 and g.user.get('account_id'):
+                accounts_repo.increment_usage(g.user.get('account_id'))
+
             # ===== 3. Enqueue worker =====
             rag_queue.enqueue(
                 process_detection_task,
@@ -366,6 +386,11 @@ def register_routes(app):
                 status=DocStatus.UPLOADED
             )
 
+            # Check quota
+            is_allowed, msg = subscription_service.check_quota(g.user)
+            if not is_allowed:
+                return jsonify({"statusCode": 403, "message": msg}), 403
+
             # Inform SSE about the new task
             from src.utils.redis_client import publish_event
             publish_event(user_id, "detection_status", {
@@ -373,8 +398,12 @@ def register_routes(app):
                 "status": DocStatus.UPLOADED,
                 "type": doc_type,
                 "provider": provider,
-                "message": "Task received and enqueued"
+                "message": msg
             })
+
+            # Increment usage 
+            if g.user.get('role') != 0 and g.user.get('account_id'):
+                accounts_repo.increment_usage(g.user.get('account_id'))
 
             rag_queue.enqueue(
                 process_detection_task,

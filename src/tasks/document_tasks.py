@@ -133,8 +133,8 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         
         request_start = time.time()
         
-        # 2. Cache Check
-        files_hash = calculate_files_hash(file_paths)
+        # 2. Cache Check (Includes files and raw_text)
+        files_hash = calculate_files_hash(file_paths, raw_text=raw_text)
         cache_key = f"cache:extract:{doc_type}:{provider}:{files_hash}"
         
         if files_hash:
