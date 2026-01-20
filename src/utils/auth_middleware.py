@@ -3,49 +3,32 @@ from flask import request, jsonify, g
 from src.utils.security import decode_access_token
 from src.repositories.users_repository import users_repo
 from src.utils.security import hash_token
+from src.utils.logger import Log
 
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # === API KEY AUTH ===
         api_key = None
         
-        # 1. Check Authorization Header (Bearer ak_... or JWT)
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-            
-            # Try as API Key first (usually starts with ak_)
-            if token.startswith("ak_"):
-                api_key = token
-            else:
-                # Try as JWT
-                try:
-                    payload = decode_access_token(token)
-                    if payload:
-                        user_id = payload.get("sub")
-                        user = users_repo.find_by_id(user_id)
-                        if user:
-                            g.user_id = str(user["_id"])
-                            g.user = user
-                            return f(*args, **kwargs)
-                except Exception:
-                    pass
-            
-        # 2. Fallback to Custom Header or Query Param for API Key
-        if not api_key:
-            api_key = request.headers.get("x-api-key") or request.args.get("api_key")
+        # 1. Check x-api-key Header ONLY
+        api_key = request.headers.get("x-api-key")
         
         if api_key:
             # 1. Parse Key Structure (ak_ACCESS.SECRET)
             if "." in api_key:
                 try:
-                    # Remove ak_ prefix if present
-                    clean_key = api_key[3:] if api_key.startswith("ak_") else api_key
+                    # Handle raw key from header (which might or might not have ak_ prefix)
+                    clean_key = api_key
+                    if api_key.startswith("ak_"):
+                         clean_key = api_key[3:]
                     access_key, plain_secret = clean_key.split(".", 1)
                     
                     # 2. Find User by Access Key
                     user = users_repo.find_by_api_key_access(access_key)
+                    
+                    # Legacy Support: If not found, try adding 'ak_' prefix (old key format in DB)
+                    if not user:
+                         user = users_repo.find_by_api_key_access("ak_" + access_key)
                     
                     if user and user.get("api_key"):
                         # 3. Verify Secret
@@ -57,17 +40,28 @@ def require_auth(f):
                             g.user = user
                             
                             # Device ID Logic: First time login assignment
-                            device_id = request.headers.get('X-Device-ID')
+                            device_id = request.headers.get('x-device-id') # Headers are case insensitive usually, but let's be safe
+                            if not device_id:
+                                device_id = request.headers.get('X-Device-ID')
+                                
                             if not user.get('deviceId') and device_id:
                                 users_repo.update(g.user_id, {"deviceId": device_id})
                                 user['deviceId'] = device_id
                                 
                             return f(*args, **kwargs)
-                except ValueError:
+                        else:
+                            # Log invalid secret
+                            print(f"Invalid secret for key {access_key}")
+                    else:
+                        print(f"User not found for access key {access_key}")
+                except ValueError as e:
+                    print(f"ValueError parsing key: {e}")
                     pass 
             
-            return jsonify({"statusCode": 401, "message": "Invalid API Key or Secret"}), 401
+            Log.warning(f"[Auth] ❌ Access denied: Invalid API Key from {request.remote_addr}")
+            return jsonify({"statusCode": 401, "message": "Invalid API Key"}), 401
 
+        Log.warning(f"[Auth] ❌ Access denied: Authentication required for {request.path} from {request.remote_addr}")
         return jsonify({"statusCode": 401, "message": "Authentication required"}), 401
         
     return decorated
@@ -81,6 +75,7 @@ def require_role(roles):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if not hasattr(g, 'user'):
+                Log.warning(f"[Auth] ❌ Role check failed: User context missing for {request.path}")
                 return jsonify({"statusCode": 401, "message": "Authentication required"}), 401
             
             user_role = g.user.get('role', 2)
@@ -88,6 +83,7 @@ def require_role(roles):
                 return f(*args, **kwargs)
                 
             if user_role not in roles:
+                Log.warning(f"[Auth] ❌ Permission denied: User {getattr(g, 'user_id', 'Unknown')} with role {user_role} tried to access {request.path}. Required: {roles}")
                 return jsonify({
                     "statusCode": 403, 
                     "message": f"Role '{user_role}' does not have permission to access this resource. Required: {roles}"

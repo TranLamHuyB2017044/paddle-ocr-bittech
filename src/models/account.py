@@ -8,7 +8,7 @@ PyObjectId = Annotated[str, BeforeValidator(str)]
 
 class Account(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    plan: str = Field(default="free", description="Plan type: free, basic, pro, business")
+    plan: int = Field(default=0, description="Plan type: 0: free, 1: basic, 2: pro, 3: business")
     used_requests: int = Field(default=0)
     reset_at: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -59,7 +59,7 @@ def generate_user_api_key():
         access_key: Public ID to store/index
         hashed_secret: Hashed secret to store
     """
-    access_key = "ak_" + secrets.token_hex(8) # 16 chars + prefix
+    access_key = secrets.token_hex(8) # 16 chars
     secret_key = secrets.token_hex(32) # 64 chars
     
     full_key = f"{access_key}.{secret_key}"

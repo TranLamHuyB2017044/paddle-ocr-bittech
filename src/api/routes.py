@@ -138,7 +138,7 @@ def register_routes(app):
             })
 
             # Increment usage (Admin excluded in check_quota/increment)
-            if g.user.get('role') != 0 and g.user.get('account_id'):
+            if g.user.get('account_id'):
                 accounts_repo.increment_usage(g.user.get('account_id'))
 
             rag_queue.enqueue(
@@ -280,7 +280,7 @@ def register_routes(app):
                 return jsonify({"statusCode": 403, "message": msg}), 403
 
             # Increment usage 
-            if g.user.get('role') != 0 and g.user.get('account_id'):
+            if g.user.get('account_id'):
                 accounts_repo.increment_usage(g.user.get('account_id'))
 
             # ===== 3. Enqueue worker =====
@@ -402,7 +402,7 @@ def register_routes(app):
             })
 
             # Increment usage 
-            if g.user.get('role') != 0 and g.user.get('account_id'):
+            if g.user.get('account_id'):
                 accounts_repo.increment_usage(g.user.get('account_id'))
 
             rag_queue.enqueue(

@@ -11,6 +11,8 @@ from src.utils.redis_client import rag_queue
 from src.tasks.document_tasks import process_document_task
 from src.utils.logger import Log
 from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus
+from src.services.subscription_service import subscription_service
+from src.repositories.accounts_repository import accounts_repo
 
 rag_bp = Blueprint('rag_bp', __name__)
 
@@ -390,6 +392,15 @@ def chat_with_workspace(workspace_id):
         if not question:
             return jsonify({"statusCode": 400, "message": "Question is required"}), 400
             
+        # Check quota
+        is_allowed, msg = subscription_service.check_quota(g.user)
+        if not is_allowed:
+            return jsonify({"statusCode": 403, "message": msg}), 403
+
+        # Increment usage
+        if g.user.get('account_id'):
+            accounts_repo.increment_usage(g.user.get('account_id'))
+
         result = rag_service.query(question, workspace_id, provider=provider)
         
         # Save to History

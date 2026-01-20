@@ -10,7 +10,7 @@ from src.utils.security import (
 from src.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 class AuthService:
-    def register(self, username, email, password, fullname=None, phone=None, role=2, account_id=None):
+    def register(self, username, email, password, fullname=None, phone=None, role=2, account_id=None, plan=0):
         if users_repo.find_by_username(username):
             raise ValueError("Username already exists")
         if users_repo.find_by_email(email):
@@ -20,7 +20,7 @@ class AuthService:
         from src.repositories.accounts_repository import accounts_repo
         if not account_id:
             account_data = {
-                "plan": "free", # New accounts start with free plan
+                "plan": plan, # Use provided plan or default to 0 (free)
                 "used_requests": 0,
                 "created_at": datetime.utcnow()
             }

@@ -22,7 +22,7 @@ def update_profile():
         data = request.json
         
         # Prevent updating sensitive fields
-        allowed_fields = ["fullname", "phone", "avatar_url", "group_key", "user_id"]
+        allowed_fields = ["fullname", "phone", "avatar_url", "group_key", "user_id", "role"]
         update_data = {k: v for k, v in data.items() if k in allowed_fields}
         
         if not update_data:
@@ -63,47 +63,76 @@ def register():
         # Default role is 2 (user)
         role = data.get('role', 2)
         account_id = data.get('account_id')
+        plan = data.get('plan', 0) # Default plan is 0 (Free)
 
-        # RBAC Check: If Authorization header is present, handle manager creating sub-users
-        auth_header = request.headers.get("Authorization")
-        if auth_header:
+        # RBAC Check: If x-api-key header is present, handle manager creating sub-users
+        api_key = request.headers.get("x-api-key")
+        if api_key:
             from src.repositories.users_repository import users_repo
-            from src.utils.security import decode_access_token
-            # Simple token extraction for permission check
+            from src.utils.security import hash_token
+            
             try:
-                token = auth_header.split(" ")[1]
-                payload = decode_access_token(token)
-                if payload:
-                    creator = users_repo.find_by_id(payload.get("sub"))
-                    if creator:
-                        # Manager logic: Can only create role 2 and MUST use their own account_id
-                        if creator.get('role') == 1:
-                            from src.services.subscription_service import subscription_service
+                # Handle raw key (possibly with ak_ prefix)
+                clean_key = api_key
+                if api_key.startswith("ak_"):
+                     clean_key = api_key[3:]
+                
+                if "." in clean_key:
+                    access_key, plain_secret = clean_key.split(".", 1)
+                    
+                    # Find Creator by API Key
+                    creator = users_repo.find_by_api_key_access(access_key)
+                    
+                    if creator and creator.get("api_key"):
+                         # Verify Secret
+                         stored_hash = creator["api_key"]["hashed_secret"]
+                         input_hash = hash_token(plain_secret)
+                         
+                         if input_hash == stored_hash:
+                            # Creator Authenticated
+                            creator_role = creator.get('role', 2)
                             
-                            # Check if manager can create more users
-                            can_create, msg = subscription_service.can_create_user(creator)
-                            if not can_create:
-                                return jsonify({"statusCode": 403, "message": msg}), 403
+                            # Manager logic: Can only create role 2 and MUST use their own account_id
+                            if creator_role == 1:
+                                from src.services.subscription_service import subscription_service
+                                
+                                # Check if manager can create more users
+                                can_create, msg = subscription_service.can_create_user(creator)
+                                if not can_create:
+                                    return jsonify({"statusCode": 403, "message": msg}), 403
+                                
+                                # Force permissions for Manager
+                                role = 2
+                                account_id = creator.get('account_id')
+                                plan = 0 # Managers cannot set plans for sub-users (they share account)
                             
-                            # Force role and account_id
-                            role = 2
-                            account_id = creator.get('account_id')
-                        
-                        # Admin can specify role and account_id (already handled by data.get)
+                             # Admin (role 0) can specify role, account_id, AND plan.
+                             # If not Admin, plan is forced to 0 (already default) unless it's a self-register?
+                             # Self-register logic below assumes no auth header usually, or just ignores it?
+                             # Actually self-register shouldn't be able to set plan > 0 without payment.
+                             # So we should enforce plan=0 if not (Auth & Admin).
+                            
+                            if creator_role != 0:
+                                plan = 0
+
             except Exception as e:
                 Log.error(f"[Auth] Permission check during register failed: {e}")
+        else:
+            # Self-registration or no Auth provided -> Force Plan 0
+            plan = 0
 
         if not email or not password or not username:
             return jsonify({"statusCode": 400, "message": "Email, password and username are required"}), 400
             
-        object_id, user_id_int = auth_service.register(username, email, password, fullname, phone, role=role, account_id=account_id)
+        object_id, user_id_int = auth_service.register(username, email, password, fullname, phone, role=role, account_id=account_id, plan=plan)
         
         return jsonify({
             "statusCode": 201,
             "message": "User registered successfully",
             "data": {
                 "id": str(object_id),
-                "user_id": user_id_int
+                "user_id": user_id_int,
+                "created_plan": plan if not account_id else None # Info only
             }
         }), 201
     except ValueError as e:
@@ -229,6 +258,8 @@ def login():
         # Get Client Info
         user_agent = request.headers.get('User-Agent', 'Unknown')
         device_id = request.headers.get('X-Device-ID') # Client must send this header
+        if not device_id:
+            return jsonify({"statusCode": 400, "message": "Device ID is required"}), 400
         ip = request.remote_addr
         
         result = auth_service.login(username, password, user_agent, ip, device_id)

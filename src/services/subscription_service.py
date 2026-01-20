@@ -25,7 +25,7 @@ class SubscriptionService:
         if not account:
             return False, "Account not found"
 
-        plan_key = account.get('plan', 'free')
+        plan_key = account.get('plan', 0)
         plan_cfg = PLANS_CONFIG.get(plan_key)
 
         if not plan_cfg:
@@ -49,7 +49,7 @@ class SubscriptionService:
         if not account:
             return None
         
-        plan_key = account.get('plan', 'free')
+        plan_key = account.get('plan', 0)
         plan_cfg = PLANS_CONFIG.get(plan_key)
         
         return {
@@ -75,7 +75,7 @@ class SubscriptionService:
         if not account:
             return False, "Account not found"
             
-        plan_key = account.get('plan', 'free')
+        plan_key = account.get('plan', 0)
         plan_cfg = PLANS_CONFIG.get(plan_key)
         
         current_users_count = users_repo.collection.count_documents({"account_id": account_id})

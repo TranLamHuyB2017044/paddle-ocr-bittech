@@ -207,26 +207,31 @@ EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
 
 
 # ========== SAAS PLANS CONFIG ==========
+# 0: free, 1: basic, 2: pro, 3: business
 PLANS_CONFIG = {
-    'free': {
+    0: {
+        'name': 'free',
         'max_requests_per_month': 10,
         'max_users': 1,
         'price': 0,
         'is_unlimited': False
     },
-    'basic': {
+    1: {
+        'name': 'basic',
         'max_requests_per_month': 500,
         'max_users': 3,
         'price': 100000,
         'is_unlimited': False
     },
-    'pro': {
+    2: {
+        'name': 'pro',
         'max_requests_per_month': 1500,
         'max_users': 5,
         'price': 200000,
         'is_unlimited': False
     },
-    'business': {
+    3: {
+        'name': 'business',
         'max_requests_per_month': float('inf'),
         'max_users': float('inf'),
         'price': -1, # Contact for price
