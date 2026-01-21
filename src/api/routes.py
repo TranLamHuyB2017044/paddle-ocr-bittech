@@ -420,3 +420,66 @@ def register_routes(app):
         except Exception as e:
             Log.error(f"[API] ❌ Error: {e}")
             return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+    @app.route("/api/report_extraction", methods=["POST"])
+    @require_auth
+    def report_extraction():
+        """
+        API cho phép user report kết quả extract bị sai.
+        Payload: {
+            "document_id": "xxx",
+            "reason": "Sai thông tin tên/ngày sinh...",
+            "details": "Tên đúng là Nguyễn Văn A, máy đọc là Nguyễn Văn B" (Optional),
+            "extraction_result": {...} (Optional - what the user saw)
+        }
+        """
+        try:
+            data = request.json
+            doc_id = data.get("document_id")
+            reason = data.get("reason")
+            details = data.get("details")
+            extraction_result = data.get("extraction_result")
+
+            if not doc_id or not reason:
+                return jsonify({"statusCode": 400, "message": "Missing document_id or reason"}), 400
+
+            user_id = getattr(g, 'user_id', None)
+            
+            # Get document info to extract doc_type
+            doc_type = None
+            try:
+                doc_info = documents_repo.find_by_id(doc_id)
+                if doc_info:
+                    doc_type = doc_info.get("document_type")
+            except:
+                pass
+            
+            # Save to dedicated reports collection
+            from src.repositories.extraction_reports_repository import extraction_reports_repo
+            report_id = extraction_reports_repo.create_report(
+                document_id=doc_id,
+                user_id=user_id,
+                reason=reason,
+                details=details,
+                extraction_result=extraction_result,
+                doc_type=doc_type
+            )
+            
+            # Also update extraction_logs for backward compatibility
+            from src.repositories.extraction_logs_repository import extraction_logs_repo
+            extraction_logs_repo.update_report(doc_id, reason, details, extraction_result)
+            
+            Log.info(f"[API] Report created: {report_id} for document: {doc_id}")
+            
+            return jsonify({
+                "statusCode": 200, 
+                "message": "Report submitted successfully",
+                "data": {"report_id": report_id}
+            }), 200
+
+        except Exception as e:
+            Log.error(f"[API] Report Error: {e}")
+            import traceback
+            Log.error(traceback.format_exc())
+            return jsonify({"statusCode": 500, "message": str(e)}), 500

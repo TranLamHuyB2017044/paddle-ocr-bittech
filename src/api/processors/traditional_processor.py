@@ -12,7 +12,7 @@ from src.utils.text_cleaner import clean_text_lines
 from src.utils.background_tasks import run_background_upload_and_log
 from src.utils.post_cleaner import PostCleaner
 
-def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None, file_paths=None):
+def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None, file_paths=None, document_id=None):
     request_start = timer_info["start"]
     ocr_front_time = timer_info["ocr_front"]
     ocr_back_time = timer_info["ocr_back"]
@@ -81,7 +81,7 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
     total_time = time.time() - request_start
     if user_id: users_repo.increment_extraction_stats(user_id, doc_type)
 
-    run_background_upload_and_log(user_id, doc_type, file_paths, info_extracted)
+    run_background_upload_and_log(user_id, doc_type, file_paths, info_extracted, document_id=document_id)
 
     Log.info(f"[API] 🎉 Hoàn tất trích xuất {doc_type}")
     return {
