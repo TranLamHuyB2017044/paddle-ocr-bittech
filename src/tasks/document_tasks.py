@@ -114,7 +114,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             
             # Trigger Background Upload and Logging for consistency
             from src.utils.background_tasks import run_background_upload_and_log
-            run_background_upload_and_log(user_id, doc_type, file_paths, manual_data)
+            run_background_upload_and_log(user_id, doc_type, file_paths, manual_data, document_id=doc_id)
             
             documents_repo.update_status(doc_id, DocStatus.READY, result=manual_data, debug={"total_time": f"{total_time:.2f}s", "provider": "manual_kie"})
             publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": manual_data, "debug": {"provider": "manual_kie"}})
@@ -136,7 +136,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                         
                         # LOG even on cache hit for history and "today_extractions" stat
                         from src.utils.background_tasks import run_background_upload_and_log
-                        run_background_upload_and_log(user_id, doc_type, file_paths, res_data.get("data"))
+                        run_background_upload_and_log(user_id, doc_type, file_paths, res_data.get("data"), document_id=doc_id)
                         
                     documents_repo.update_status(doc_id, DocStatus.READY, result=res_data.get("data"), debug={**res_data.get("debug", {}), "cached": True})
                     publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": res_data.get("data"), "debug": {"cached": True}})
@@ -176,12 +176,12 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         result_response = None
         if provider != 'traditional':
             try:
-                result_response = process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
+                result_response = process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id, file_paths, document_id=doc_id)
             except Exception as e:
                 Log.error(f"[Worker-Detect] OpenAI failed: {e}")
 
         if result_response is None or provider == 'traditional':
-            result_response = process_traditional(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
+            result_response = process_traditional(raw_front, raw_back, timer_info, doc_type, user_id, file_paths, document_id=doc_id)
 
         # 5. Completion
         if result_response:

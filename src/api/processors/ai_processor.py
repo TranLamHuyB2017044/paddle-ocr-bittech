@@ -9,7 +9,7 @@ from src.extractors.openai_extractor import openai_extractor
 from src.utils.background_tasks import run_background_upload_and_log
 from src.utils.post_cleaner import PostCleaner
 
-def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None, file_paths=None):
+def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None, file_paths=None, document_id=None):
     """
     Trích xuất bằng OpenAI từ dữ liệu text đã có (ưu tiên tốc độ - xử lý tuần tự)
     """
@@ -43,7 +43,7 @@ def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None,
             users_repo.increment_extraction_stats(user_id, doc_type)
             
         # Trigger Background Upload and Logging
-        run_background_upload_and_log(user_id, doc_type, file_paths, info, metadata=metadata)
+        run_background_upload_and_log(user_id, doc_type, file_paths, info, metadata=metadata, document_id=document_id)
 
         Log.info("[API] 🎉 Trả về kết quả OpenAI")
         return {

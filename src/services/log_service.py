@@ -3,7 +3,7 @@ from src.repositories.documents_repository import documents_repo
 import os
 
 class LogService:
-    def save_logs(self, user_id, doc_type, file_paths, extraction_data=None, metadata=None):
+    def save_logs(self, user_id, doc_type, file_paths, extraction_data=None, metadata=None, document_id=None):
         """
         Save extraction logs and document metadata to MongoDB.
         
@@ -13,6 +13,7 @@ class LogService:
             file_paths: List of temporary file paths used in detection
             extraction_data: Dictionary containing extracted data (optional info for sheet)
             metadata: Usage metadata (token counts)
+            document_id: Existing document ID if available
         """
         if not user_id:
             # We can log anonymously or skip if strict.
@@ -50,17 +51,17 @@ class LogService:
             "sheet_name": data_sheet.get("sheet_name")
         }
         
-        # Save Document
-        # We perform this even if user_id is None? Yes.
-        document_id = documents_repo.save_document(
-            user_id=user_id,
-            doc_type=doc_type,
-            sheet_info=sheet_info,
-            source_file={
-                "file_name": saved_file_name,
-                "file_url": saved_file_url
-            } if saved_file_url else None
-        )
+        # Save Document if ID not provided
+        if not document_id:
+            document_id = documents_repo.save_document(
+                user_id=user_id,
+                doc_type=doc_type,
+                sheet_info=sheet_info,
+                source_file={
+                    "file_name": saved_file_name,
+                    "file_url": saved_file_url
+                } if saved_file_url else None
+            )
         
         # Save Extraction Log
         extraction_logs_repo.log_extraction(
@@ -68,7 +69,9 @@ class LogService:
             doc_type=doc_type,
             saved_to_sheet=bool(sheet_info.get("sheet_id")),
             sheet_id=sheet_info.get("sheet_id"),
-            metadata=metadata
+            metadata=metadata,
+            extraction_result=extraction_data, # Pass the actual data
+            document_id=document_id # Link to document for reporting
         )
 
         return document_id
