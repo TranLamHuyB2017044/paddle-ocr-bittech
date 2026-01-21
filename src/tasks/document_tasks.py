@@ -2,8 +2,9 @@ import os
 import traceback
 import time
 from src.repositories.documents_repository import documents_repo
+from src.repositories.users_repository import users_repo
 from src.rag.rag_service import rag_service
-from src.utils.ocr_utils import ocr_extract, layout_ocr_extract, filter_back_side_lines, preprocess_for_ocr
+from src.utils.ocr_utils import ocr_extract, layout_ocr_extract, preprocess_for_ocr
 from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
 from src.utils.word_utils import extract_text_from_word
 from src.utils.logger import Log
@@ -11,6 +12,7 @@ from src.api.processors.ai_processor import process_with_openai
 from src.api.processors.traditional_processor import process_traditional
 from src.utils.redis_client import publish_event, redis_conn
 from src.utils.file_utils import calculate_files_hash
+from src.utils.post_cleaner import PostCleaner
 from src.config import DocStatus
 import threading
 import json
@@ -26,7 +28,6 @@ def silent_cleanup_files(file_paths):
             if path and os.path.exists(path):
                 try:
                     os.remove(path)
-                    # Use debug level to be "silent"
                     Log.debug(f"[Cleanup] 🗑️ Removed: {path}")
                 except Exception as e:
                     Log.debug(f"[Cleanup] ❌ Failed to delete {path}: {e}")
@@ -36,34 +37,23 @@ def silent_cleanup_files(file_paths):
 
 def process_document_task(doc_id, workspace_id, file_path, original_filename, user_id):
     """
-    Background task to process OCR, extraction and indexing for RAG
+    Background task for RAG indexing
     """
     try:
         start_time = time.time()
-        Log.info(f"[Worker] Starting processing document: {original_filename} (ID: {doc_id})")
-        
-        # 1. Update status to PROCESSING
+        Log.info(f"[Worker] Starting processing document: {original_filename}")
         documents_repo.update_status(doc_id, DocStatus.PROCESSING)
-        publish_event(user_id, "document_status", {
-            "document_id": doc_id,
-            "status": DocStatus.PROCESSING,
-            "filename": original_filename
-        })
+        publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.PROCESSING})
         
         ext = original_filename.lower().split('.')[-1]
         full_text = ""
         
-        # 2. Extract Text (Heavy CPU work)
         if ext == 'md':
-            with open(file_path, 'r', encoding='utf-8') as f:
-                full_text = f.read()
-        
+            with open(file_path, 'r', encoding='utf-8') as f: full_text = f.read()
         elif ext in ['docx', 'doc']:
             full_text = extract_text_from_word(file_path)
-            
         elif ext == 'pdf':
             full_text = extract_text_from_pdf(file_path)
-            # If no text (scanned), use OCR
             if not full_text.strip():
                 image_paths = get_pdf_pages_as_images(file_path)
                 ocr_texts = []
@@ -74,197 +64,136 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                         ocr_texts.append(page_text)
                     if os.path.exists(img_p): os.remove(img_p)
                 full_text = "\n\n".join(ocr_texts)
-                
         elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
             ocr_result, _ = ocr_extract(file_path)
             if ocr_result:
                 full_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
         
-        # 3. Indexing (Embedding + Qdrant)
         if full_text.strip():
             total_chunks = rag_service.index_text(full_text, workspace_id, original_filename)
-            
-            # 4. Success -> Mark as READY
             documents_repo.update_status(doc_id, DocStatus.READY, total_chunks=total_chunks)
-            publish_event(user_id, "document_status", {
-                "document_id": doc_id,
-                "status": DocStatus.READY,
-                "filename": original_filename,
-                "total_chunks": total_chunks,
-                "debug": {
-                    "total_time": f"{time.time() - start_time:.2f}s" if 'start_time' in locals() else "N/A"
-                }
-            })
-            Log.info(f"[Worker] Successfully processed: {original_filename} - Total time: {time.time() - start_time:.2f}s")
+            publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.READY})
         else:
-            raise Exception("No text could be extracted from this document")
-            
+            raise Exception("No text could be extracted")
     except Exception as e:
-        error_msg = str(e)
-        Log.error(f"[Worker] Failed to process {original_filename}: {error_msg}")
-        Log.error(traceback.format_exc())
-        documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=error_msg)
-        publish_event(user_id, "document_status", {
-            "document_id": doc_id,
-            "status": DocStatus.FAILED,
-            "filename": original_filename,
-            "error": error_msg
-        })
-        
+        Log.error(f"[Worker] Failed: {e}")
+        documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=str(e))
+        publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.FAILED, "error": str(e)})
     finally:
-        # 6. Cleanup file (Silently in background)
-        if 'file_path' in locals():
-            silent_cleanup_files(file_path)
+        if 'file_path' in locals(): silent_cleanup_files(file_path)
 
 def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None):
     """
-    Background task to process document detection (ID Card, License, etc.)
+    Background task to process document detection.
+    Ưu tiên tuyệt đối raw_text nếu có để đảm bảo tốc độ.
     """
     try:
-        Log.info(f"[Worker-Detect] Starting detection: {doc_type} (ID: {doc_id})")
-        
-        # 1. Update status to PROCESSING
+        Log.info(f"[Worker-Detect] Starting detection: {doc_type} (Provider: {provider})")
         documents_repo.update_status(doc_id, DocStatus.PROCESSING)
-        publish_event(user_id, "detection_status", {
-            "document_id": doc_id,
-            "status": DocStatus.PROCESSING,
-            "type": doc_type
-        })
+        publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.PROCESSING, "type": doc_type})
         
         request_start = time.time()
         
-        # 2. Cache Check (Includes files and raw_text)
+        # 1. Manual KIE Fast Path (Specific for CCCD/DriverLicense if raw_text format matches)
+        manual_data = None
+        if raw_text:
+            if doc_type == 'idCard' and '|' in raw_text:
+                Log.info("[Worker-Detect] ⚡ Manual KIE Fast-Path activated for CCCD")
+                manual_data = PostCleaner.extract_cccd_manual(raw_text)
+            elif doc_type == 'driverLicense':
+                Log.info("[Worker-Detect] ⚡ Manual KIE Fast-Path activated for DriverLicense")
+                manual_data = PostCleaner.extract_driver_manual(raw_text)
+
+        if manual_data:
+            total_time = time.time() - request_start
+            
+            # Quota increment for manual extraction
+            if user_id:
+                users_repo.increment_extraction_stats(user_id, doc_type)
+                Log.info(f"[Worker-Detect] 📊 Quota incremented for Manual KIE (User: {user_id})")
+            
+            # Trigger Background Upload and Logging for consistency
+            from src.utils.background_tasks import run_background_upload_and_log
+            run_background_upload_and_log(user_id, doc_type, file_paths, manual_data)
+            
+            documents_repo.update_status(doc_id, DocStatus.READY, result=manual_data, debug={"total_time": f"{total_time:.2f}s", "provider": "manual_kie"})
+            publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": manual_data, "debug": {"provider": "manual_kie"}})
+            return
+
+        # 2. Cache Check
         files_hash = calculate_files_hash(file_paths, raw_text=raw_text)
         cache_key = f"cache:extract:{doc_type}:{provider}:{files_hash}"
-        
         if files_hash:
             cached_result = redis_conn.get(cache_key)
             if cached_result:
                 try:
-                    result_data = json.loads(cached_result)
-                    Log.info(f"[Worker-Detect] ⚡ Cache Hit! Returning cached result for hash {files_hash}")
+                    res_data = json.loads(cached_result)
                     
-                    # Update status and send SSE
-                    documents_repo.update_status(
-                        doc_id, DocStatus.READY, 
-                        result=result_data.get("data"), 
-                        debug={**result_data.get("debug", {}), "cached": True}
-                    )
-                    publish_event(user_id, "detection_status", {
-                        "document_id": doc_id,
-                        "status": DocStatus.READY,
-                        "type": doc_type,
-                        "result": result_data.get("data"),
-                        "debug": {**result_data.get("debug", {}), "cached": True}
-                    })
-                    return # Exit task early
-                except Exception as cache_err:
-                    Log.error(f"[Worker-Detect] ⚠️ Failed to parse cache: {cache_err}")
+                    # Quota increment even for cache hit
+                    if user_id:
+                        users_repo.increment_extraction_stats(user_id, doc_type)
+                        Log.info(f"[Worker-Detect] ⚡ Cache Hit & Quota incremented (User: {user_id})")
+                        
+                        # LOG even on cache hit for history and "today_extractions" stat
+                        from src.utils.background_tasks import run_background_upload_and_log
+                        run_background_upload_and_log(user_id, doc_type, file_paths, res_data.get("data"))
+                        
+                    documents_repo.update_status(doc_id, DocStatus.READY, result=res_data.get("data"), debug={**res_data.get("debug", {}), "cached": True})
+                    publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": res_data.get("data"), "debug": {"cached": True}})
+                    return
+                except: pass
 
-        # 3. OCR (Heaviest part)
-        raw_front = []
-        raw_back = []
-        ocr_front_time = 0.0
-        ocr_back_time = 0.0
+        # 3. Source Stage (Sequential XOR: raw_text OR OCR)
+        raw_front, raw_back = [], []
+        ocr_front_time, ocr_back_time = 0.0, 0.0
         
+        # UU TIEN 1: raw_text (Speed)
         if raw_text:
-            Log.info(f"[Worker-Detect] � Using provided raw_text (Skipping OCR)")
+            Log.info(f"[Worker-Detect] 📝 Using raw_text source (Skipping OCR for speed)")
             for line in raw_text.split('\n'):
-                if line.strip():
+                if line.strip(): 
                     raw_front.append({"text": line.strip(), "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0})
+        
+        # UU TIEN 2: file_paths (OCR)
         elif len(file_paths) > 0:
+            Log.info(f"[Worker-Detect] 🔍 No raw_text provided. Starting OCR stage...")
             p1 = file_paths[0]
             t = time.time()
-            img1 = preprocess_for_ocr(p1)
-            raw_front, _ = ocr_extract(p1, img=img1)
+            raw_front, _ = ocr_extract(p1, img=preprocess_for_ocr(p1))
             ocr_front_time = time.time() - t
             
-        if len(file_paths) > 1:
-            p2 = file_paths[1]
-            t = time.time()
-            img2 = preprocess_for_ocr(p2)
-            raw_back_all, _ = ocr_extract(p2, img=img2)
-            if doc_type == 'idCard':
-                Log.info("[Worker-Detect] 🛡️ Applying Back Side Keyword Filter for ID Card")
-                raw_back = filter_back_side_lines(raw_back_all)
-            else:
-                raw_back = raw_back_all
-            ocr_back_time = time.time() - t
-            
-        timer_info = {
-            "start": request_start,
-            "ocr_front": ocr_front_time,
-            "ocr_back": ocr_back_time
-        }
-        
-        # 3. Process with UI Processors (with Fallback Logic)
-        result_response = None
-        
-        Log.info(f"[Worker-Detect] 🎯 Initial provider requested: {provider}")
-        
-        # --- PHASE 1: Try OpenAI Provider ---
-        try:
-            # We use OpenAI for any requested AI provider (grok, gemini, openai)
-            if provider != 'traditional':
-                Log.info(f"[Worker-Detect] 🤖 Using OpenAI for extraction")
-                result_response = process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
-        except Exception as e:
-            Log.error(f"[Worker-Detect] ❌ OpenAI Provider Critical Error: {e}")
-            result_response = None
-            
-        # --- PHASE 2: Fallback to Traditional if OpenAI failed or if Traditional was requested ---
-        if result_response is None or provider == 'traditional':
-            reason = "OpenAI failed" if result_response is None and provider != 'traditional' else "requested"
-            Log.warning(f"[Worker-Detect] 🔄 Switching to Traditional pipeline (Reason: {reason})...")
-            result_response = process_traditional(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
-            
-        # 4. Success -> Mark as READY and store result
-        if result_response:
-            final_provider = result_response.get("debug", {}).get("provider", "openai")
-            Log.info(f"[Worker-Detect] ✅ SUCCESS! Final provider used: {final_provider}")
-            
-            documents_repo.update_status(
-                doc_id, DocStatus.READY, 
-                result=result_response.get("data"), 
-                debug=result_response.get("debug")
-            )
-            publish_event(user_id, "detection_status", {
-                "document_id": doc_id,
-                "status": DocStatus.READY,
-                "type": doc_type,
-                "result": result_response.get("data"),
-                "debug": result_response.get("debug")
-            })
-            # 5. Save to Cache
-            if files_hash:
-                try:
-                    cache_payload = {
-                        "data": result_response.get("data"),
-                        "debug": result_response.get("debug")
-                    }
-                    # Cache for 24 hours (86400 seconds)
-                    redis_conn.setex(cache_key, 86400, json.dumps(cache_payload))
-                    Log.info(f"[Worker-Detect] 💾 Result cached with key: {cache_key}")
-                except Exception as cache_save_err:
-                    Log.error(f"[Worker-Detect] ⚠️ Could not save to cache: {cache_save_err}")
-
-            Log.info(f"[Worker-Detect] 📑 Detection task completed for {doc_type}")
+            if len(file_paths) > 1:
+                p2 = file_paths[1]
+                t = time.time()
+                raw_back, _ = ocr_extract(p2, img=preprocess_for_ocr(p2))
+                ocr_back_time = time.time() - t
         else:
-            Log.error("[Worker-Detect] ❌ Final extraction failed - No result from any provider")
-            raise Exception("Processing failed to return valid data after trying all providers")
+            raise Exception("No input source (text or image) provided")
+
+        timer_info = {"start": request_start, "ocr_front": ocr_front_time, "ocr_back": ocr_back_time}
+        
+        # 4. Processing Phase
+        result_response = None
+        if provider != 'traditional':
+            try:
+                result_response = process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
+            except Exception as e:
+                Log.error(f"[Worker-Detect] OpenAI failed: {e}")
+
+        if result_response is None or provider == 'traditional':
+            result_response = process_traditional(raw_front, raw_back, timer_info, doc_type, user_id, file_paths)
+
+        # 5. Completion
+        if result_response:
+            documents_repo.update_status(doc_id, DocStatus.READY, result=result_response.get("data"), debug=result_response.get("debug"))
+            publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": result_response.get("data"), "debug": result_response.get("debug")})
+            if files_hash: redis_conn.setex(cache_key, 86400, json.dumps({"data": result_response.get("data"), "debug": result_response.get("debug")}))
+        else:
+            raise Exception("Processing failed to return result")
             
     except Exception as e:
-        error_msg = str(e)
-        Log.error(f"[Worker-Detect] Failed: {error_msg}")
-        Log.error(traceback.format_exc())
-        documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=error_msg)
-        publish_event(user_id, "detection_status", {
-            "document_id": doc_id,
-            "status": DocStatus.FAILED,
-            "type": doc_type,
-            "error": error_msg
-        })
+        Log.error(f"[Worker-Detect] Failed: {e}")
+        documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=str(e))
+        publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.FAILED, "type": doc_type, "error": str(e)})
     finally:
-        # 5. Cleanup files (Silently in background)
-        if 'file_paths' in locals() and file_paths:
-            silent_cleanup_files(file_paths)
+        if 'file_paths' in locals() and file_paths: silent_cleanup_files(file_paths)

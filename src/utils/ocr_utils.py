@@ -103,88 +103,14 @@ def layout_ocr_extract(image_path, img=None):
 
 
 def filter_useless_lines(ocr_data):
-    from src.config import USELESS_KEYWORDS
-    from rapidfuzz import fuzz
-    
-    is_legacy_input = False
-    if len(ocr_data) > 0 and isinstance(ocr_data[0], str):
-        is_legacy_input = True
-    
-    input_count = len(ocr_data)
-    Log.info(f"[FILTER] 🗑️  Bắt đầu lọc text không cần thiết. Số dòng: {input_count}")
-    
-    if input_count == 0:
-        return []
-    
-    filtered = []
-    removed_count = 0
-    
-    for item in ocr_data:
-        # Extract text content depending on format
-        if is_legacy_input:
-            line_text = item
-        else:
-            line_text = item.get("text", "")
-
-        line_lower = line_text.lower().strip()
-        
-        # Bỏ qua dòng rỗng hoặc quá ngắn
-        if len(line_lower) < 2:
-            continue
-        
-        # Kiểm tra xem có chứa từ khóa không cần thiết không
-        is_useless = False
-        matched_keyword = ""
-        
-        # 1. Check exact/partial match (Faster)
-        for keyword in USELESS_KEYWORDS:
-             if keyword in line_lower:
-                 is_useless = True
-                 matched_keyword = keyword
-                 break
-        
-        # 2. Check Fuzzy match (Slower but catches OCR errors)
-        if not is_useless:
-            for keyword in USELESS_KEYWORDS:
-                if len(keyword) < 4: continue
-                score = fuzz.partial_ratio(keyword, line_lower)
-                if score >= 85:
-                    is_useless = True
-                    matched_keyword = f"{keyword} (fuzzy {score:.0f}%)"
-                    break
-
-        if is_useless:
-            Log.debug(f"[FILTER] ❌ Loại bỏ: '{line_text[:50]}...' [Match: {matched_keyword}]")
-            removed_count += 1
-        else:
-            filtered.append(item)
-    
-    Log.info(f"[FILTER] 📊 Kết quả: Loại bỏ {removed_count} dòng, Còn lại {len(filtered)} dòng")
-    
-    return filtered
+    """
+    [DEPRECATED] Cũ, đã loại bỏ theo yêu cầu.
+    """
+    return ocr_data
 
 
 def filter_back_side_lines(ocr_data):
     """
-    Lọc các dòng text ở mặt sau, chỉ giữ lại những dòng chứa BACK_KEYWORDS
+    [DEPRECATED] Cũ, đã loại bỏ theo yêu cầu.
     """
-    from src.config import BACK_KEYWORDS
-    from rapidfuzz import fuzz
-    
-    Log.info(f"[FILTER-BACK] 🗑️  Lọc mặt sau theo BACK_KEYWORDS. Số dòng: {len(ocr_data)}")
-    
-    filtered = []
-    for item in ocr_data:
-        line_text = item.get("text", "").lower().strip()
-        
-        is_relevant = False
-        for kw in BACK_KEYWORDS:
-            if kw.lower() in line_text or fuzz.partial_ratio(kw.lower(), line_text) >= 80:
-                is_relevant = True
-                break
-        
-        if is_relevant:
-            filtered.append(item)
-            
-    Log.info(f"[FILTER-BACK] 📊 Còn lại: {len(filtered)} dòng")
-    return filtered
+    return ocr_data

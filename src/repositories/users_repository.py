@@ -61,19 +61,32 @@ class UsersRepository(BaseRepository):
         # Actually I will rename this to avoid confusion and update middleware.
         pass
 
-    def increment_extraction_stats(self, user_id: str, doc_type: str):
+    def increment_extraction_stats(self, user_id, doc_type: str):
         """
         Increment extraction statistics for a user
         - Increment total_extractions
         - Update last_extraction_at
         - Increment specific doc_type counter
+        
+        Supports both ObjectId (string/object) and integer user_id.
         """
         from datetime import datetime
         from bson import ObjectId
         
         try:
+            # Determine query (ObjectId or integer user_id)
+            query = {}
+            if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
+                query = {"user_id": int(user_id)}
+            else:
+                try:
+                    query = {"_id": ObjectId(user_id)}
+                except:
+                    # Fallback if not a valid ObjectId string, might be the integer user_id as string
+                    query = {"user_id": str(user_id)} # Or handle as error
+            
             result = self.collection.update_one(
-                {"_id": ObjectId(user_id)},
+                query,
                 {
                     "$inc": {
                         "stats.total_extractions": 1,
@@ -84,9 +97,15 @@ class UsersRepository(BaseRepository):
                     }
                 }
             )
+            
+            if result.matched_count == 0:
+                from src.utils.logger import Log
+                Log.error(f"[UserRepo] ⚠️ No user found with query {query} for stats increment")
+                
             return result.modified_count > 0
         except Exception as e:
-            print(f"Error incrementing extraction stats: {e}")
+            from src.utils.logger import Log
+            Log.error(f"[UserRepo] ❌ Error incrementing extraction stats: {e}")
             return False
 
 
