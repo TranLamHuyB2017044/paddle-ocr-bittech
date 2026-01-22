@@ -243,6 +243,10 @@ def upload_to_workspace(workspace_id):
         if not workspace or workspace['user_id'] != g.user_id:
             return jsonify({"statusCode": 403, "message": "Access denied to workspace"}), 403
 
+        is_allowed, msg = subscription_service.check_quota(g.user)
+        if not is_allowed:
+            return jsonify({"statusCode": 403, "message": f"Quota exceeded: {msg}"}), 403
+            
         # 2. Get files
         files = request.files.getlist('files')
         if not files:
