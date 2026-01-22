@@ -87,15 +87,27 @@ def call_client_register_post(
             print(json.dumps(data, indent=2, ensure_ascii=False))
             
             # --- AUTO CALL AUTH TOKEN AFTER CONNECT ---
-            # data structure check: result["success"] == True
-            if data and data.get("success") is True:
-                nested_data = data.get("data", {}).get("data", {})
-                api_key = nested_data.get("api_key")
+            # data structure check: result["success"] == True or result["status"] == "success"
+            is_reg_ok = False
+            if data and isinstance(data, dict):
+                is_reg_ok = (data.get("success") is True) or (data.get("status") == "success")
+
+            if is_reg_ok:
+                first_lv = data.get("data", {})
+                nested_data = None
                 
-                if api_key:
-                    print(f"--- [Auto Auth] Fetching token for {system_id} ---")
-                    # Auto call auth token to cache it
-                    call_auth_token(system_id, api_key, external_id)
+                if isinstance(first_lv, dict):
+                    if "api_key" in first_lv:
+                        nested_data = first_lv
+                    elif isinstance(first_lv.get("data"), dict):
+                        nested_data = first_lv.get("data")
+
+                if nested_data:
+                    api_key = nested_data.get("api_key")
+                    if api_key:
+                        Log.info(f"--- [Auto Auth] Fetching token for {system_id} ---")
+                        # Auto call auth token to cache it
+                        call_auth_token(system_id, api_key, external_id)
             
             return data
         except json.JSONDecodeError:
@@ -173,27 +185,38 @@ def call_auth_token(system_id: str, api_key: str, user_id: int):
         "user_id": user_id
     }
     
+    Log.info(f"--- [Auth] Requesting Token for system_id={system_id}, user_id={user_id} ---")
+    
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         
         try:
             result = response.json()
             
             # --- UPDATE CACHE ---
-            if result and result.get("success") is True:
+            is_auth_ok = False
+            if result and isinstance(result, dict):
+                is_auth_ok = (result.get("success") is True) or (result.get("status") == "success")
+
+            if is_auth_ok:
                 token_data = result.get("data", {})
                 access_token = token_data.get("access_token")
                 
                 if access_token:
+                    # TODO: Key should probably be (user_id, system_id) to avoid collision
                     _TOKEN_CACHE[system_id] = {
                         "access_token": access_token,
                         "api_key": api_key,
                         "user_id": user_id
                     }
-                    print(f"--- [Cache] Token updated for {system_id} ---")
+                    Log.info(f"--- [Auth Cache] Token updated successfully for {system_id} ---")
+                return result
+            else:
+                Log.error(f"--- [Auth Error] API returned failure: {result} ---")
+                return result
 
-            return result
         except json.JSONDecodeError:
+            Log.error(f"--- [Auth Error] Invalid JSON from API (Status {response.status_code}): {response.text} ---")
             return {
                 "success": False,
                 "message": "Invalid JSON response from external API",
@@ -202,6 +225,7 @@ def call_auth_token(system_id: str, api_key: str, user_id: int):
             }
             
     except requests.exceptions.RequestException as e:
+        Log.error(f"--- [Auth Error] Request failed: {e} ---")
         error_detail = ""
         if hasattr(e, 'response') and e.response is not None:
              error_detail = e.response.text
@@ -271,13 +295,18 @@ def upload_document(endpoint: str, system_id: str, api_key: str, user_id: int, p
     
     # If no token in cache, fetch it
     if not access_token:
-        print(f"--- [Upload] No token in cache, fetching for {system_id} ---")
+        Log.info(f"--- [Upload] No token in cache, fetching for system_id={system_id} ---")
         auth_result = call_auth_token(system_id, api_key, user_id)
         
-        if auth_result and auth_result.get("success") is True:
+        is_auth_ok = False
+        if auth_result and isinstance(auth_result, dict):
+            is_auth_ok = (auth_result.get("success") is True) or (auth_result.get("status") == "success")
+
+        if is_auth_ok:
             token_data = auth_result.get("data", {})
             access_token = token_data.get("access_token")
         else:
+            Log.error(f"--- [Upload Error] Could not obtain token for {system_id}: {auth_result} ---")
             return {
                 "success": False,
                 "message": "Failed to authenticate before upload",
@@ -285,7 +314,7 @@ def upload_document(endpoint: str, system_id: str, api_key: str, user_id: int, p
             }
     
     # Construct the upload URL
-    upload_url = f"{endpoint}/api/vehicle-documents"
+    upload_url = f"{endpoint}/api/share/car-documents"
     
     # Prepare request data
     request_data = {
@@ -304,24 +333,20 @@ def upload_document(endpoint: str, system_id: str, api_key: str, user_id: int, p
         "Content-Type": "application/json"
     }
     
-    print(f"--- Uploading Document to: {upload_url} ---")
-    print("Request Data:")
-    print(json.dumps(request_data, indent=2, ensure_ascii=False))
+    Log.info(f"--- [Upload] Sending document to: {upload_url} ---")
+    Log.debug(f"Payload: {json.dumps(request_data, indent=2, ensure_ascii=False)}")
     
     try:
         response = requests.post(upload_url, json=request_data, headers=headers, timeout=30)
         
-        print(f"\n--- Upload Response ---")
-        print(f"Status Code: {response.status_code}")
+        Log.info(f"--- [Upload] Response Status: {response.status_code} ---")
         
         try:
             result = response.json()
-            print("Body (JSON):")
-            print(json.dumps(result, indent=2, ensure_ascii=False))
+            Log.info(f"--- [Upload] Body: {json.dumps(result, indent=2, ensure_ascii=False)} ---")
             return result
         except json.JSONDecodeError:
-            print("Body (Text):")
-            print(response.text)
+            Log.error(f"--- [Upload] Raw Body (Text): {response.text} ---")
             return {
                 "success": False,
                 "message": "Invalid JSON response from external API",

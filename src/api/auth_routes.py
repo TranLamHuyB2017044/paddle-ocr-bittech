@@ -590,43 +590,53 @@ def client_register():
 
         # --- NEW: Save record to local auth_services collection ---
         try:
-            # Check if registration was successful
-            # Response structure from service: {"status": "success", "data": {"data": {...}, ...}, "version": ""}
-            if result and isinstance(result, dict) and result.get("status") == "success":
-                # First level: result["data"]
+            # Check if registration was successful (flexible with status or success keys)
+            is_registered_success = False
+            if result and isinstance(result, dict):
+                is_registered_success = (result.get("status") == "success") or (result.get("success") is True)
+
+            if is_registered_success:
+                # Response structure can vary: result["data"] or result["data"]["data"]
                 first_level = result.get("data")
                 
                 if first_level and isinstance(first_level, dict):
-                    # Second level: result["data"]["data"] contains the actual payload
-                    payload_data = first_level.get("data")
+                    # Intelligent mapping: find the level that contains the information
+                    payload_data = None
+                    
+                    # Case 1: Double nested data: result["data"]["data"]["api_key"]
+                    if isinstance(first_level.get("data"), dict) and "api_key" in first_level.get("data"):
+                        payload_data = first_level.get("data")
+                    # Case 2: Single nested data: result["data"]["api_key"]
+                    elif "api_key" in first_level:
+                        payload_data = first_level
+                    # Case 3: Fallback if nested "data" exists but we are not sure about keys
+                    elif isinstance(first_level.get("data"), dict):
+                        payload_data = first_level.get("data")
                     
                     if payload_data and isinstance(payload_data, dict):
                         sys_conn = payload_data.get("system_connection", {})
                         
                         # Mapping according to user requirement:
-                        # uuid is system_id
-                        # userid is external_id
-                        # app name is name
-                        # key is api key
-                        # app info is system_connection
-                        
+                        # uuid is system_id, userid is external_id, app name is name
                         auth_svc = AuthService(
-                            uuid=sys_conn.get("system_id"),
-                            endpoint=sys_conn.get("endpoint"),
+                            uuid=sys_conn.get("system_id") if isinstance(sys_conn, dict) else payload_data.get("system_id"),
+                            endpoint=sys_conn.get("endpoint") if isinstance(sys_conn, dict) else payload_data.get("endpoint"),
                             connection_type="hkb",
                             key=payload_data.get("api_key"),
                             user_id=payload_data.get("external_id"),
-                            app_name=sys_conn.get("name"),
-                            app_info=json.dumps(sys_conn, ensure_ascii=False)
+                            app_name=sys_conn.get("name") if isinstance(sys_conn, dict) else payload_data.get("app_name"),
+                            app_info=json.dumps(sys_conn, ensure_ascii=False) if isinstance(sys_conn, dict) else "{}"
                         )
                         
                         # Store in DB
                         auth_service_repo.create(auth_svc.model_dump(by_alias=True, exclude_none=True))
                         Log.info(f"[Auth] 💾 Saved AuthService record for user {auth_svc.user_id}, uuid: {auth_svc.uuid}")
                     else:
-                        Log.warning(f"[Auth] ⚠️ payload_data not found or invalid in response")
+                        Log.warning(f"[Auth] ⚠️ Could not locate payload_data (api_key, etc.) in response: {result}")
                 else:
-                    Log.warning(f"[Auth] ⚠️ first_level data not found or invalid in response")
+                    Log.warning(f"[Auth] ⚠️ Data object not found in successful response: {first_level}")
+            else:
+                Log.warning(f"[Auth] ⚠️ Registration response marked as failed or invalid structure: {result}")
 
         except Exception as save_err:
             import traceback
