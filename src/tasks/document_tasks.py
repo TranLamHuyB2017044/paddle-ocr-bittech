@@ -46,31 +46,38 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
         publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.PROCESSING})
         
         ext = original_filename.lower().split('.')[-1]
-        full_text = ""
+        structured_data = [] # List of {"text": str, "page_num": int}
         
         if ext == 'md':
-            with open(file_path, 'r', encoding='utf-8') as f: full_text = f.read()
+            with open(file_path, 'r', encoding='utf-8') as f: 
+                text = f.read()
+                structured_data = [{"text": text, "page_num": 1}]
         elif ext in ['docx', 'doc']:
-            full_text = extract_text_from_word(file_path)
+            text = extract_text_from_word(file_path)
+            structured_data = [{"text": text, "page_num": 1}]
         elif ext == 'pdf':
-            full_text = extract_text_from_pdf(file_path)
-            if not full_text.strip():
+            pages = extract_text_from_pdf(file_path) # Now returns list[dict]
+            has_text = any(p['text'].strip() for p in pages)
+            
+            if not has_text:
+                Log.info(f"[Worker] PDF '{original_filename}' has no text, switching to OCR")
                 image_paths = get_pdf_pages_as_images(file_path)
-                ocr_texts = []
-                for img_p in image_paths:
+                for idx, img_p in enumerate(image_paths):
                     res, _ = ocr_extract(img_p)
                     if res:
                         page_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
-                        ocr_texts.append(page_text)
+                        structured_data.append({"text": page_text, "page_num": idx + 1})
                     if os.path.exists(img_p): os.remove(img_p)
-                full_text = "\n\n".join(ocr_texts)
+            else:
+                structured_data = pages
         elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
             ocr_result, _ = ocr_extract(file_path)
             if ocr_result:
-                full_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
+                text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
+                structured_data = [{"text": text, "page_num": 1}]
         
-        if full_text.strip():
-            total_chunks = rag_service.index_text(full_text, workspace_id, original_filename)
+        if structured_data:
+            total_chunks = rag_service.index_text(structured_data, workspace_id, original_filename)
             documents_repo.update_status(doc_id, DocStatus.READY, total_chunks=total_chunks)
             publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.READY})
         else:

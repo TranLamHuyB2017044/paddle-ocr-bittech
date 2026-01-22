@@ -34,59 +34,69 @@ class RagService:
         """
         return self._chunk_worker(text, chunk_size, chunk_overlap)
 
-    def index_text(self, text: str, workspace_id: str, document_name: str, batch_size: int = 50):
+    def index_text(self, data, workspace_id: str, document_name: str, batch_size: int = 50):
         """
-        Chunk text using multiprocessing, embed it in batches, and store in Qdrant.
+        Chunk text, embed it, and store in Qdrant.
+        data can be:
+        - str: raw text
+        - list: List of dicts [{"text": str, "page_num": int}]
         """
-        Log.info(f"[RAG] Indexing document '{document_name}' for workspace '{workspace_id}' (Length: {len(text)})")
+        Log.info(f"[RAG] Indexing document '{document_name}' for workspace '{workspace_id}'")
         
-        # 1. Parallel Chunking if text is large
-        num_procs = min(os.cpu_count() or 4, 8)
+        all_chunks_with_meta = []
         
-        if len(text) > 10000: # Only use threading for reasonably large text
-            Log.info(f"[RAG] Using threading with {num_procs} workers for chunking")
-            # Divide text into large blocks for workers
-            block_size = len(text) // num_procs
-            overlap = config.RAG_CHUNK_OVERLAP
+        if isinstance(data, str):
+            # Fallback for simple string
+            chunks = self.split_text(data)
+            for i, chunk in enumerate(chunks):
+                all_chunks_with_meta.append({
+                    "text": chunk,
+                    "page_num": 1, # Default to page 1
+                    "chunk_index": i
+                })
+        elif isinstance(data, list):
+            # Structured data with pages
+            for item in data:
+                text = item.get("text", "")
+                page_num = item.get("page_num", 1)
+                if not text.strip():
+                    continue
+                
+                chunks = self.split_text(text)
+                for i, chunk in enumerate(chunks):
+                    all_chunks_with_meta.append({
+                        "text": chunk,
+                        "page_num": page_num,
+                        "chunk_index": i # Index within page, but we'll re-index later if needed
+                    })
+        
+        if not all_chunks_with_meta:
+            Log.warning("[RAG] No text to index")
+            return 0
             
-            blocks = []
-            for i in range(num_procs):
-                start = max(0, i * block_size - overlap)
-                end = (i + 1) * block_size if i < num_procs - 1 else len(text)
-                blocks.append(text[start:end])
-            
-            chunks = []
-            # Use ThreadPoolExecutor instead of ProcessPoolExecutor to avoid re-importing models on Windows
-            with concurrent.futures.ThreadPoolExecutor(max_workers=num_procs) as executor:
-                futures = [executor.submit(self._chunk_worker, block, config.RAG_CHUNK_SIZE, config.RAG_CHUNK_OVERLAP) for block in blocks]
-                for future in concurrent.futures.as_completed(futures):
-                    chunks.extend(future.result())
-            
-            # Deduplicate chunks if overlap created identical ones (simple check)
-            chunks = list(dict.fromkeys(chunks))
-        else:
-            chunks = self.split_text(text)
-            
-        Log.info(f"[RAG] Created {len(chunks)} chunks")
+        Log.info(f"[RAG] Created {len(all_chunks_with_meta)} chunks across all pages")
         
         # 2. Batch Embedding & Upserting
         total_indexed = 0
-        for i in range(0, len(chunks), batch_size):
-            batch_chunks = chunks[i : i + batch_size]
-            Log.debug(f"[RAG] Processing batch {i//batch_size + 1}/{(len(chunks)-1)//batch_size + 1}")
+        for i in range(0, len(all_chunks_with_meta), batch_size):
+            batch = all_chunks_with_meta[i : i + batch_size]
+            batch_texts = [item["text"] for item in batch]
             
-            embeddings = embedding_service.embed_text(batch_chunks)
+            Log.debug(f"[RAG] Processing batch {i//batch_size + 1}/{(len(all_chunks_with_meta)-1)//batch_size + 1}")
+            
+            embeddings = embedding_service.embed_text(batch_texts)
             
             points = []
-            for j, (chunk, vector) in enumerate(zip(batch_chunks, embeddings)):
+            for j, (item, vector) in enumerate(zip(batch, embeddings)):
                 points.append(
                     models.PointStruct(
                         id=str(uuid.uuid4()),
                         vector=vector,
                         payload={
-                            "text": chunk,
+                            "text": item["text"],
                             "workspace_id": workspace_id,
                             "document_name": document_name,
+                            "page_num": item["page_num"],
                             "chunk_index": i + j
                         }
                     )
@@ -112,28 +122,43 @@ class RagService:
         
         context_parts = []
         sources = []
+        unique_sources = set()
+        
         for i, res in enumerate(results):
             txt = res.payload["text"]
             doc = res.payload["document_name"]
+            page = res.payload.get("page_num", 1)
             score = res.score
-            Log.debug(f"   [{i}] Score: {score:.4f} | Source: {doc} | Text: {txt[:50]}...")
             
-            context_parts.append(txt)
-            sources.append({
-                "document_name": doc,
-                "score": score
-            })
+            Log.debug(f"   [{i}] Score: {score:.4f} | Source: {doc} (P.{page}) | Text: {txt[:50]}...")
             
-        context = "\n\n---\n\n".join(context_parts)
+            # Add to context with source label
+            context_parts.append(f"--- NGUỒN: {doc}, TRANG: {page} ---\n{txt}")
+            
+            source_key = f"{doc}_page_{page}"
+            if source_key not in unique_sources:
+                sources.append({
+                    "document_name": doc,
+                    "page_num": page,
+                    "score": score
+                })
+                unique_sources.add(source_key)
+            
+        context = "\n\n".join(context_parts)
         
         # 3. Augment & Generate
         system_instruction = (
             "Bạn là một trợ lý AI thông minh. Hãy trả lời câu hỏi dựa trên ngữ cảnh được cung cấp. "
-            "Nếu thông tin không có trong ngữ cảnh, hãy trả lời chính xác là: 'Tôi không có thông tin', tuyệt đối không tự bịa ra câu trả lời. "
-            "Nếu có thông tin, hãy trả lời một cách ngắn gọn và đầy đủ ý bằng Tiếng Việt."
+            "Ngữ cảnh bao gồm các đoạn trích từ tài liệu, mỗi đoạn có thông tin 'NGUỒN' và 'TRANG'.\n\n"
+            "QUY TẮC:\n"
+            "1. Nếu thông tin có trong ngữ cảnh, hãy trả lời ngắn gọn, chính xác bằng Tiếng Việt.\n"
+            "2. Cuối câu trả lời, hãy luôn thêm một phần 'Trích nguồn:' liệt kê các tài liệu và số trang bạn đã dùng để trả lời. "
+            "Ví dụ: 'Trích nguồn: Thong_tu_01.pdf (Trang 5), Cong_van_123.pdf (Trang 2)'.\n"
+            "3. Nếu thông tin KHÔNG có trong ngữ cảnh, hãy trả lời chính xác là: 'Tôi không có thông tin trong tài liệu đã cung cấp.', tuyệt đối không tự bịa ra câu trả lời.\n"
+            "4. Giữ văn phong chuyên nghiệp và khách quan."
         )
         
-        prompt = f"NGỮ CẢNH:\n{context}\n\nCÂU HỎI: {question}"
+        prompt = f"DỰA TRÊN NGỮ CẢNH SAU:\n{context}\n\nCÂU HỎI: {question}"
         
         answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
         
