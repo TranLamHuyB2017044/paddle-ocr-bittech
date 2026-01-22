@@ -177,7 +177,7 @@ COMMON_COUNTRIES_REGEX = r"Việt Nam|Trung Quốc|Lào|Campuchia|Thái Lan|Myan
 
 # Giá trị mặc định
 DEFAULT_NATIONALITY = "Việt Nam"
-DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI"
+DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT"
 
 # ========== AI API KEY CONFIG ==========
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

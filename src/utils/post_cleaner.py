@@ -83,6 +83,11 @@ class PostCleaner:
         # Split by | and filter empty parts logic
         parts = [p.strip() for p in raw_text.split('|') if p.strip()]
         
+        # Nếu index thứ 1 (phần tử thứ 2) không phải là text (không chứa chữ cái, ví dụ là số CCCD bị lệch)
+        # thì bỏ qua phần tử thứ 2 và lấy vị trí tiếp theo làm index thứ 1.
+        while len(parts) > 2 and not any(c.isalpha() for c in parts[1]):
+            parts.pop(1)
+
         # Logic 0-5 mapping
         if len(parts) < 6:
             Log.warning(f"[PostCleaner] Manual CCCD extraction failed: Required 6 fields, got {len(parts)}")

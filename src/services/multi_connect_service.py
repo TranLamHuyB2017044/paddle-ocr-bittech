@@ -1,9 +1,14 @@
 import json
 import requests
 from src.config import AUTH_API_URL
+from src.utils.logger import Log
 
 
 def call_system_connections_get(group_key: str, client_register: list[str]):
+
+    Log.info(f"--- Calling API: {AUTH_API_URL}/api/system-connections/get ---")
+    Log.info(f"Payload: {json.dumps({'group_key': group_key, 'client_register': client_register}, indent=2, ensure_ascii=False)}")
+
     url = f"{AUTH_API_URL}/api/system-connections/get"
     
     payload = {
@@ -15,9 +20,11 @@ def call_system_connections_get(group_key: str, client_register: list[str]):
         response = requests.get(url, json=payload, timeout=10)
         
         try:
+            Log.info(f"Response: {response.text}")
             data = response.json()
             return data
         except json.JSONDecodeError:
+            Log.error(f"Invalid JSON response: {response.text}")
             return {
                 "success": False, 
                 "message": "Invalid JSON response", 

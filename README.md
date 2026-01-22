@@ -118,6 +118,7 @@ Dự án đã được cấu hình sẵn Dockerfile để deploy.
 
 # Khởi động tất cả (API, Worker, Redis) chạy ngầm
 docker-compose up -d --build
+docker-compose up -d --force-recreate
 
 
 # Xem log của API (Để kiểm tra lỗi request)
