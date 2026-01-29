@@ -83,7 +83,7 @@ class OpenAIExtractor:
                     {"role": "user", "content": prompt},
                 ],
                 response_format=response_schema,
-                temperature=0.0
+                temperature=0.7
             )
             
             # Extract result
