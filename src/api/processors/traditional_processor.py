@@ -44,7 +44,9 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
     # NEW: Manual KIE logic for ID Card (CCCD) or Driver License
     if doc_type == "idCard":
         Log.info("[API] 🎯 Trích xuất KIE thủ công cho CCCD")
-        lines = [x.get("text", "").strip() for x in clean_front if x.get("text", "").strip()]
+        # Combine both front and back text for comprehensive extraction
+        all_clean_lines = clean_front + clean_back
+        lines = [x.get("text", "").strip() for x in all_clean_lines if x.get("text", "").strip()]
         joined = "|".join(lines)
         if "|" in joined:
             info_extracted = PostCleaner.extract_cccd_manual(joined)
@@ -58,7 +60,9 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
 
     elif doc_type == "driverLicense":
         Log.info("[API] 🎯 Trích xuất KIE thủ công cho DriverLicense")
-        lines = [x.get("text", "").strip() for x in clean_front if x.get("text", "").strip()]
+        # Combine both front and back text
+        all_clean_lines = clean_front + clean_back
+        lines = [x.get("text", "").strip() for x in all_clean_lines if x.get("text", "").strip()]
         
         if len(lines) >= 4:
             # Re-use manual extractor logic via newline join

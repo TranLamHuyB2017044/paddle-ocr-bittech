@@ -164,16 +164,41 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         # UU TIEN 2: file_paths (OCR)
         elif len(file_paths) > 0:
             Log.info(f"[Worker-Detect] 🔍 No raw_text provided. Starting OCR stage...")
-            p1 = file_paths[0]
-            t = time.time()
-            raw_front, _ = ocr_extract(p1, img=preprocess_for_ocr(p1))
-            ocr_front_time = time.time() - t
             
-            if len(file_paths) > 1:
-                p2 = file_paths[1]
+            # 🖼️ Expand PDF to Images if needed
+            all_images = []
+            input_paths = list(file_paths) # Safe copy
+            for p in input_paths:
+                if p.lower().endswith('.pdf'):
+                    Log.info(f"[Worker-Detect] 📄 Expanding PDF to images: {p}")
+                    pdf_imgs = get_pdf_pages_as_images(p)
+                    all_images.extend(pdf_imgs)
+                    # Add new temp images to file_paths so they get cleaned up in finally block
+                    file_paths.extend(pdf_imgs)
+                else:
+                    all_images.append(p)
+
+            if not all_images:
+                raise Exception("No valid images found for OCR (PDF might be empty or invalid)")
+
+            # OCR for all collected images
+            ocr_results = []
+            ocr_times = []
+            for img_p in all_images:
                 t = time.time()
-                raw_back, _ = ocr_extract(p2, img=preprocess_for_ocr(p2))
-                ocr_back_time = time.time() - t
+                res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
+                ocr_results.append(res)
+                ocr_times.append(time.time() - t)
+            
+            raw_front = ocr_results[0]
+            raw_back = []
+            if len(ocr_results) > 1:
+                # Combine all subsequent pages into raw_back
+                for res in ocr_results[1:]:
+                    raw_back.extend(res)
+            
+            ocr_front_time = ocr_times[0]
+            ocr_back_time = sum(ocr_times[1:]) if len(ocr_times) > 1 else 0.0
         else:
             raise Exception("No input source (text or image) provided")
 
