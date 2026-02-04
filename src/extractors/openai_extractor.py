@@ -77,9 +77,9 @@ class OpenAIExtractor:
             # Use gpt-4o-mini for speed and cost effectiveness
             # Use the newer responses.parse or beta.chat.completions.parse API
             completion = self.client.beta.chat.completions.parse(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are a specialized OCR data extractor. Extract information accurately from the provided text according to the specific format requested."},
+                    {"role": "system", "content": "You are a specialized OCR data extractor for Vietnamese documents. Extract information accurately from the provided text. IMPORTANT: Always preserve full Vietnamese accents. If the input text is missing accents, you should restore them correctly based on the context."},
                     {"role": "user", "content": prompt},
                 ],
                 response_format=response_schema,

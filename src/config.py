@@ -42,12 +42,13 @@ YOLO_LABEL_MAP = {
     "current_place": "address",
     "expire_date": "expiryDate"
 }
-MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Old online path
+MODEL_PATH = "protonx-models/protonx-legal-tc" # Old online path
 # Model is located in cccd/local-protonx-model/protonx-legal-tc
 # MODEL_PATH = os.path.join(root_dir, "local-protonx-model", "protonx-legal-tc")
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
+    "lang": "vi", # Hỗ trợ tiếng Việt
     "enable_mkldnn": True, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 960, # Reduced from 1280 for faster detection
