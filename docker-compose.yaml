@@ -6,6 +6,8 @@ services:
     ports:
       - "6379:6379"
     restart: always
+    networks:
+      - ocr-network
 
   # Background Worker - Nơi xử lý OCR và Embedding nặng
   worker:
@@ -15,6 +17,10 @@ services:
     restart: always
     depends_on:
       - redis
+    links:
+      - redis
+    networks:
+      - ocr-network
     env_file:
       - .env
     environment:
@@ -33,6 +39,10 @@ services:
     restart: always
     depends_on:
       - redis
+    links:
+      - redis
+    networks:
+      - ocr-network
     ports:
       - "8080:8080"
     volumes:
@@ -45,3 +55,7 @@ services:
       - PORT=8080
       - REDIS_URL=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
+
+networks:
+  ocr-network:
+    driver: bridge
