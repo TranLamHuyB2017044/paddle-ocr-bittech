@@ -4,7 +4,7 @@ services:
     image: redis:latest
     container_name: paddle-ocr-redis
     ports:
-      - "6379:6379"
+      - "63799:6379" # Đổi cổng host từ 6379 thành 63799 để tránh xung đột
     restart: always
     networks:
       - ocr-network
