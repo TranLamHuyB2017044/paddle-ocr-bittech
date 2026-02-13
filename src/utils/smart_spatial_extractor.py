@@ -270,7 +270,7 @@ class SmartSpatialExtractor:
                          possible_val = split_match.group(1).strip()
                          if len(possible_val) > 0: anchor_val = possible_val
                 
-                # If STILL no anchor_val but it was found via YOLO label, 
+                # If STILL no anchor_val but it was found via manual label, 
                 # assume the whole box is the value (common for ROI-based detect)
                 if not anchor_val and anchor.get("label") == field:
                     anchor_val = anchor_text.strip()

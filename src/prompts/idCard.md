@@ -16,7 +16,7 @@ Dựa trên văn bản/ảnh OCR được cung cấp, hãy lấy thông tin và 
 
 ### Quy tắc:
 
-- fullName: chuỗi có nhãn Fullname/Họ và tên/..., giữ nguyên chữ/số/ký tự đặc biệt.
+- fullName: chuỗi có nhãn Fullname/Họ và tên/..., giữ nguyên chữ/số/ký tự đặc biệt, là tiếng việt có dấu.
 
 - idNumber: dãy số có nhãn Số/Number/No/...
 
@@ -28,7 +28,7 @@ Dựa trên văn bản/ảnh OCR được cung cấp, hãy lấy thông tin và 
 
 - hometown: Hãy tìmn xem thông tin quê quán của người này ở đâu?
 
-- address:  Hãy tìm thông tin địa chỉ 
+- address:  Hãy tìm thông tin địa chỉ đầy đủ
 
 - expiryDate: Hãy tìm xem thông tin có ngày hết hạn hay không?
 

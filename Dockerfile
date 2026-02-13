@@ -62,7 +62,6 @@ COPY --from=builder /opt/venv /opt/venv
 
 # Copy source code LAST (chỉ sửa code → build cực nhanh)
 COPY src ./src
-COPY yolo_model ./yolo_model
 COPY app.py .
 COPY run_worker.py .
 

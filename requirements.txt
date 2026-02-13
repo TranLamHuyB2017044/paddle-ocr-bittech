@@ -34,5 +34,4 @@ python-docx
 pymupdf
 redis
 rq
-# ultralytics
 requests

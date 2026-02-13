@@ -23,7 +23,7 @@ MAX_OCR_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit for general OCR
 MAX_FILE_COUNT = 5 # Maximum files per upload
 MAX_DOCUMENTS_PER_WORKSPACE = 10 # Maximum documents per workspace
  
- # ========== DOCUMENT STATUS ==========
+# ========== DOCUMENT STATUS ==========
 class DocStatus:
     UPLOADED = "UPLOADED"
     PROCESSING = "PROCESSING"
@@ -31,17 +31,7 @@ class DocStatus:
     FAILED = "FAILED"
 
 # ========== MODEL CONFIG ==========
-YOLO_MODEL_PATH = "yolo_model/yolo_v8n_model.pt"  # Đường dẫn tới file .pt của bạn
-YOLO_LABEL_MAP = {
-    "id": "idNumber",
-    "name": "fullName",
-    "dob": "dob",
-    "gender": "gender",
-    "nationality": "nationality",
-    "origin_place": "hometown",
-    "current_place": "address",
-    "expire_date": "expiryDate"
-}
+# AI model path (transformers)
 MODEL_PATH = "protonx-models/protonx-legal-tc" # Old online path
 # Model is located in cccd/local-protonx-model/protonx-legal-tc
 # MODEL_PATH = os.path.join(root_dir, "local-protonx-model", "protonx-legal-tc")
@@ -60,8 +50,7 @@ OCR_CONFIG = {
 }
 
 # ========== TEXT CLEANING CONFIG ==========
-# LƯU Ý: Với CCCD Mặt trước, các flow USELESS_KEYWORDS và FRONT_KEYWORDS sẽ bị bỏ qua 
-# để sử dụng Layout Detection (YOLOv8) thay thế.
+# LƯU Ý: Với CCCD Mặt trước, extraction được thực hiện qua Traditional hoặc AI Processor.
 # Từ khóa chung cần loại bỏ
 USELESS_KEYWORDS = [
     # Tiêu đề quốc gia

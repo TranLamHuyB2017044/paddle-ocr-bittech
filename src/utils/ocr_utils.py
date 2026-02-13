@@ -94,12 +94,6 @@ def ocr_extract(image_path, img=None, retry_mode=False):
     return ocr_data, texts
 
 
-def layout_ocr_extract(image_path, img=None):
-    """
-    [DISABLED] Layout extraction via YOLO is currently disabled to reduce resource usage.
-    """
-    Log.warning("[LAYOUT-OCR] ⚠️ YOLO Layout Detection is DISABLED. Falling back to normal OCR.")
-    return [], []
 
 
 def filter_useless_lines(ocr_data):

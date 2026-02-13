@@ -4,7 +4,7 @@ import time
 from src.repositories.documents_repository import documents_repo
 from src.repositories.users_repository import users_repo
 from src.rag.rag_service import rag_service
-from src.utils.ocr_utils import ocr_extract, layout_ocr_extract, preprocess_for_ocr
+from src.utils.ocr_utils import ocr_extract, preprocess_for_ocr
 from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
 from src.utils.word_utils import extract_text_from_word
 from src.utils.logger import Log
