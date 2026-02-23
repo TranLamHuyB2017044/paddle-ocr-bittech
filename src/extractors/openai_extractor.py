@@ -72,14 +72,22 @@ class OpenAIExtractor:
         # Configure Response Format
         response_schema = SCHEMA_MAP.get(doc_type)
 
-        Log.info(f"[OPENAI] 🚀 Sending request to OpenAI (gpt-4.1-mini, {doc_type})reading...")
+        Log.info(f"[OPENAI] 🚀 Sending request to OpenAI (gpt-4o-mini, {doc_type})reading...")
         try:
             # Use gpt-4o-mini for speed and cost effectiveness
             # Use the newer responses.parse or beta.chat.completions.parse API
             completion = self.client.beta.chat.completions.parse(
-                model="gpt-4.1-mini",
+                model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Bạn là một chuyên gia trích xuất dữ liệu OCR chuyên nghiệp. Hãy trích xuất thông tin một cách trung thực và chính xác tuyệt đối từ văn bản được cung cấp. NẾU THÔNG TIN KHÔNG XUẤT HIỆN TRONG VĂN BẢN, BẠN PHẢI TRẢ VỀ NULL, TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ Ý BỊA ĐẶT HOẶC GIẢ ĐỊNH DỮ LIÊU (Hallucination)."},
+                    {
+                        "role": "system", 
+                        "content": (
+                            "Bạn là chuyên gia trích xuất OCR trung thực. Quy tắc:\n"
+                            "1. Không bịa đặt: Thiếu dữ liệu trả về null.\n"
+                            "2. Khôi phục dấu: Chỉ thêm dấu cho Họ Tên phổ biến (NGUYEN->NGUYỄN). Giữ nguyên nếu là tên lạ/dân tộc.\n"
+                            "3. Tuyệt đối không thay đổi chữ cái gốc của văn bản."
+                        )
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 response_format=response_schema,
