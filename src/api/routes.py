@@ -129,6 +129,11 @@ def register_routes(app):
             if not is_allowed:
                 return jsonify({"statusCode": 403, "message": msg}), 403
 
+            # ===== 3. Đăng ký lắng nghe TRƯỚC khi gửi task =====
+            pubsub = redis_conn.pubsub()
+            channel = f"sse_user_{user_id}"
+            pubsub.subscribe(channel)
+
             # Inform SSE about the new task
             publish_event(user_id, "detection_status", {
                 "document_id": doc_id,
@@ -137,7 +142,7 @@ def register_routes(app):
                 "message": msg
             })
 
-            # Increment usage (Admin excluded in check_quota/increment)
+            # Increment usage
             if g.user.get('account_id'):
                 accounts_repo.increment_usage(g.user.get('account_id'))
 
@@ -147,14 +152,20 @@ def register_routes(app):
                 job_timeout='5m'
             )
 
-            # ===== Lắng nghe Redis giống detect_sync =====
-            pubsub = redis_conn.pubsub()
-            channel = f"sse_user_{user_id}"
-            pubsub.subscribe(channel)
-
-            wait_timeout = 120
+            # ===== 4. Lắng nghe Redis & Double Check DB =====
+            wait_timeout = 60 # Giảm timeout xuống 60s để tránh chiếm dụng thread quá lâu
             start_wait = time.time()
             final_result = None
+
+            # Kiểm tra nhanh xem Worker đã làm xong chưa (cho trường hợp QR cực nhanh)
+            doc_check = documents_repo.find_by_id(doc_id)
+            if doc_check and doc_check.get("status") == DocStatus.READY:
+                final_result = {
+                    "statusCode": 200,
+                    "message": "Success (Traditional Fast-Path)",
+                    "data": doc_check.get("result"),
+                    "debug": doc_check.get("debug")
+                }
 
             while time.time() - start_wait < wait_timeout:
                 message = pubsub.get_message(
@@ -283,7 +294,12 @@ def register_routes(app):
             if g.user.get('account_id'):
                 accounts_repo.increment_usage(g.user.get('account_id'))
 
-            # ===== 3. Enqueue worker =====
+            # ===== 3. Đăng ký lắng nghe TRƯỚC khi gửi task =====
+            pubsub = redis_conn.pubsub()
+            channel = f"sse_user_{user_id}"
+            pubsub.subscribe(channel)
+
+            # ===== 4. Enqueue worker =====
             rag_queue.enqueue(
                 process_detection_task,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
@@ -291,14 +307,19 @@ def register_routes(app):
                 job_timeout="5m"
             )
 
-            # ===== 4. Lắng nghe Redis =====
-            pubsub = redis_conn.pubsub()
-            channel = f"sse_user_{user_id}"
-            pubsub.subscribe(channel)
-
-            wait_timeout = 120
+            wait_timeout = 60
             start_wait = time.time()
             final_result = None
+
+            # Kiểm tra nhanh DB (Fast-path cho QR)
+            doc_check = documents_repo.find_by_id(doc_id)
+            if doc_check and doc_check.get("status") == DocStatus.READY:
+                final_result = {
+                    "statusCode": 200,
+                    "message": "Success (Fast-Path)",
+                    "data": doc_check.get("result"),
+                    "debug": doc_check.get("debug")
+                }
 
             while time.time() - start_wait < wait_timeout:
                 message = pubsub.get_message(
