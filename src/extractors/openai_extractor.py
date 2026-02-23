@@ -72,12 +72,12 @@ class OpenAIExtractor:
         # Configure Response Format
         response_schema = SCHEMA_MAP.get(doc_type)
 
-        Log.info(f"[OPENAI] 🚀 Sending request to OpenAI (gpt-4o-mini, {doc_type})reading...")
+        Log.info(f"[OPENAI] 🚀 Sending request to OpenAI (gpt-4.1-mini, {doc_type})reading...")
         try:
-            # Use gpt-4o-mini for speed and cost effectiveness
+            # Use gpt-4.1-mini for speed and cost effectiveness
             # Use the newer responses.parse or beta.chat.completions.parse API
             completion = self.client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {
                         "role": "system", 
