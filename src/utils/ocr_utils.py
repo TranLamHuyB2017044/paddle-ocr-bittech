@@ -13,7 +13,7 @@ import threading
 
 def preprocess_for_ocr(path):
     """
-    Tiền xử lý ảnh trong bộ nhớ (In-memory) để tăng tốc
+    Tiền xử lý ảnh: Resize, tăng độ tương phản và khử nhiễu để tối ưu OCR
     Returns:
         numpy.ndarray: Ảnh đã được xử lý
     """
@@ -25,18 +25,32 @@ def preprocess_for_ocr(path):
     h, w = img.shape[:2]
     Log.info(f"[PREPROCESS] 📸 Original size: {w}x{h}")
 
-    # Resize logic: Giữ độ phân giải đủ cao nhưng không quá nặng
-    max_side = 960
+    # 1. Resize logic: Giữ độ phân giải đủ cao
+    max_side = 960 
     if max(h, w) > max_side:
         scale = max_side / max(h, w)
         new_w = int(w * scale)
         new_h = int(h * scale)
         img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
         Log.info(f"[PREPROCESS] 📉 Resized {w}x{h} -> {new_w}x{new_h}")
-    else:
-        Log.info(f"[PREPROCESS] ✅ Size is within limit ({w}x{h})")
 
-    return img
+    # 2. Chuyển sang ảnh xám để xử lý cường độ sáng
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # 3. Áp dụng CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    # Giúp làm rõ chữ trong các vùng quá tối hoặc quá sáng (do đèn flash hoặc bóng đổ)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced_img = clahe.apply(gray)
+
+    # 4. Khử nhiễu nhẹ (Denoising)
+    # Sử dụng GaussianBlur nhẹ để làm mịn các hạt nhiễu nhỏ mà không làm mờ chữ
+    denoised_img = cv2.GaussianBlur(enhanced_img, (3, 3), 0)
+
+    # Nếu model OCR của bạn yêu cầu 3 kênh màu (BGR), chuyển đổi lại
+    final_img = cv2.cvtColor(denoised_img, cv2.COLOR_GRAY2BGR)
+
+    Log.info(f"[PREPROCESS] ✨ Image enhancement applied (CLAHE + Denoise)")
+    return final_img
 
 def ocr_extract(image_path, img=None, retry_mode=False):
     """
