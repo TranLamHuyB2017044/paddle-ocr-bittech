@@ -153,7 +153,7 @@ def register_routes(app):
             )
 
             # ===== 4. Lắng nghe Redis & Double Check DB =====
-            wait_timeout = 60 # Giảm timeout xuống 60s để tránh chiếm dụng thread quá lâu
+            wait_timeout = 10 # Giảm timeout xuống 10s để tránh chiếm dụng thread quá lâu
             start_wait = time.time()
             final_result = None
 
@@ -167,39 +167,40 @@ def register_routes(app):
                     "debug": doc_check.get("debug")
                 }
 
-            while time.time() - start_wait < wait_timeout:
-                message = pubsub.get_message(
-                    ignore_subscribe_messages=True,
-                    timeout=1.0
-                )
+            if not final_result:
+                while time.time() - start_wait < wait_timeout:
+                    message = pubsub.get_message(
+                        ignore_subscribe_messages=True,
+                        timeout=1.0
+                    )
 
-                if message:
-                    try:
-                        payload = json.loads(message["data"])
-                        data = payload.get("data", {})
+                    if message:
+                        try:
+                            payload = json.loads(message["data"])
+                            data = payload.get("data", {})
 
-                        if str(data.get("document_id")) == str(doc_id):
-                            status = data.get("status")
+                            if str(data.get("document_id")) == str(doc_id):
+                                status = data.get("status")
 
-                            if status == DocStatus.READY:
-                                final_result = {
-                                    "statusCode": 200,
-                                    "message": "Success (Traditional Synchronized)",
-                                    "data": data.get("result"),
-                                    "debug": data.get("debug")
-                                }
-                                break
+                                if status == DocStatus.READY:
+                                    final_result = {
+                                        "statusCode": 200,
+                                        "message": "Success (Traditional Synchronized)",
+                                        "data": data.get("result"),
+                                        "debug": data.get("debug")
+                                    }
+                                    break
 
-                            elif status == DocStatus.FAILED:
-                                final_result = {
-                                    "statusCode": 500,
-                                    "message": f"Processing failed: {data.get('error')}"
-                                }
-                                break
-                    except Exception:
-                        pass
+                                elif status == DocStatus.FAILED:
+                                    final_result = {
+                                        "statusCode": 500,
+                                        "message": f"Processing failed: {data.get('error')}"
+                                    }
+                                    break
+                        except Exception:
+                            pass
 
-                time.sleep(0.1)
+                    time.sleep(0.1)
 
             pubsub.unsubscribe(channel)
             pubsub.close()
@@ -209,12 +210,40 @@ def register_routes(app):
 
             return jsonify({
                 "statusCode": 202,
-                "message": "Detection task enqueued (Wait Timeout)",
+                "message": "Detection task enqueued (Wait Timeout). Please check status or listen to SSE.",
                 "data": {"document_id": doc_id}
             }), 202
 
         except Exception as e:
             Log.error(f"[API-TRAD] ❌ Error: {e}")
+            return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+    @app.route("/api/document/<doc_id>", methods=["GET"])
+    @require_auth
+    def get_document_status(doc_id):
+        """
+        Get document status and results
+        """
+        try:
+            doc = documents_repo.find_by_id(doc_id)
+            if not doc:
+                return jsonify({"statusCode": 404, "message": "Document not found"}), 404
+            
+            # Authorization check
+            if str(doc.get("user_id")) != str(g.user_id):
+                return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+            
+            # Format response
+            res = {
+                "document_id": str(doc["_id"]),
+                "status": doc.get("status"),
+                "type": doc.get("document_type"),
+                "result": doc.get("result"),
+                "error": doc.get("error"),
+                "created_at": doc.get("created_at")
+            }
+            return jsonify({"statusCode": 200, "data": res}), 200
+        except Exception as e:
             return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
@@ -307,7 +336,7 @@ def register_routes(app):
                 job_timeout="5m"
             )
 
-            wait_timeout = 60
+            wait_timeout = 10
             start_wait = time.time()
             final_result = None
 
@@ -321,39 +350,40 @@ def register_routes(app):
                     "debug": doc_check.get("debug")
                 }
 
-            while time.time() - start_wait < wait_timeout:
-                message = pubsub.get_message(
-                    ignore_subscribe_messages=True,
-                    timeout=1.0
-                )
+            if not final_result:
+                while time.time() - start_wait < wait_timeout:
+                    message = pubsub.get_message(
+                        ignore_subscribe_messages=True,
+                        timeout=1.0
+                    )
 
-                if message:
-                    try:
-                        payload = json.loads(message["data"])
-                        data = payload.get("data", {})
+                    if message:
+                        try:
+                            payload = json.loads(message["data"])
+                            data = payload.get("data", {})
 
-                        if str(data.get("document_id")) == str(doc_id):
-                            status = data.get("status")
+                            if str(data.get("document_id")) == str(doc_id):
+                                status = data.get("status")
 
-                            if status == DocStatus.READY:
-                                final_result = {
-                                    "statusCode": 200,
-                                    "message": "Success (Synchronized)",
-                                    "data": data.get("result"),
-                                    "debug": data.get("debug")
-                                }
-                                break
+                                if status == DocStatus.READY:
+                                    final_result = {
+                                        "statusCode": 200,
+                                        "message": "Success (Synchronized)",
+                                        "data": data.get("result"),
+                                        "debug": data.get("debug")
+                                    }
+                                    break
 
-                            elif status == DocStatus.FAILED:
-                                final_result = {
-                                    "statusCode": 500,
-                                    "message": f"Processing failed: {data.get('error')}"
-                                }
-                                break
-                    except Exception:
-                        pass
+                                elif status == DocStatus.FAILED:
+                                    final_result = {
+                                        "statusCode": 500,
+                                        "message": f"Processing failed: {data.get('error')}"
+                                    }
+                                    break
+                        except Exception:
+                            pass
 
-                time.sleep(0.1)
+                    time.sleep(0.1)
 
             pubsub.unsubscribe(channel)
             pubsub.close()
@@ -362,10 +392,10 @@ def register_routes(app):
                 return jsonify(final_result), final_result["statusCode"]
 
             return jsonify({
-                "statusCode": 504,
-                "message": "Processing timeout. Task still running.",
+                "statusCode": 202,
+                "message": "Detection task enqueued (Wait Timeout). Please check status or listen to SSE.",
                 "data": {"document_id": doc_id}
-            }), 504
+            }), 202
 
         except Exception as e:
             return jsonify({

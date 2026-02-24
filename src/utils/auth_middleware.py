@@ -39,14 +39,18 @@ def require_auth(f):
                             g.user_id = str(user["_id"])
                             g.user = user
                             
-                            # Device ID Logic: First time login assignment
-                            device_id = request.headers.get('x-device-id') # Headers are case insensitive usually, but let's be safe
-                            if not device_id:
-                                device_id = request.headers.get('X-Device-ID')
+                            # Device ID Logic: First time login assignment or mismatch check
+                            header_device_id = request.headers.get('x-device-id') or request.headers.get('X-Device-ID')
                                 
-                            if not user.get('deviceId') and device_id:
-                                users_repo.update(g.user_id, {"deviceId": device_id})
-                                user['deviceId'] = device_id
+                            if not user.get('deviceId'):
+                                if header_device_id:
+                                    users_repo.update(g.user_id, {"deviceId": header_device_id})
+                                    user['deviceId'] = header_device_id
+                            else:
+                                # If deviceId exists, we MUST verify match (Security)
+                                if header_device_id and user.get('deviceId') != header_device_id:
+                                    Log.warning(f"[Auth] ⛔ Device mismatch for user {user.get('username')}: {header_device_id} != {user.get('deviceId')}")
+                                    return jsonify({"statusCode": 401, "message": "Thiết bị không hợp lệ cho tài khoản này. Vui lòng đăng nhập lại."}), 401
                                 
                             return f(*args, **kwargs)
                         else:
