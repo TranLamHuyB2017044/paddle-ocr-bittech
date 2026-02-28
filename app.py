@@ -44,12 +44,14 @@ from src.api.auth_routes import auth_bp
 from src.rag.rag_routes import rag_bp
 from src.api.sse_routes import sse_bp
 from src.api.subscription_routes import subscription_bp
+from src.api.email_routes import email_bp
 
 app.register_blueprint(sheet_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(rag_bp)
 app.register_blueprint(sse_bp)
 app.register_blueprint(subscription_bp)
+app.register_blueprint(email_bp)
 
 # ==================== RUN APP ====================
 if __name__ == "__main__":

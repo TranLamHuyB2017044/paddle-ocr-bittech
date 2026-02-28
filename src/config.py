@@ -70,9 +70,6 @@ USELESS_KEYWORDS = [
     "GIAY PHÉP LÁI XE",
     "Giấy phép",
     "Giấy phép lái xe",
-    
-    
-    
     # Khẩu hiệu
     "độc lập tự do hạnh phúc",
     "doc lap tu do hanh phuc",
@@ -195,6 +192,12 @@ RAG_CHUNK_SIZE = 800
 RAG_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
 
+
+# Email Config
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = os.getenv("EMAIL_PORT", "")
+EMAIL_USER = os.getenv("EMAIL_USER", "")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 
 # ========== SAAS PLANS CONFIG ==========
 # 0: free, 1: basic, 2: pro, 3: business
