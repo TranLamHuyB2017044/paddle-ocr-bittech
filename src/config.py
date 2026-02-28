@@ -216,7 +216,7 @@ PLANS_CONFIG = {
         'description': 'Phù hợp cho cửa hàng nhỏ',
         'max_requests_per_month': 500,
         'max_users': 3,
-        'price': 100000,
+        'price': 99000,
         'is_unlimited': False,
         'features': ['500 lượt/tháng', '3 tài khoản', 'Dữ liệu lưu 30 ngày', 'Hỗ trợ email']
     },
@@ -225,7 +225,7 @@ PLANS_CONFIG = {
         'description': 'Dành cho doanh nghiệp vừa',
         'max_requests_per_month': 1500,
         'max_users': 5,
-        'price': 200000,
+        'price': 199000,
         'is_unlimited': False,
         'features': ['1.500 lượt/tháng', '5 tài khoản', 'Dữ liệu lưu 90 ngày', 'Hỗ trợ 24/7']
     },
