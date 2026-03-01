@@ -70,13 +70,13 @@ class AuthService:
         # 1. Tìm user
         user_data = users_repo.find_by_username(username)
         if not user_data:
-            raise ValueError("Invalid username or password")
+            raise ValueError("Sai tài khoản hoặc mật khẩu")
             
         # 2. Verify Pass
         # Parse về Pydantic model để dễ truy cập field
         user = User(**user_data)
         if not user.password or not verify_password(password, user.password):
-             raise ValueError("Invalid username or password")
+             raise ValueError("Sai tài khoản hoặc mật khẩu")
         
         # 3. Check Device Lock - Will raise ValueError if failed
         if not is_dev:

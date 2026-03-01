@@ -70,9 +70,6 @@ USELESS_KEYWORDS = [
     "GIAY PHÉP LÁI XE",
     "Giấy phép",
     "Giấy phép lái xe",
-    
-    
-    
     # Khẩu hiệu
     "độc lập tự do hạnh phúc",
     "doc lap tu do hanh phuc",
@@ -196,6 +193,13 @@ RAG_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
 
 
+# Email Config
+EMAIL_HOST = os.getenv("SMTP_HOST", "")
+EMAIL_PORT = os.getenv("SMTP_PORT", "")
+EMAIL_USER = os.getenv("SMTP_USERNAME", "")
+EMAIL_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+EMAIL_TO = os.getenv("EMAIL_TO", "")
+
 # ========== SAAS PLANS CONFIG ==========
 # 0: free, 1: basic, 2: pro, 3: business
 PLANS_CONFIG = {
@@ -213,7 +217,7 @@ PLANS_CONFIG = {
         'description': 'Phù hợp cho cửa hàng nhỏ',
         'max_requests_per_month': 500,
         'max_users': 3,
-        'price': 100000,
+        'price': 99000,
         'is_unlimited': False,
         'features': ['500 lượt/tháng', '3 tài khoản', 'Dữ liệu lưu 30 ngày', 'Hỗ trợ email']
     },
@@ -222,7 +226,7 @@ PLANS_CONFIG = {
         'description': 'Dành cho doanh nghiệp vừa',
         'max_requests_per_month': 1500,
         'max_users': 5,
-        'price': 200000,
+        'price': 199000,
         'is_unlimited': False,
         'features': ['1.500 lượt/tháng', '5 tài khoản', 'Dữ liệu lưu 90 ngày', 'Hỗ trợ 24/7']
     },
