@@ -194,10 +194,11 @@ EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # FastEmbed will use this or default
 
 
 # Email Config
-EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_PORT = os.getenv("EMAIL_PORT", "")
-EMAIL_USER = os.getenv("EMAIL_USER", "")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+EMAIL_HOST = os.getenv("SMTP_HOST", "")
+EMAIL_PORT = os.getenv("SMTP_PORT", "")
+EMAIL_USER = os.getenv("SMTP_USERNAME", "")
+EMAIL_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+EMAIL_TO = os.getenv("EMAIL_TO", "")
 
 # ========== SAAS PLANS CONFIG ==========
 # 0: free, 1: basic, 2: pro, 3: business

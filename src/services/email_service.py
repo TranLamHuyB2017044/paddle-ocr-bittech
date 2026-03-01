@@ -11,22 +11,37 @@ class EmailService:
         self.email_port = config.EMAIL_PORT
         self.email_user = config.EMAIL_USER
         self.email_password = config.EMAIL_PASSWORD
+        self.email_to = config.EMAIL_TO
 
-    def send_email(self, to_email: str, subject: str, body: str):
+    def send_email(self, subject: str, body: str):
         try:
+            if not self.email_host or not self.email_port:
+                raise ValueError("Email credentials (host/port) are not configured in .env")
+                
+            port = int(self.email_port)
+
             msg = MIMEMultipart()
+            # The sender is the system account
             msg['From'] = self.email_user
-            msg['To'] = to_email
+            msg['To'] = self.email_to
             msg['Subject'] = subject
+            
             msg.attach(MIMEText(body, 'plain'))
 
-            with smtplib.SMTP(self.email_host, self.email_port) as server:
-                server.starttls()
-                server.login(self.email_user, self.email_password)
-                server.sendmail(self.email_user, to_email, msg.as_string())
+            if port == 465:
+                # Standard SSL setup
+                with smtplib.SMTP_SSL(self.email_host, port) as server:
+                    server.login(self.email_user, self.email_password)
+                    server.sendmail(self.email_user, self.email_to, msg.as_string())
+            else:
+                # Standard TLS setup (e.g. port 587)
+                with smtplib.SMTP(self.email_host, port) as server:
+                    server.starttls()
+                    server.login(self.email_user, self.email_password)
+                    server.sendmail(self.email_user, self.email_to, msg.as_string())
             
-            Log.info(f"Email sent to {to_email}")
+            Log.info(f"Email sent from system {self.email_user} to {self.email_to}")
         except Exception as e:
-            Log.error(f"Failed to send email to {to_email}: {e}")
+            Log.error(f"Failed to send email to {self.email_to}: {e}")
 
 email_service = EmailService()
