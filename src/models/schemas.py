@@ -57,26 +57,35 @@ class Invoice(BaseModel):
         description="Danh sách sản phẩm/dịch vụ. Mỗi phần tử là một chuỗi text mô tả dòng hàng (Tên + SL + Giá)"
     )
 
-
-
-
-
-
 class VehicleDocument(BaseModel):
-    documentType: Optional[str] = Field(description="Loại giấy tờ nhận diện được (inspection/insurance/registration)")
-    # Common Fields
-    plateNumber: Optional[str] = Field(description="Biển số đăng ký")
-    ownerName: Optional[str] = Field(description="Tên chủ xe / Người được bảo hiểm")
-    address: Optional[str] = Field(description="Địa chỉ chủ xe")
+    documentType: Optional[str] = Field(description="Loại giấy tờ nhận diện được, CHỈ ĐƯỢC CHỌN 1 TRONG 7 LOẠI SAU: REGISTRATION (Giấy đăng ký xe), INSPECTION (Giấy chứng nhận kiểm định / Đăng kiểm), CIVIL_INSURANCE (BH TNDS bắt buộc), VOLUNTARY_INSURANCE (BH vật chất xe tự nguyện), ROAD_FEE (Phí sử dụng đường bộ), TRANSPORT_LICENSE (Giấy phép kinh doanh vận tải / Phù hiệu), TRAINING_PERMIT (Giấy phép xe tập lái)")
+    
+    # Thông tin chung (Common Fields)
+    plateNumber: Optional[str] = Field(description="Biển số xe (Plate Number)")
+    documentNumber: Optional[str] = Field(description="Số seri / Số giấy chứng nhận / Số quản lý / Số biên lai / Số phù hiệu")
+    dateOfIssue: Optional[str] = Field(description="Ngày cấp / Ngày nộp phí (DD-MM-YYYY)")
+    effectiveDate: Optional[str] = Field(description="Ngày bắt đầu hiệu lực (DD-MM-YYYY)")
+    expiryDate: Optional[str] = Field(description="Ngày hết hạn / Có giá trị đến (DD-MM-YYYY)")
+    issuedBy: Optional[str] = Field(description="Nơi cấp / Đơn vị cấp / Công ty bảo hiểm / Cơ quan quản lý")
+    
+    # Thông tin chủ thể (Owner / Entity)
+    ownerName: Optional[str] = Field(description="Tên chủ xe / Người được bảo hiểm / Tên doanh nghiệp / Tên cơ sở đào tạo")
+    address: Optional[str] = Field(description="Địa chỉ")
+    
+    # Thông tin kỹ thuật xe (Vehicle Details)
     engineNumber: Optional[str] = Field(description="Số máy (Engine No)")
     chassisNumber: Optional[str] = Field(description="Số khung (Chassis No)")
-    dateOfIssue: Optional[str] = Field(description="Ngày cấp (DD-MM-YYYY)")
+    vehicleBrand: Optional[str] = Field(description="Nhãn hiệu (Brand)")
+    vehicleType: Optional[str] = Field(description="Loại xe / Số chỗ ngồi / Tải trọng")
+    color: Optional[str] = Field(description="Màu sơn")
     
-    # Specific for Inspection/Insurance
-    inspectionNumber: Optional[str] = Field(description="Số phiếu kiểm định / Số đăng kiểm (VA-...)")
-    expiryDate: Optional[str] = Field(description="Ngày hết hạn / Hiệu lực đến ngày (DD-MM-YYYY)")
-    effectiveDate: Optional[str] = Field(description="Ngày bắt đầu hiệu lực (DD-MM-YYYY)")
-    insuranceCompany: Optional[str] = Field(description="Công ty bảo hiểm / Đơn vị cấp")
+    # Thông tin tiền phí (Financial Info)
+    feeAmount: Optional[str] = Field(description="Số tiền phí / Phí bảo hiểm / Phí đường bộ")
+
+    # Thông tin đặc thù khác (Specific Info)
+    transportType: Optional[str] = Field(description="Loại hình kinh doanh vận tải (Ví dụ: Taxi, Hợp đồng, Tuyến cố định...)")
+    route: Optional[str] = Field(description="Tuyến / Vùng hoạt động")
+    teacherName: Optional[str] = Field(description="Tên giáo viên (Dành cho giấy phép xe tập lái)")
 
 
 class Document(BaseModel):
