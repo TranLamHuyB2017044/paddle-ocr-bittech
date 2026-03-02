@@ -8,7 +8,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from src.config import MODEL_PATH, OCR_CONFIG
 from src.utils.logger import Log
-
+import traceback
 
 class ModelLoader:
     """Singleton class để load và cache models"""
@@ -55,6 +55,7 @@ class ModelLoader:
                 Log.info("✅ AI models loaded success!")
             except Exception as e:
                 Log.error(f"❌ Failed to load AI models: {e}")
+                traceback.print_exc()
     
     @property
     def ocr(self):
