@@ -28,7 +28,7 @@ def validate_request_params(req):
     
     if not doc_type:
         return None, jsonify({"statusCode": 400, "message": "Missing 'type' parameter. Required one of: idCard, driverLicense, invoice, document"}), 400
-
+ 
     if doc_type not in ALLOWED_DOC_TYPES:
          return None, jsonify({"statusCode": 400, "message": f"Loại giấy tờ không hợp lệ. Cho phép: {ALLOWED_DOC_TYPES}"}), 400
 
