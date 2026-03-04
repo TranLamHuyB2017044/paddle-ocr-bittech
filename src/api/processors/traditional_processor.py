@@ -33,9 +33,13 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
     filtered_front = filter_useless_lines(raw_front)
     filtered_back = filter_useless_lines(raw_back)
 
-    # --- CLEANING ---
-    clean_front = clean_text_lines(filtered_front)
-    clean_back = clean_text_lines(filtered_back)
+    # --- CLEANING (Chỉ chạy cho invoice và vehicleDocuments theo yêu cầu) ---
+    if doc_type in ['invoice', 'vehicleDocuments']:
+        clean_front = clean_text_lines(filtered_front)
+        clean_back = clean_text_lines(filtered_back)
+    else:
+        clean_front = filtered_front
+        clean_back = filtered_back
 
     # --- EXTRACTION ---
     step_start = time.time()
@@ -85,7 +89,11 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
     total_time = time.time() - request_start
     if user_id: users_repo.increment_extraction_stats(user_id, doc_type)
 
-    run_background_upload_and_log(user_id, doc_type, file_paths, info_extracted, document_id=document_id)
+    metadata = {
+        "total_time": f"{total_time:.2f}s",
+        "provider": "traditional"
+    }
+    run_background_upload_and_log(user_id, doc_type, file_paths, info_extracted, metadata=metadata, document_id=document_id)
 
     Log.info(f"[API] 🎉 Hoàn tất trích xuất {doc_type}")
     return {

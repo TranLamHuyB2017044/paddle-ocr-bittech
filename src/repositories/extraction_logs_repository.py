@@ -102,5 +102,62 @@ class ExtractionLogsRepository(BaseRepository):
             print(f"Update report error: {e}")
             return False
 
+    def get_recent_extractions(self, user_ids, limit=5):
+        """
+        Get recent extractions for a user or list of users.
+        Combines total time and provider from metadata to display on mini card.
+        """
+        from src.repositories.users_repository import users_repo
+        
+        try:
+            if not isinstance(user_ids, list):
+                uid = ObjectId(user_ids) if isinstance(user_ids, str) else user_ids
+                uids = [uid]
+            else:
+                uids = [ObjectId(u) if isinstance(u, str) else u for u in user_ids]
+
+            cursor = self.collection.find({"user_id": {"$in": uids}}).sort("created_at", -1).limit(limit)
+            
+            recent_logs = []
+            
+            # Simple cache for mapping user_id to username
+            user_cache = {}
+
+            for doc in cursor:
+                # Get detector account info
+                doc_uid = doc.get("user_id")
+                detector_username = "Unknown"
+                if doc_uid:
+                    uid_str = str(doc_uid)
+                    if uid_str not in user_cache:
+                        user_info = users_repo.find_by_id(doc_uid)
+                        user_cache[uid_str] = user_info.get("username", "Unknown") if user_info else "Unknown"
+                    detector_username = user_cache[uid_str]
+
+                # Extract interesting metadata details
+                metadata = doc.get("metadata", {}) or {}
+                
+                # Fetch provider if available (often stored in debug info or metadata)
+                provider = "unknown"
+                total_time = "N/A"
+                if isinstance(metadata, dict):
+                    provider = metadata.get("provider", "unknown")
+                    total_time = metadata.get("total_time", "N/A")
+                
+                recent_logs.append({
+                    "document_id": str(doc.get("document_id")),
+                    "document_type": doc.get("document_type"),
+                    "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+                    "provider": provider,
+                    "total_time": total_time,
+                    "saved_to_sheet": doc.get("saved_to_sheet", False),
+                    "detector_username": detector_username
+                })
+            
+            return recent_logs
+        except Exception as e:
+            print(f"Error getting recent extractions: {e}")
+            return []
+
 # Global instance
 extraction_logs_repo = ExtractionLogsRepository()

@@ -37,6 +37,12 @@ def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None,
         info = PostCleaner.clean(info, doc_type=doc_type)
 
         total_time = time.time() - request_start
+        
+        # Inject metadata for logging repo
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata["total_time"] = f"{total_time:.2f}s"
+        metadata["provider"] = "openai"
 
         # Increment user stats
         if user_id:

@@ -84,7 +84,7 @@ class OpenAIExtractor:
                         "content": (
                             "Bạn là chuyên gia trích xuất OCR trung thực. Quy tắc:\n"
                             "1. Không bịa đặt: Thiếu dữ liệu trả về null.\n"
-                            "2. Khôi phục dấu: Chỉ thêm dấu cho Họ Tên phổ biến (NGUYEN->NGUYỄN). Giữ nguyên nếu là tên lạ/dân tộc.\n"
+                            "2. Khôi phục dấu: Chỉ thêm dấu cho Họ Tên, Địa chỉ và Quê quán phổ biến để đúng chính tả tiếng Việt. Giữ nguyên nếu là tên lạ/dân tộc.\n"
                             "3. Tuyệt đối không thay đổi chữ cái gốc của văn bản."
                         )
                     },

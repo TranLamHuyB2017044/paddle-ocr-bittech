@@ -76,6 +76,19 @@ def register_routes(app):
             from src.repositories.extraction_logs_repository import extraction_logs_repo
             today_extractions = extraction_logs_repo.count_today_by_user(user_id)
 
+            managed_members_count = 0
+            query_user_ids = [user_data.get("_id")]
+            
+            role = user_data.get("role", 2)
+            account_id = user_data.get("account_id")
+            
+            if role == 1 and account_id:
+                team_members = list(users_repo.collection.find({"account_id": account_id}, {"_id": 1, "role": 1}))
+                managed_members_count = sum(1 for m in team_members if m.get("role") == 2)
+                query_user_ids = [m["_id"] for m in team_members]
+
+            recent_extractions = extraction_logs_repo.get_recent_extractions(query_user_ids, limit=5)
+
             return jsonify({
                 "statusCode": 200,
                 "message": "Success",
@@ -84,7 +97,9 @@ def register_routes(app):
                     "today_extractions": today_extractions,
                     "last_extraction_at": last_extraction_at.isoformat() if last_extraction_at else None,
                     "breakdown": breakdown,
-                    "doc_type_stats": breakdown
+                    "doc_type_stats": breakdown,
+                    "recent_extractions": recent_extractions,
+                    "managed_members": managed_members_count
                 }
             }), 200
         except Exception as e:

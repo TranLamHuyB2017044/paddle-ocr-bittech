@@ -13,6 +13,7 @@ from src.api.processors.traditional_processor import process_traditional
 from src.utils.redis_client import publish_event, redis_conn
 from src.utils.file_utils import calculate_files_hash
 from src.utils.post_cleaner import PostCleaner
+from src.utils.text_cleaner import clean_text_lines
 from src.config import DocStatus
 import threading
 import json
@@ -65,6 +66,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                 for idx, img_p in enumerate(image_paths):
                     res, _ = ocr_extract(img_p)
                     if res:
+                        res = clean_text_lines(res)
                         page_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
                         structured_data.append({"text": page_text, "page_num": idx + 1})
                     if os.path.exists(img_p): os.remove(img_p)
@@ -73,6 +75,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
         elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
             ocr_result, _ = ocr_extract(file_path)
             if ocr_result:
+                ocr_result = clean_text_lines(ocr_result)
                 text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
                 structured_data = [{"text": text, "page_num": 1}]
         
@@ -121,36 +124,18 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             
             # Trigger Background Upload and Logging for consistency
             from src.utils.background_tasks import run_background_upload_and_log
-            run_background_upload_and_log(user_id, doc_type, file_paths, manual_data, document_id=doc_id)
+            metadata = {
+                "total_time": f"{total_time:.2f}s",
+                "provider": "manual_kie"
+            }
+            run_background_upload_and_log(user_id, doc_type, file_paths, manual_data, metadata=metadata, document_id=doc_id)
             
             documents_repo.update_status(doc_id, DocStatus.READY, result=manual_data, debug={"total_time": f"{total_time:.2f}s", "provider": "manual_kie"})
             publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": manual_data, "debug": {"provider": "manual_kie"}})
             return
 
-        # 2. Cache Check
-        files_hash = calculate_files_hash(file_paths, raw_text=raw_text)
-        cache_key = f"cache:extract:{doc_type}:{provider}:{files_hash}"
-        if files_hash:
-            cached_result = redis_conn.get(cache_key)
-            if cached_result:
-                try:
-                    res_data = json.loads(cached_result)
-                    
-                    # Quota increment even for cache hit
-                    if user_id:
-                        users_repo.increment_extraction_stats(user_id, doc_type)
-                        Log.info(f"[Worker-Detect] ⚡ Cache Hit & Quota incremented (User: {user_id})")
-                        
-                        # LOG even on cache hit for history and "today_extractions" stat
-                        from src.utils.background_tasks import run_background_upload_and_log
-                        run_background_upload_and_log(user_id, doc_type, file_paths, res_data.get("data"), document_id=doc_id)
-                        
-                    documents_repo.update_status(doc_id, DocStatus.READY, result=res_data.get("data"), debug={**res_data.get("debug", {}), "cached": True})
-                    publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": res_data.get("data"), "debug": {"cached": True}})
-                    return
-                except: pass
+        # 2. Source Stage (Sequential XOR: raw_text OR OCR)
 
-        # 3. Source Stage (Sequential XOR: raw_text OR OCR)
         raw_front, raw_back = [], []
         ocr_front_time, ocr_back_time = 0.0, 0.0
         
@@ -168,17 +153,48 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             # 🖼️ Expand PDF to Images if needed
             all_images = []
             input_paths = list(file_paths) # Safe copy
+            
+            def check_is_pdf(path_file):
+                if path_file.lower().endswith('.pdf'): return True
+                try:
+                    with open(path_file, 'rb') as f:
+                        return f.read(4) == b'%PDF'
+                except:
+                    return False
+
+            native_pdf_text = []
+
             for p in input_paths:
-                if p.lower().endswith('.pdf'):
-                    Log.info(f"[Worker-Detect] 📄 Expanding PDF to images: {p}")
-                    pdf_imgs = get_pdf_pages_as_images(p)
-                    all_images.extend(pdf_imgs)
-                    # Add new temp images to file_paths so they get cleaned up in finally block
-                    file_paths.extend(pdf_imgs)
+                if check_is_pdf(p):
+                    # Step 1: Try PyMuPDF native text extraction first
+                    pages = extract_text_from_pdf(p)
+                    has_text = any(page.get('text', '').strip() for page in pages)
+                    
+                    if has_text:
+                        Log.info(f"[Worker-Detect] 📄 PDF '{p}' has native text, extracting directly...")
+                        for page in pages:
+                            if page.get('text'):
+                                native_pdf_text.append(page['text'])
+                    else:
+                        Log.info(f"[Worker-Detect] 📄 Expanding PDF to images: {p}")
+                        pdf_imgs = get_pdf_pages_as_images(p)
+                        all_images.extend(pdf_imgs)
+                        # Add new temp images to file_paths so they get cleaned up in finally block
+                        file_paths.extend(pdf_imgs)
                 else:
                     all_images.append(p)
 
-            if not all_images:
+            # If we successfully extracted native PDF text and there are no other pure images
+            if native_pdf_text and not all_images:
+                Log.info(f"[Worker-Detect] 📝 Using native PDF text source (Skipping OCR)")
+                raw_text_combined = "\n".join(native_pdf_text)
+                for line in raw_text_combined.split('\n'):
+                    if line.strip(): 
+                        raw_front.append({"text": line.strip(), "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0})
+                ocr_front_time, ocr_back_time = 0.0, 0.0
+                # Bypassing OCR flag
+                all_images = []
+            elif not all_images and not native_pdf_text:
                 raise Exception("No valid images found for OCR (PDF might be empty or invalid)")
 
             # OCR for all collected images
@@ -202,6 +218,28 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         else:
             raise Exception("No input source (text or image) provided")
 
+        if not raw_text:
+            # Sửa logic: Chỉ sửa lỗi tiếng Việt cho "hóa đơn" (invoice) hoặc "giấy tờ xe" (vehicleDocuments)
+            if doc_type in ['invoice', 'vehicleDocuments']:
+                Log.info(f"[Worker-Detect] 🪄 Chạy qua model sửa lỗi tiếng Việt cho loại: {doc_type}...")
+                
+                def extract_text_for_logging(data):
+                    if not data: return ""
+                    return " | ".join([str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in data])
+                    
+                Log.info(f"[Worker-Detect] 📄 [OCR Text Trước Clean] Front: {extract_text_for_logging(raw_front)}")
+                if raw_back:
+                    Log.info(f"[Worker-Detect] 📄 [OCR Text Trước Clean] Back: {extract_text_for_logging(raw_back)}")
+                    
+                if raw_front:
+                    raw_front = clean_text_lines(raw_front)
+                if raw_back:
+                    raw_back = clean_text_lines(raw_back)
+                    
+                Log.info(f"[Worker-Detect] ✨ [Text Sau Clean] Front: {extract_text_for_logging(raw_front)}")
+                if raw_back:
+                    Log.info(f"[Worker-Detect] ✨ [Text Sau Clean] Back: {extract_text_for_logging(raw_back)}")
+
         timer_info = {"start": request_start, "ocr_front": ocr_front_time, "ocr_back": ocr_back_time}
         
         # 4. Processing Phase
@@ -219,7 +257,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         if result_response:
             documents_repo.update_status(doc_id, DocStatus.READY, result=result_response.get("data"), debug=result_response.get("debug"))
             publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": result_response.get("data"), "debug": result_response.get("debug")})
-            if files_hash: redis_conn.setex(cache_key, 86400, json.dumps({"data": result_response.get("data"), "debug": result_response.get("debug")}))
+            pass # No caching needed
         else:
             raise Exception("Processing failed to return result")
             

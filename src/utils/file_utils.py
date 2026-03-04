@@ -17,7 +17,10 @@ def allowed_file(filename):
     Returns:
         bool: True nếu file hợp lệ, False nếu không
     """
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+    if not filename or "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[1].lower()
+    return ext in ALLOWED_EXTENSIONS
 
 
 def save_uploaded_files(front_file=None, back_file=None):

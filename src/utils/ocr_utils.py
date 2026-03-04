@@ -11,15 +11,25 @@ import cv2
 import os
 import threading
 
-def preprocess_for_ocr(path):
+def preprocess_for_ocr(path_or_img):
     """
     Tiền xử lý ảnh: Resize, tăng độ tương phản và khử nhiễu để tối ưu OCR
     Returns:
         numpy.ndarray: Ảnh đã được xử lý
     """
-    img = cv2.imread(path)
+    import numpy as np
+    img = None
+    
+    if isinstance(path_or_img, str):
+        if not os.path.exists(path_or_img):
+            Log.error(f"[PREPROCESS] ❌ Cannot find image at path: {path_or_img}")
+            return None
+        img = cv2.imread(path_or_img)
+    elif isinstance(path_or_img, np.ndarray):
+        img = path_or_img
+        
     if img is None:
-        Log.error(f"[PREPROCESS] ❌ Cannot read image: {path}")
+        Log.error(f"[PREPROCESS] ❌ Cannot read image: {path_or_img}")
         return None
         
     h, w = img.shape[:2]

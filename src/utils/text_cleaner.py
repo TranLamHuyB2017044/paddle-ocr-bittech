@@ -80,6 +80,10 @@ def clean_text_lines(input_data):
         if needs_cleaning(original_text):
             cleaned_text = clean_text_basic(original_text)
             clean_count += 1
+            if cleaned_text != original_text:
+                Log.info(f"   [CLEAN] 🔄 Đã sửa: '{original_text}' => '{cleaned_text}'")
+            else:
+                Log.info(f"   [CLEAN] ➖ Giữ nguyên: '{original_text}'")
         else:
             cleaned_text = original_text.strip()
             
