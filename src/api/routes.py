@@ -82,7 +82,12 @@ def register_routes(app):
             role = user_data.get("role", 2)
             account_id = user_data.get("account_id")
             
-            if role == 1 and account_id:
+            if role == 0:
+                # Admin: thấy toàn bộ hệ thống
+                query_user_ids = None
+                managed_members_count = users_repo.collection.count_documents({})
+            elif role == 1 and account_id:
+                # Manager: thấy tất cả thành viên trong cùng account
                 team_members = list(users_repo.collection.find({"account_id": account_id}, {"_id": 1, "role": 1}))
                 managed_members_count = sum(1 for m in team_members if m.get("role") == 2)
                 query_user_ids = [m["_id"] for m in team_members]

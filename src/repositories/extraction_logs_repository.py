@@ -108,31 +108,50 @@ class ExtractionLogsRepository(BaseRepository):
         Combines total time and provider from metadata to display on mini card.
         """
         from src.repositories.users_repository import users_repo
+        from src.repositories.documents_repository import documents_repo
         
         try:
-            if not isinstance(user_ids, list):
-                uid = ObjectId(user_ids) if isinstance(user_ids, str) else user_ids
-                uids = [uid]
+            # None = admin, lấy toàn bộ hệ thống
+            if user_ids is None:
+                cursor = self.collection.find({}).sort("created_at", -1).limit(limit)
             else:
-                uids = [ObjectId(u) if isinstance(u, str) else u for u in user_ids]
-
-            cursor = self.collection.find({"user_id": {"$in": uids}}).sort("created_at", -1).limit(limit)
+                if not isinstance(user_ids, list):
+                    uid = ObjectId(user_ids) if isinstance(user_ids, str) else user_ids
+                    uids = [uid]
+                else:
+                    uids = [ObjectId(u) if isinstance(u, str) else u for u in user_ids]
+                cursor = self.collection.find({"user_id": {"$in": uids}}).sort("created_at", -1).limit(limit)
             
             recent_logs = []
             
-            # Simple cache for mapping user_id to username
+            # Simple cache for mapping user_id to fullname
             user_cache = {}
+            # Simple cache for mapping document_id to filename
+            doc_cache = {}
 
             for doc in cursor:
                 # Get detector account info
                 doc_uid = doc.get("user_id")
-                detector_username = "Unknown"
+                detector_name = "Unknown"
                 if doc_uid:
                     uid_str = str(doc_uid)
                     if uid_str not in user_cache:
                         user_info = users_repo.find_by_id(doc_uid)
-                        user_cache[uid_str] = user_info.get("username", "Unknown") if user_info else "Unknown"
-                    detector_username = user_cache[uid_str]
+                        user_cache[uid_str] = user_info.get("fullname", "Unknown") if user_info else "Unknown"
+                    detector_name = user_cache[uid_str]
+
+                # Get filename from documents collection
+                filename = None
+                raw_doc_id = doc.get("document_id")
+                if raw_doc_id:
+                    doc_id_str = str(raw_doc_id)
+                    if doc_id_str not in doc_cache:
+                        try:
+                            document = documents_repo.find_by_id(doc_id_str)
+                            doc_cache[doc_id_str] = document.get("filename") if document else None
+                        except Exception:
+                            doc_cache[doc_id_str] = None
+                    filename = doc_cache[doc_id_str]
 
                 # Extract interesting metadata details
                 metadata = doc.get("metadata", {}) or {}
@@ -145,13 +164,12 @@ class ExtractionLogsRepository(BaseRepository):
                     total_time = metadata.get("total_time", "N/A")
                 
                 recent_logs.append({
-                    "document_id": str(doc.get("document_id")),
+                    "document_id": str(raw_doc_id),
                     "document_type": doc.get("document_type"),
+                    "filename": filename,
                     "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
-                    "provider": provider,
                     "total_time": total_time,
-                    "saved_to_sheet": doc.get("saved_to_sheet", False),
-                    "detector_username": detector_username
+                    "detector_name": detector_name
                 })
             
             return recent_logs
