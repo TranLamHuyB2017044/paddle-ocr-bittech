@@ -5,17 +5,22 @@ API Routes
 import os
 from flask import request, jsonify, send_from_directory, g
 import requests
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import uuid
 from src.utils.auth_middleware import require_auth
 from src.utils.file_utils import save_uploaded_files
 from src.utils.redis_client import rag_queue
 from src.tasks.document_tasks import process_detection_task
 from src.repositories.documents_repository import documents_repo
 from src.utils.logger import Log
-from src.config import MAX_OCR_FILE_SIZE, DocStatus, PLANS_CONFIG
+from src.config import MAX_OCR_FILE_SIZE, DocStatus, PLANS_CONFIG, UPLOAD_FOLDER
 from src.services.subscription_service import subscription_service
 from src.repositories.accounts_repository import accounts_repo
+from src.api.processors.traditional_processor import process_traditional
+from src.api.processors.vlm_processor import process_vlm_detection
 
-ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments'}
+ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments', 'menu'}
 
 def validate_request_params(req):
     """
@@ -110,6 +115,7 @@ def register_routes(app):
         except Exception as e:
             Log.error(f"[API] Error fetching user stats: {e}")
             return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
+
 
     @app.route("/api/traditional", methods=["POST"])
     @require_auth
@@ -492,6 +498,72 @@ def register_routes(app):
             Log.error(f"[API] ❌ Error: {e}")
             return jsonify({"statusCode": 500, "message": str(e)}), 500
 
+
+    @app.route("/api/corrections/submit", methods=["POST"])
+    @require_auth
+    def submit_correction():
+        """
+        API để người dùng map lại kết quả đúng. Hệ thống sẽ học từ đây.
+        Payload: {
+            "document_id": "xxx",
+            "corrected_data": {...}
+        }
+        """
+        try:
+            data = request.json
+            doc_id = data.get("document_id")
+            corrected_data = data.get("corrected_data")
+
+            if not doc_id or not corrected_data:
+                return jsonify({"statusCode": 400, "message": "Missing document_id or corrected_data"}), 400
+
+            # 1. Lấy dữ liệu cũ để so sánh
+            doc = documents_repo.find_by_id(doc_id)
+            if not doc:
+                return jsonify({"statusCode": 404, "message": "Document not found"}), 404
+            
+            old_result = doc.get("result", {})
+            doc_type = doc.get("document_type", "unknown")
+            user_id = getattr(g, 'user_id', None)
+
+            # 2. So sánh và lưu vào bảng Corrections
+            from src.repositories.corrections_repository import corrections_repo
+            
+            def track_diff(obj1, obj2, prefix=""):
+                if not isinstance(obj1, dict) or not isinstance(obj2, dict):
+                    return
+                
+                for key, val2 in obj2.items():
+                    val1 = obj1.get(key)
+                    field_path = f"{prefix}.{key}" if prefix else key
+                    
+                    if isinstance(val2, list) and isinstance(val1, list):
+                        # So sánh từng phần tử trong list (ví dùng menu_items)
+                        for i, (item1, item2) in enumerate(zip(val1, val2)):
+                            track_diff(item1, item2, f"{field_path}[{i}]")
+                    elif val1 != val2 and val2 is not None:
+                        # Log cặp thay đổi
+                        corrections_repo.log_correction(
+                            doc_type=doc_type,
+                            field_name=field_path,
+                            original_text=val1,
+                            corrected_text=val2,
+                            user_id=user_id
+                        )
+
+            track_diff(old_result, corrected_data)
+
+            # 3. Cập nhật kết quả vào document để làm giàu dữ liệu (enrichment)
+            documents_repo.update_status(doc_id, status=doc.get("status"), result=corrected_data)
+
+            return jsonify({
+                "statusCode": 200,
+                "message": "Correction submitted and learned successfully"
+            }), 200
+
+        except Exception as e:
+            Log.error(f"[API] Correction Error: {e}")
+            return jsonify({"statusCode": 500, "message": str(e)}), 500
 
     @app.route("/api/report_extraction", methods=["POST"])
     @require_auth

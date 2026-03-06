@@ -11,6 +11,39 @@ class PostCleaner:
     """
     
     @staticmethod
+    def normalize_price(price_str):
+        """
+        Chuyển đổi các định dạng giá như 50k, 1.2tr, 50.000đ thành số nguyên (dưới dạng chuỗi)
+        """
+        if not price_str or not isinstance(price_str, str):
+            return price_str
+            
+        original = price_str.lower().strip()
+        # Loại bỏ các ký tự không phải số và đơn vị (k, tr, đ, dot, comma)
+        # Giữ lại số và các chữ k, t, r
+        import re
+        
+        # Xử lý trường hợp "k" (nghìn)
+        if 'k' in original:
+            val = re.findall(r"[\d.]+", original)
+            if val:
+                try:
+                    return str(int(float(val[0].replace(',', '')) * 1000))
+                except: pass
+                
+        # Xử lý trường hợp "tr" hoặc "triệu"
+        if 'tr' in original or 'triệu' in original:
+            val = re.findall(r"[\d.]+", original)
+            if val:
+                try:
+                    return str(int(float(val[0].replace(',', '')) * 1000000))
+                except: pass
+        
+        # Trường hợp bình thường: xóa các ký tự không phải số
+        numeric_only = re.sub(r"[^\d]", "", original)
+        return numeric_only if numeric_only else price_str
+
+    @staticmethod
     def clean(data, doc_type="idCard"):
         if not data: return {}
         
@@ -32,8 +65,47 @@ class PostCleaner:
         # 3. Clean Name (Viết hoa chữ cái đầu mỗi từ, xóa ký tự đặc biệt)
         if "fullName" in cleaned_data and cleaned_data["fullName"]:
             cleaned_data["fullName"] = PostCleaner._format_name(str(cleaned_data["fullName"]))
+
+        # --- NEW: Học từ Correction Dictionary (Áp dụng cho mọi loại tài liệu) ---
+        try:
+            from src.repositories.corrections_repository import corrections_repo
+            from rapidfuzz import fuzz
             
-        # 4. Reorder Keys (Quan trọng để JSON đẹp và đúng thứ tự Schema)
+            # Lấy các cặp đã được sửa ít nhất 2 lần để đảm bảo độ tin cậy
+            learned_rules = corrections_repo.get_common_corrections(doc_type, min_count=2)
+            
+            if learned_rules:
+                for rule in learned_rules:
+                    f_name = rule["field_name"]
+                    old_v = str(rule["raw_text"]).lower().strip()
+                    new_v = rule["corrected_text"]
+                    
+                    if f_name in cleaned_data and cleaned_data[f_name]:
+                        current_v = str(cleaned_data[f_name]).lower().strip()
+                        
+                        # Sử dụng Fuzzy Matching (khớp trên 90% thì sửa)
+                        if fuzz.ratio(current_v, old_v) >= 90:
+                             if cleaned_data[f_name] != new_v:
+                                 Log.info(f"[PostCleaner] 🎓 Fuzzy Learning: '{cleaned_data[f_name]}' ≈ '{old_v}' -> Auto-fixing to '{new_v}'")
+                                 cleaned_data[f_name] = new_v
+        except Exception as e:
+            Log.error(f"[PostCleaner] Learning optimization error: {e}")
+
+        # 4. Clean Price/Amount for Menu and Invoice
+        if doc_type == "menu" and "menu_items" in cleaned_data:
+            items = cleaned_data["menu_items"]
+            if isinstance(items, list):
+                for item in items:
+                    if "price" in item and item["price"]:
+                        item["price"] = PostCleaner.normalize_price(item["price"])
+        
+        if doc_type == "invoice":
+            price_fields = ["tong_so_tien", "total_amount", "tong_tien"]
+            for f in price_fields:
+                if f in cleaned_data and cleaned_data[f]:
+                    cleaned_data[f] = PostCleaner.normalize_price(cleaned_data[f])
+             
+        # 5. Reorder Keys (Quan trọng để JSON đẹp và đúng thứ tự Schema)
         
         # Định nghĩa thứ tự cho từng loại
         key_orders = {
@@ -50,6 +122,9 @@ class PostCleaner:
             ],
             "document": [
                 "title", "summary", "keywords", "dates", "entities"
+            ],
+            "menu": [
+                "business_name", "business_info", "menu_items"
             ]
         }
         

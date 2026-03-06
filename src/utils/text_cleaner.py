@@ -5,7 +5,7 @@ Làm sạch text sử dụng AI model
 import time
 from datetime import datetime
 from src.models.model_loader import model_loader
-from src.config import DATE_KEYWORDS, FRONT_KEYWORDS, BACK_KEYWORDS 
+from src.config import DATE_KEYWORDS, FRONT_KEYWORDS, BACK_KEYWORDS, MENU_KEYWORDS 
 from src.utils.logger import Log
 
 
@@ -48,7 +48,7 @@ def clean_text_lines(input_data):
     start_time = time.time()
     
     # Pool all keywords to check against
-    KEYWORDS_POOL = FRONT_KEYWORDS + BACK_KEYWORDS + DATE_KEYWORDS
+    KEYWORDS_POOL = FRONT_KEYWORDS + BACK_KEYWORDS + DATE_KEYWORDS + MENU_KEYWORDS
     
     # Function to check if line needs cleaning
     def needs_cleaning(text):

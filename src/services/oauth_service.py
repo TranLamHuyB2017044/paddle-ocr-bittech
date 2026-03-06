@@ -41,6 +41,11 @@ class OAuthService:
                 "headers": ["Số GPLX", "Họ tên", "Ngày sinh", "Quốc tịch", "Hạng", "Ngày hết hạn", "Ngày cấp", "Ngày trúng tuyển", "Created At"],
                 "fields": ["idNumber", "fullName", "dob", "nationality", "rank", "expiryDate", "dateOfIssue", "dateOfBegining"]
             },
+            "menu": {
+                "sheet_name": "menu_data",
+                "headers": ["Tên quán", "Thông tin chung", "Danh sách món ăn", "Created At"],
+                "fields": ["business_name", "business_info", "menu_items"]
+            },
             "default": {
                 "sheet_name": "ocr_data",
                 "headers": ["Raw Data", "Created At"],

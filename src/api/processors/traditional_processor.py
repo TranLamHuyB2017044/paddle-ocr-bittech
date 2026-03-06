@@ -33,8 +33,8 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
     filtered_front = filter_useless_lines(raw_front)
     filtered_back = filter_useless_lines(raw_back)
 
-    # --- CLEANING (Chỉ chạy cho invoice và vehicleDocuments theo yêu cầu) ---
-    if doc_type in ['invoice', 'vehicleDocuments']:
+    # --- CLEANING (Chạy cho invoice, vehicleDocuments và menu) ---
+    if doc_type in ['invoice', 'vehicleDocuments', 'menu']:
         clean_front = clean_text_lines(filtered_front)
         clean_back = clean_text_lines(filtered_back)
     else:

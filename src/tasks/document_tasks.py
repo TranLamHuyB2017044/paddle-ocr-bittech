@@ -219,8 +219,8 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             raise Exception("No input source (text or image) provided")
 
         if not raw_text:
-            # Sửa logic: Chỉ sửa lỗi tiếng Việt cho "hóa đơn" (invoice) hoặc "giấy tờ xe" (vehicleDocuments)
-            if doc_type in ['invoice', 'vehicleDocuments']:
+            # Sửa logic: Chỉ sửa lỗi tiếng Việt cho "hóa đơn" (invoice), "giấy tờ xe" (vehicleDocuments) hoặc "thực đơn" (menu)
+            if doc_type in ['invoice', 'vehicleDocuments', 'menu']:
                 Log.info(f"[Worker-Detect] 🪄 Chạy qua model sửa lỗi tiếng Việt cho loại: {doc_type}...")
                 
                 def extract_text_for_logging(data):

@@ -94,3 +94,14 @@ class Document(BaseModel):
     keywords: list[str] = Field(default_factory=list, description="Từ khóa chính")
     dates: list[str] = Field(default_factory=list, description="Các mốc thời gian")
     entities: list[str] = Field(default_factory=list, description="Các thực thể (người, tổ chức)")
+
+class MenuItem(BaseModel):
+    name: Optional[str] = Field(description="Tên sản phẩm/món ăn")
+    price: Optional[str] = Field(description="Giá sản phẩm/món ăn")
+    description: Optional[str] = Field(description="Mô tả sản phẩm, có thể null")
+    thumbnail_url: Optional[str] = Field(description="URL hình ảnh sản phẩm (nếu có), có thể null")
+
+class RestaurantMenu(BaseModel):
+    business_name: Optional[str] = Field(description="Tên quán ăn/nhành hàng")
+    business_info: Optional[str] = Field(description="Thông tin chung về quán (địa chỉ, SĐT, v.v.)")
+    menu_items: List[MenuItem] = Field(default_factory=list, description="Danh sách các sản phẩm/món ăn từ menu")

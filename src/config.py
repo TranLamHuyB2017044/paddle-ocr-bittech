@@ -141,6 +141,11 @@ BACK_KEYWORDS = [
 
 ]
 
+# Từ khóa cho thực đơn (Menu)
+MENU_KEYWORDS = [
+    "thực đơn", "menu", "giá", "giá tiền", "đồ uống", "món ăn", "món khai vị", "món chính", "khai vị", "giải khát"
+]
+
 # ========== EXTRACTION CONFIG ==========
 # Từ khóa địa chỉ
 ADDRESS_KEYWORDS = [

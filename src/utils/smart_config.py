@@ -237,7 +237,8 @@ CONFIG_MAP = {
     "driverLicense": DRIVER_LICENSE_CONFIG,
     "invoice": INVOICE_CONFIG,
     "document": DOCUMENT_CONFIG,
-    "vehicleDocuments": VEHICLE_DOC_CONFIG
+    "vehicleDocuments": VEHICLE_DOC_CONFIG,
+    "menu": {"business_name": {"keywords": ["thực đơn", "menu"], "extraction_mode": "auto"}}
 }
 
 def get_smart_config(doc_type):
