@@ -32,8 +32,13 @@ class CloudinaryService:
             return None
 
         try:
-            # Upload the image
-            response = cloudinary.uploader.upload(file_path, folder="ocr_uploads")
+            # Upload the image with the original filename for easier debugging
+            response = cloudinary.uploader.upload(
+                file_path, 
+                folder="ocr_uploads",
+                use_filename=True,
+                unique_filename=False
+            )
             return response.get("secure_url")
         except Exception as e:
             Log.error(f"[CLOUDINARY] ❌ Upload failed: {e}")

@@ -10,6 +10,46 @@ class PostCleaner:
     Mục đích: Chuẩn hóa format (ngày tháng, số), loại bỏ rác OCR lần cuối.
     """
     
+    # Local Cache to store common corrections and avoid DB calls on every request
+    _corrections_cache = {}
+    _last_cache_update = 0
+    CACHE_TTL = 300  # 5 minutes
+
+    @staticmethod
+    def _load_corrections(doc_type):
+        """
+        Load common corrections from DB into a fast lookup structure.
+        Structure: { field_name: { raw_text_lower: corrected_text } }
+        """
+        now = time.time()
+        cache_key = f"rules_{doc_type}"
+        
+        # Return from cache if valid
+        if cache_key in PostCleaner._corrections_cache and (now - PostCleaner._last_cache_update < PostCleaner.CACHE_TTL):
+            return PostCleaner._corrections_cache[cache_key]
+
+        try:
+            from src.repositories.corrections_repository import corrections_repo
+            rules = corrections_repo.get_common_corrections(doc_type, min_count=2)
+            
+            # Organize for O(1) field-based lookup
+            organized_rules = {}
+            for r in rules:
+                f_name = r["field_name"]
+                if f_name not in organized_rules:
+                    organized_rules[f_name] = []
+                organized_rules[f_name].append({
+                    "raw": str(r["raw_text"]).lower().strip(),
+                    "fixed": r["corrected_text"]
+                })
+            
+            PostCleaner._corrections_cache[cache_key] = organized_rules
+            PostCleaner._last_cache_update = now
+            return organized_rules
+        except Exception as e:
+            Log.error(f"[PostCleaner] Cache load error: {e}")
+            return {}
+
     @staticmethod
     def normalize_price(price_str):
         """
@@ -68,26 +108,27 @@ class PostCleaner:
 
         # --- NEW: Học từ Correction Dictionary (Áp dụng cho mọi loại tài liệu) ---
         try:
-            from src.repositories.corrections_repository import corrections_repo
             from rapidfuzz import fuzz
+            # LOAD TỪ CACHE (Tốn O(1) để lấy rules đã tổ chức sẵn)
+            organized_rules = PostCleaner._load_corrections(doc_type)
             
-            # Lấy các cặp đã được sửa ít nhất 2 lần để đảm bảo độ tin cậy
-            learned_rules = corrections_repo.get_common_corrections(doc_type, min_count=2)
-            
-            if learned_rules:
-                for rule in learned_rules:
-                    f_name = rule["field_name"]
-                    old_v = str(rule["raw_text"]).lower().strip()
-                    new_v = rule["corrected_text"]
-                    
-                    if f_name in cleaned_data and cleaned_data[f_name]:
-                        current_v = str(cleaned_data[f_name]).lower().strip()
+            if organized_rules:
+                # Chỉ kiểm tra các quy tắc cho những field THỰC SỰ có trong data hiện tại
+                for field_name, value in cleaned_data.items():
+                    if field_name in organized_rules:
+                        current_v = str(value).lower().strip()
                         
-                        # Sử dụng Fuzzy Matching (khớp trên 90% thì sửa)
-                        if fuzz.ratio(current_v, old_v) >= 90:
-                             if cleaned_data[f_name] != new_v:
-                                 Log.info(f"[PostCleaner] 🎓 Fuzzy Learning: '{cleaned_data[f_name]}' ≈ '{old_v}' -> Auto-fixing to '{new_v}'")
-                                 cleaned_data[f_name] = new_v
+                        # Duyệt qua các quy tắc của RIÊNG field này
+                        for rule in organized_rules[field_name]:
+                            old_v = rule["raw"]
+                            new_v = rule["fixed"]
+                            
+                            # So sánh mờ (Fuzzy)
+                            if fuzz.ratio(current_v, old_v) >= 90:
+                                if value != new_v:
+                                    Log.info(f"[PostCleaner] 🎓 Optimized Fuzzy Learning: '{value}' ≈ '{old_v}' -> '{new_v}'")
+                                    cleaned_data[field_name] = new_v
+                                    break # Đã sửa xong field này, không cần check rule khác
         except Exception as e:
             Log.error(f"[PostCleaner] Learning optimization error: {e}")
 

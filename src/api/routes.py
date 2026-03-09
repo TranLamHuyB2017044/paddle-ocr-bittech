@@ -18,7 +18,6 @@ from src.config import MAX_OCR_FILE_SIZE, DocStatus, PLANS_CONFIG, UPLOAD_FOLDER
 from src.services.subscription_service import subscription_service
 from src.repositories.accounts_repository import accounts_repo
 from src.api.processors.traditional_processor import process_traditional
-from src.api.processors.vlm_processor import process_vlm_detection
 
 ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments', 'menu'}
 

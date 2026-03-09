@@ -198,23 +198,24 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                 raise Exception("No valid images found for OCR (PDF might be empty or invalid)")
 
             # OCR for all collected images
-            ocr_results = []
-            ocr_times = []
-            for img_p in all_images:
-                t = time.time()
-                res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
-                ocr_results.append(res)
-                ocr_times.append(time.time() - t)
-            
-            raw_front = ocr_results[0]
-            raw_back = []
-            if len(ocr_results) > 1:
-                # Combine all subsequent pages into raw_back
-                for res in ocr_results[1:]:
-                    raw_back.extend(res)
-            
-            ocr_front_time = ocr_times[0]
-            ocr_back_time = sum(ocr_times[1:]) if len(ocr_times) > 1 else 0.0
+            if all_images:
+                ocr_results = []
+                ocr_times = []
+                for img_p in all_images:
+                    t = time.time()
+                    res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
+                    ocr_results.append(res)
+                    ocr_times.append(time.time() - t)
+                
+                raw_front = ocr_results[0]
+                raw_back = []
+                if len(ocr_results) > 1:
+                    # Combine all subsequent pages into raw_back
+                    for res in ocr_results[1:]:
+                        raw_back.extend(res)
+                
+                ocr_front_time = ocr_times[0]
+                ocr_back_time = sum(ocr_times[1:]) if len(ocr_times) > 1 else 0.0
         else:
             raise Exception("No input source (text or image) provided")
 
@@ -265,5 +266,17 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         Log.error(f"[Worker-Detect] Failed: {e}")
         documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=str(e))
         publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.FAILED, "type": doc_type, "error": str(e)})
+        
+        # Push error log to database and upload to Cloudinary for debugging
+        try:
+            from src.utils.background_tasks import run_background_upload_and_log
+            if 'file_paths' in locals() and file_paths:
+                metadata = {"status": "failed", "error": str(e)}
+                # Copy file_paths to prevent thread conflicts, though both may attempt cleanup
+                run_background_upload_and_log(user_id, doc_type, list(file_paths), {"error": str(e)}, metadata=metadata, document_id=doc_id)
+                # Clear local file_paths so finally block doesn't delete them before upload finishes
+                file_paths = []
+        except Exception as log_e:
+            Log.error(f"[Worker-Detect] Failed to trigger error background log: {log_e}")
     finally:
         if 'file_paths' in locals() and file_paths: silent_cleanup_files(file_paths)
