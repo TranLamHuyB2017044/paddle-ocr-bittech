@@ -178,7 +178,7 @@ def register_routes(app):
             )
 
             # ===== 4. Lắng nghe Redis & Double Check DB =====
-            wait_timeout = 10 # Giảm timeout xuống 10s để tránh chiếm dụng thread quá lâu
+            wait_timeout = 300 # Đợi tối đa 5 phút để lấy kết quả xử lý cuối cùng
             start_wait = time.time()
             final_result = None
 
@@ -361,7 +361,7 @@ def register_routes(app):
                 job_timeout="5m"
             )
 
-            wait_timeout = 10
+            wait_timeout = 300 # Đợi tối đa 5 phút để lấy kết quả xử lý cuối cùng
             start_wait = time.time()
             final_result = None
 

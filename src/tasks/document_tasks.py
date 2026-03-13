@@ -219,27 +219,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         else:
             raise Exception("No input source (text or image) provided")
 
-        if not raw_text:
-            # Sửa logic: Chỉ sửa lỗi tiếng Việt cho "hóa đơn" (invoice), "giấy tờ xe" (vehicleDocuments) hoặc "thực đơn" (menu)
-            if doc_type in ['invoice', 'vehicleDocuments', 'menu']:
-                Log.info(f"[Worker-Detect] 🪄 Chạy qua model sửa lỗi tiếng Việt cho loại: {doc_type}...")
-                
-                def extract_text_for_logging(data):
-                    if not data: return ""
-                    return " | ".join([str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in data])
-                    
-                Log.info(f"[Worker-Detect] 📄 [OCR Text Trước Clean] Front: {extract_text_for_logging(raw_front)}")
-                if raw_back:
-                    Log.info(f"[Worker-Detect] 📄 [OCR Text Trước Clean] Back: {extract_text_for_logging(raw_back)}")
-                    
-                if raw_front:
-                    raw_front = clean_text_lines(raw_front)
-                if raw_back:
-                    raw_back = clean_text_lines(raw_back)
-                    
-                Log.info(f"[Worker-Detect] ✨ [Text Sau Clean] Front: {extract_text_for_logging(raw_front)}")
-                if raw_back:
-                    Log.info(f"[Worker-Detect] ✨ [Text Sau Clean] Back: {extract_text_for_logging(raw_back)}")
+        # [CLEANING DISABLED] Toàn bộ dữ liệu thô từ OCR được chuyển thẳng cho AI xử lý theo yêu cầu.
 
         timer_info = {"start": request_start, "ocr_front": ocr_front_time, "ocr_back": ocr_back_time}
         
