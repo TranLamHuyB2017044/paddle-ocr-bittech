@@ -1,8 +1,9 @@
 import re
 import os
+import time
 from src.utils.logger import Log
 from src.config import CCCD_PROVINCE_CODE_MAP, DEFAULT_PLACE_OF_ISSUE, DEFAULT_NATIONALITY
-from datetime import datetime
+from datetime import datetime 
 
 class PostCleaner:
     """
@@ -84,11 +85,47 @@ class PostCleaner:
         return numeric_only if numeric_only else price_str
 
     @staticmethod
+    def _normalize_address_part(text):
+        """
+        Chuẩn hóa phần Tỉnh/Thành phố trong địa chỉ bằng Fuzzy Matching.
+        Giúp tránh Hallucination bằng cách ép về danh mục thực tế.
+        """
+        if not text or len(str(text)) < 3:
+            return text
+            
+        from rapidfuzz import process, fuzz
+        from src.config import CCCD_PROVINCE_CODE_MAP
+        
+        provinces = list(set(CCCD_PROVINCE_CODE_MAP.values()))
+        
+        # Tách text thành các phần (thường Tỉnh/Thành phố ở cuối)
+        parts = [p.strip() for p in str(text).split(',')]
+        if not parts:
+            return text
+            
+        last_part = parts[-1]
+        
+        # Tìm kiếm mờ trong danh sách tỉnh
+        match = process.extractOne(last_part, provinces, scorer=fuzz.token_sort_ratio)
+        
+        if match and match[1] >= 85:
+            # Nếu tìm thấy Tỉnh khớp > 85%, thay thế phần cuối bằng Tỉnh chuẩn
+            parts[-1] = match[0]
+            return ", ".join(parts)
+            
+        return text
+
+    @staticmethod
     def clean(data, doc_type="idCard"):
         if not data: return {}
         
         cleaned_data = data.copy()
-        
+
+        # 0. Normalize Address/Hometown (New Logic)
+        for field in ["address", "hometown"]:
+            if field in cleaned_data and cleaned_data[field]:
+                cleaned_data[field] = PostCleaner._normalize_address_part(cleaned_data[field])
+
         # 1. Clean ID Number (Xóa khoảng trắng, ký tự lại)
         if "idNumber" in cleaned_data and cleaned_data["idNumber"]:
             raw_id = cleaned_data["idNumber"]
