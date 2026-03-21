@@ -14,6 +14,8 @@ from src.utils.redis_client import publish_event, redis_conn
 from src.utils.file_utils import calculate_files_hash
 from src.utils.post_cleaner import PostCleaner
 from src.utils.text_cleaner import clean_text_lines
+from src.utils.text_normalizer import normalize_document_text
+from src.extractors.document_check_extractor import document_check_extractor
 from src.config import DocStatus
 import threading
 import json
@@ -260,3 +262,159 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             Log.error(f"[Worker-Detect] Failed to trigger error background log: {log_e}")
     finally:
         if 'file_paths' in locals() and file_paths: silent_cleanup_files(file_paths)
+def process_document_check_task(doc_id, user_id, file_path, company_schema, doc_type="invoice"):
+    """
+    Background task to process document checking against a schema.
+    """
+    try:
+        Log.info(f"[Worker-Check] Starting document check: {doc_id} (Type: {doc_type})")
+        documents_repo.update_status(doc_id, DocStatus.PROCESSING)
+        publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.PROCESSING, "type": "check-document"})
+        
+        filename = os.path.basename(file_path).lower()
+        ext = filename.split('.')[-1]
+        
+        all_blocks = [] # List of {"page": int, "line": int, "bbox": list, "text": str}
+        
+        # 1. Extraction Stage
+        if ext in ['docx', 'doc']:
+            from src.utils.word_utils import extract_lines_from_word
+            all_blocks = extract_lines_from_word(file_path)
+        elif ext == 'pdf':
+            from src.utils.pdf_utils import is_pdf_scanned, extract_text_with_bboxes_from_pdf, get_pdf_pages_as_images
+            if is_pdf_scanned(file_path):
+                Log.info(f"[Worker-Check] PDF '{filename}' is scanned, using OCR...")
+                image_paths = get_pdf_pages_as_images(file_path)
+                for idx, img_p in enumerate(image_paths):
+                    ocr_res, _ = ocr_extract(img_p)
+                    for line_idx, line in enumerate(ocr_res):
+                        # Convert [[x,y], [x,y], [x,y], [x,y]] to [x1, y1, x2, y2]
+                        box = line["box"]
+                        x_min = min(p[0] for p in box)
+                        y_min = min(p[1] for p in box)
+                        x_max = max(p[0] for p in box)
+                        y_max = max(p[1] for p in box)
+                        
+                        all_blocks.append({
+                            "page": idx + 1,
+                            "line": line_idx + 1,
+                            "bbox": [x_min, y_min, x_max, y_max],
+                            "text": line["text"]
+                        })
+                    if os.path.exists(img_p): os.remove(img_p)
+            else:
+                all_blocks = extract_text_with_bboxes_from_pdf(file_path)
+        elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
+            ocr_res, _ = ocr_extract(file_path)
+            for line_idx, line in enumerate(ocr_res):
+                box = line["box"]
+                x_min = min(p[0] for p in box)
+                y_min = min(p[1] for p in box)
+                x_max = max(p[0] for p in box)
+                y_max = max(p[1] for p in box)
+                
+                all_blocks.append({
+                    "page": 1,
+                    "line": line_idx + 1,
+                    "bbox": [x_min, y_min, x_max, y_max],
+                    "text": line["text"]
+                })
+        else:
+            raise Exception(f"Unsupported file format: {ext}")
+
+        if not all_blocks:
+            raise Exception("No text could be extracted from the document.")
+
+        # 2. Normalization & Formatting
+        for block in all_blocks:
+            block["text"] = normalize_document_text(block["text"])
+
+        # 3. Chunking & GPT processing
+        # Group by pages
+        pages_to_blocks = {}
+        for block in all_blocks:
+            p = block["page"]
+            if p not in pages_to_blocks: pages_to_blocks[p] = []
+            pages_to_blocks[p].append(block)
+        
+        max_pages = max(pages_to_blocks.keys()) if pages_to_blocks else 0
+        chunk_size = 5
+        final_errors = []
+        final_warnings = []
+        total_summary = {
+            "total_errors": 0,
+            "error_breakdown": { "TYPO":0, "NUMBER_MISMATCH":0, "NAME_MISMATCH":0,
+                                 "ADDRESS_MISMATCH":0, "MISSING_INFO":0, "DATE_MISMATCH":0 }
+        }
+        token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
+        
+        for i in range(1, max_pages + 1, chunk_size):
+            chunk_blocks = []
+            for p_idx in range(i, min(i + chunk_size, max_pages + 1)):
+                if p_idx in pages_to_blocks:
+                    chunk_blocks.extend(pages_to_blocks[p_idx])
+            
+            if not chunk_blocks: continue
+            
+            # Format block strings
+            block_strings = []
+            for b in chunk_blocks:
+                # b['bbox'] is [x1, y1, x2, y2]
+                bbox = b.get('bbox')
+                if bbox and isinstance(bbox, list) and len(bbox) == 4:
+                    bbox_str = f"({bbox[0]:.1f},{bbox[1]:.1f},{bbox[2]:.1f},{bbox[3]:.1f})"
+                else:
+                    bbox_str = "null"
+                
+                block_strings.append(f"[Trang {b['page']} | Dòng {b['line']} | bbox:{bbox_str}] {b['text']}")
+            
+            blocks_text = "\n".join(block_strings)
+            
+            # Call GPT
+            resp, usage = document_check_extractor.check_document(blocks_text, company_schema, doc_type)
+            
+            if usage:
+                token_usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0)
+                token_usage["completion_tokens"] += getattr(usage, "completion_tokens", 0)
+                token_usage["total_tokens"] += getattr(usage, "total_tokens", 0)
+
+            if resp:
+                final_errors.extend(resp.get("errors", []))
+                final_warnings.extend(resp.get("warnings", []))
+                
+                # Update summary
+                chunk_sum = resp.get("summary", {})
+                total_summary["total_errors"] += chunk_sum.get("total_errors", 0)
+                br = chunk_sum.get("error_breakdown", {})
+                for k, v in br.items():
+                    if k in total_summary["error_breakdown"]:
+                        total_summary["error_breakdown"][k] += v
+
+        # Combine results
+        merged_result = {
+            "status": "FAIL" if total_summary["total_errors"] > 0 else "PASS",
+            "summary": total_summary,
+            "errors": final_errors,
+            "warnings": final_warnings,
+            "metadata": {
+                "token_usage": token_usage
+            }
+        }
+        
+        Log.info(f"[Worker-Check] ✅ Check completed. Usage: {token_usage['total_tokens']} tokens")
+
+        # 4. Completion
+        documents_repo.update_status(doc_id, DocStatus.READY, result=merged_result)
+        publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": "check-document", "result": merged_result})
+        
+    except Exception as e:
+        Log.error(f"[Worker-Check] Failed: {e}")
+        traceback.print_exc()
+        documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=str(e))
+        publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.FAILED, "type": "check-document", "error": str(e)})
+    finally:
+        if 'file_path' in locals() and file_path: silent_cleanup_files(file_path)

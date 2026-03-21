@@ -11,13 +11,13 @@ import uuid
 from src.utils.auth_middleware import require_auth
 from src.utils.file_utils import save_uploaded_files
 from src.utils.redis_client import rag_queue
-from src.tasks.document_tasks import process_detection_task
+from src.tasks.document_tasks import process_detection_task, process_document_check_task
 from src.repositories.documents_repository import documents_repo
 from src.utils.logger import Log
 from src.config import MAX_OCR_FILE_SIZE, DocStatus, PLANS_CONFIG, UPLOAD_FOLDER
-from src.services.subscription_service import subscription_service
 from src.repositories.accounts_repository import accounts_repo
 from src.api.processors.traditional_processor import process_traditional
+from src.services.subscription_service import subscription_service
 
 ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments', 'menu'}
 
@@ -503,10 +503,6 @@ def register_routes(app):
     def submit_correction():
         """
         API để người dùng map lại kết quả đúng. Hệ thống sẽ học từ đây.
-        Payload: {
-            "document_id": "xxx",
-            "corrected_data": {...}
-        }
         """
         try:
             data = request.json
@@ -537,11 +533,9 @@ def register_routes(app):
                     field_path = f"{prefix}.{key}" if prefix else key
                     
                     if isinstance(val2, list) and isinstance(val1, list):
-                        # So sánh từng phần tử trong list (ví dùng menu_items)
                         for i, (item1, item2) in enumerate(zip(val1, val2)):
                             track_diff(item1, item2, f"{field_path}[{i}]")
                     elif val1 != val2 and val2 is not None:
-                        # Log cặp thay đổi
                         corrections_repo.log_correction(
                             doc_type=doc_type,
                             field_name=field_path,
@@ -569,12 +563,6 @@ def register_routes(app):
     def report_extraction():
         """
         API cho phép user report kết quả extract bị sai.
-        Payload: {
-            "document_id": "xxx",
-            "reason": "Sai thông tin tên/ngày sinh...",
-            "details": "Tên đúng là Nguyễn Văn A, máy đọc là Nguyễn Văn B" (Optional),
-            "extraction_result": {...} (Optional - what the user saw)
-        }
         """
         try:
             data = request.json
@@ -622,6 +610,126 @@ def register_routes(app):
 
         except Exception as e:
             Log.error(f"[API] Report Error: {e}")
+            import traceback
+            Log.error(traceback.format_exc())
+            return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+    @app.route("/api/check-document", methods=["POST"])
+    @require_auth
+    def check_document():
+        """
+        [SYNC-VIA-WORKER]
+        API to check document errors against a company schema.
+        """
+        import time
+        import json
+        import os
+        from src.utils.redis_client import redis_conn
+        from src.utils.file_utils import save_uploaded_file
+
+        try:
+            # 1. Thu thập dữ liệu
+            doc_type = request.form.get("doc_type", "invoice")
+            company_schema = request.form.get("raw_text") # Dữ liệu chuẩn công ty
+            
+            if not company_schema:
+                return jsonify({"statusCode": 400, "message": "Missing 'raw_text' (company schema JSON)"}), 400
+
+            file = request.files.get("file")
+            if not file:
+                return jsonify({"statusCode": 400, "message": "Missing 'file'"}), 400
+
+            # 2. Lưu file
+            file_path = save_uploaded_file(file)
+            if not file_path:
+                return jsonify({"statusCode": 500, "message": "Failed to save file"}), 500
+
+            user_id = getattr(g, "user_id", None)
+            
+            # Lưu document record
+            doc_id = documents_repo.save_document(
+                user_id=user_id,
+                doc_type="check-document",
+                filename=os.path.basename(file_path),
+                status=DocStatus.UPLOADED
+            )
+
+            # Check quota
+            is_allowed, msg = subscription_service.check_quota(g.user)
+            if not is_allowed:
+                if os.path.exists(file_path): os.remove(file_path)
+                return jsonify({"statusCode": 403, "message": msg}), 403
+
+            # Increment usage 
+            if g.user.get('account_id'):
+                accounts_repo.increment_usage(g.user.get('account_id'))
+
+            # 3. Đăng ký lắng nghe
+            pubsub = redis_conn.pubsub()
+            channel = f"sse_user_{user_id}"
+            pubsub.subscribe(channel)
+
+            # 4. Enqueue worker
+            rag_queue.enqueue(
+                process_document_check_task,
+                args=(doc_id, user_id, file_path, company_schema, doc_type),
+                job_timeout="5m"
+            )
+
+            # 5. Đợi kết quả
+            wait_timeout = 300 
+            start_wait = time.time()
+            final_result = None
+
+            # Fast-path check
+            doc_check = documents_repo.find_by_id(doc_id)
+            if doc_check and doc_check.get("status") == DocStatus.READY:
+                final_result = {
+                    "statusCode": 200,
+                    "message": "Success",
+                    "data": doc_check.get("result")
+                }
+
+            if not final_result:
+                while time.time() - start_wait < wait_timeout:
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message:
+                        try:
+                            payload = json.loads(message["data"])
+                            data = payload.get("data", {})
+                            if str(data.get("document_id")) == str(doc_id) and payload.get("event") == "detection_status":
+                                status = data.get("status")
+                                if status == DocStatus.READY:
+                                    final_result = {
+                                        "statusCode": 200,
+                                        "message": "Success",
+                                        "data": data.get("result")
+                                    }
+                                    break
+                                elif status == DocStatus.FAILED:
+                                    final_result = {
+                                        "statusCode": 500,
+                                        "message": f"Processing failed: {data.get('error')}"
+                                    }
+                                    break
+                        except Exception:
+                            pass
+                    time.sleep(0.1)
+
+            pubsub.unsubscribe(channel)
+            pubsub.close()
+
+            if final_result:
+                return jsonify(final_result), final_result["statusCode"]
+
+            return jsonify({
+                "statusCode": 202,
+                "message": "Check task enqueued (Wait Timeout).",
+                "data": {"document_id": doc_id}
+            }), 202
+
+        except Exception as e:
+            Log.error(f"[API-CHECK] ❌ Error: {e}")
             import traceback
             Log.error(traceback.format_exc())
             return jsonify({"statusCode": 500, "message": str(e)}), 500

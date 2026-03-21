@@ -99,3 +99,38 @@ def get_pdf_pages_as_images(pdf_path, temp_dir="uploads/temp"):
         Log.error(f"[PDF] ❌ Failed to convert PDF to images: {e}")
         
     return image_paths
+def extract_text_with_bboxes_from_pdf(pdf_path):
+    """
+    Extract text with page, line number, and bbox using PyMuPDF.
+    Returns: List of dicts [{"page": int, "line": int, "bbox": [x1, y1, x2, y2], "text": str}]
+    """
+    if fitz is None:
+        Log.error("[PDF] ❌ PyMuPDF (fitz) is not installed.")
+        return []
+
+    results = []
+    try:
+        doc = fitz.open(pdf_path)
+        for page_num, page in enumerate(doc):
+            text_dict = page.get_text("dict")
+            line_idx = 1
+            for block in text_dict["blocks"]:
+                if "lines" in block:
+                    for line in block["lines"]:
+                        line_text = ""
+                        for span in line["spans"]:
+                            line_text += span["text"]
+                        
+                        if line_text.strip():
+                            results.append({
+                                "page": page_num + 1,
+                                "line": line_idx,
+                                "bbox": list(line["bbox"]),
+                                "text": line_text.strip()
+                            })
+                            line_idx += 1
+        doc.close()
+    except Exception as e:
+        Log.error(f"[PDF] ❌ Error extracting text with bboxes: {e}")
+    
+    return results

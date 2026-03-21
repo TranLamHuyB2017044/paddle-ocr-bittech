@@ -105,3 +105,46 @@ class RestaurantMenu(BaseModel):
     business_name: Optional[str] = Field(description="Tên quán ăn/nhành hàng")
     business_info: Optional[str] = Field(description="Thông tin chung về quán (địa chỉ, SĐT, v.v.)")
     menu_items: List[MenuItem] = Field(default_factory=list, description="Danh sách các sản phẩm/món ăn từ menu")
+
+# =========================
+# Document Check Schemas
+# =========================
+
+class ErrorLocation(BaseModel):
+    page: int
+    line: int
+    bbox: Optional[List[float]] = None
+    text_segment: Optional[str] = None
+
+class DocumentError(BaseModel):
+    error_id: str
+    type: str = Field(description="TYPO | NUMBER_MISMATCH | NAME_MISMATCH | ADDRESS_MISMATCH | MISSING_INFO | DATE_MISMATCH")
+    severity: str = Field(description="HIGH | MEDIUM | LOW")
+    field: str = Field(description="Field name from schema")
+    location: ErrorLocation
+    found_value: Optional[str] = None
+    expected_value: Optional[str] = None
+    explanation: str
+
+class DocumentWarning(BaseModel):
+    type: str = Field(description="EXTRA_INFO | etc.")
+    location: ErrorLocation
+    note: str
+
+class ErrorBreakdown(BaseModel):
+    TYPO: int = 0
+    NUMBER_MISMATCH: int = 0
+    NAME_MISMATCH: int = 0
+    ADDRESS_MISMATCH: int = 0
+    MISSING_INFO: int = 0
+    DATE_MISMATCH: int = 0
+
+class CheckSummary(BaseModel):
+    total_errors: int
+    error_breakdown: ErrorBreakdown
+
+class DocumentCheckResponse(BaseModel):
+    status: str = Field(description="PASS | FAIL")
+    summary: CheckSummary
+    errors: List[DocumentError] = Field(default_factory=list)
+    warnings: List[DocumentWarning] = Field(default_factory=list)

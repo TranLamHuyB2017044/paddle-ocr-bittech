@@ -23,6 +23,24 @@ def allowed_file(filename):
     return ext in ALLOWED_EXTENSIONS
 
 
+
+def save_uploaded_file(file):
+    """
+    Saves a single uploaded file.
+    """
+    if not file:
+        return None
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ext = "jpg"
+    if file.filename and "." in file.filename:
+        ext = file.filename.rsplit(".", 1)[1].lower()
+    
+    path = os.path.join(UPLOAD_FOLDER, f"{timestamp}_{file.filename}")
+    file.save(path)
+    return path
+
+
 def save_uploaded_files(front_file=None, back_file=None):
     """
     Lưu các file upload với timestamp, giữ nguyên extension

@@ -118,3 +118,58 @@ def extract_text_from_word(file_path):
             Log.error(f"[Word] ❌ Error reading docx: {e}")
             
     return ""
+def extract_lines_from_word(file_path):
+    """
+    Trích xuất văn bản từ file .doc hoặc .docx theo dạng danh sách các dòng.
+    Returns: List of dicts [{"page": 1, "line": int, "bbox": None, "text": str}]
+    """
+    ext = file_path.lower().split('.')[-1]
+    docx_path = file_path
+    is_temporary_docx = False
+
+    if ext == 'doc':
+        converted = convert_doc_to_docx(file_path)
+        if not converted:
+            Log.error(f"[Word] ❌ Could not convert .doc to .docx: {file_path}")
+            return []
+        docx_path = converted
+        is_temporary_docx = True
+
+    lines = []
+    if docx is not None:
+        try:
+            doc = docx.Document(docx_path)
+            line_idx = 1
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    lines.append({
+                        "page": 1,
+                        "line": line_idx,
+                        "bbox": None,
+                        "text": para.text.strip()
+                    })
+                    line_idx += 1
+            
+            # Xử lý các bảng nếu có
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            lines.append({
+                                "page": 1,
+                                "line": line_idx,
+                                "bbox": None,
+                                "text": cell.text.strip()
+                            })
+                            line_idx += 1
+            
+            # Cleanup nếu là file tạm
+            if is_temporary_docx and os.path.exists(docx_path):
+                try: os.remove(docx_path)
+                except: pass
+                
+            return lines
+        except Exception as e:
+            Log.error(f"[Word] ❌ Error reading docx lines: {e}")
+            
+    return []
