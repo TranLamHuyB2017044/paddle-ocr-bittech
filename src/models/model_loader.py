@@ -18,6 +18,7 @@ class ModelLoader:
     _tokenizer = None
     _model = None
     _device = None
+    _rembg_session = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -25,9 +26,18 @@ class ModelLoader:
         return cls._instance
     
     def __init__(self):
-        """Initialize ModelLoader instance without loading models immediately"""
-        pass
-    
+        """Initialize ModelLoader instance without loading OCR/AI models immediately.
+        However, Rembg model is loaded at startup to prevent blocking the first API request.
+        """
+        if self._rembg_session is None:
+            Log.info("🎨 Pre-loading Rembg Model (u2net) at startup...")
+            try:
+                from rembg import new_session
+                self._rembg_session = new_session("u2net")
+                Log.info("✅ Rembg Model pre-loaded successfully!")
+            except Exception as e:
+                Log.error(f"❌ Failed to pre-load Rembg Model: {e}")
+
     def _load_models(self):
         """Load all required models"""
         Log.info("🔄 Đang load models...")
@@ -56,6 +66,16 @@ class ModelLoader:
             except Exception as e:
                 Log.error(f"❌ Failed to load AI models: {e}")
                 traceback.print_exc()
+
+        # 3. Load Rembg Model
+        if self._rembg_session is None:
+            Log.info("🎨 Loading Rembg Model (u2net)...")
+            try:
+                from rembg import new_session
+                self._rembg_session = new_session("u2net")
+                Log.info("✅ Rembg Model loaded success!")
+            except Exception as e:
+                Log.error(f"❌ Failed to load Rembg Model: {e}")
     
     @property
     def ocr(self):
@@ -84,6 +104,13 @@ class ModelLoader:
         if self._device is None:
             self._load_models()
         return self._device
+
+    @property
+    def rembg_session(self):
+        """Get rembg session, loading it if necessary"""
+        if self._rembg_session is None:
+            self._load_models()
+        return self._rembg_session
 
 
 # Global instance
