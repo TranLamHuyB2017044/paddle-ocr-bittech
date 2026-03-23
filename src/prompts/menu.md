@@ -7,9 +7,10 @@ Bạn là một chuyên gia về OCR và trích xuất dữ liệu từ thực �
 1. **Tên quán (business_name):** Trích xuất tên của quán ăn hoặc nhà hàng nếu có đề cập trong văn bản. Nếu không thấy, để `null`.
 2. **Thông tin chung (business_info):** Bất kỳ thông tin nào khác về quán như địa chỉ, số điện thoại, giờ mở cửa, ghi chú chung (ví dụ: "Free trà đá").
 3. **Danh sách sản phẩm (menu_items):**
-   - **Tên sản phẩm (name):** Tên món ăn hoặc thức uống.
+   - **Danh mục (category):** Tên danh mục món ăn (nếu có). Trong văn bản thô, danh mục thường được ngăn cách bằng dòng có định dạng `--- DANH MỤC: <TÊN DANH MỤC> ---`. Ví dụ: ĐỒ UỐNG, MỲ CAY, KHAI VỊ. Gom tất cả món ăn nằm ngay dưới dòng danh mục đó vào cùng một danh mục.
+   - **Tên sản phẩm (name):** Tên món ăn hoặc thức uống. Để ý các dữ liệu có dấu ` - ` phân định giữa Tên và Giá để trích xuất cực kỳ chính xác.
    - **Giá (price):** Giá tiền của sản phẩm đó. Ưu tiên trích xuất dưới dạng số nguyên (ví dụ: "50k" -> "50000", "1.2tr" -> "1200000").
-   - **Mô tả (description):** Các ghi chú về món ăn ngay bên cạnh hoặc dưới tên món (ví dụ: "cay nồng", "kèm cơm trắng", "size L"). Nếu không có, để `null`.
+   - **Mô tả (description):** Các ghi chú về món ăn ngay bên cạnh hoặc dưới tên món (ví dụ: "cay nồng", "kèm cơm trắng", "size L"). Nếu không thấy, để `null`.
    - **Hình ảnh URL (thumbnail_url):** Tạm thời để `null`.
 
 ## LƯU Ý QUAN TRỌNG:

@@ -38,7 +38,7 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Old online path
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
-    "enable_mkldnn": True, # Acceleration for Intel CPUs
+    "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 960, # Reduced from 1280 for faster detection
     "text_detection_model_name":"PP-OCRv5_mobile_det",
@@ -47,6 +47,24 @@ OCR_CONFIG = {
     "use_doc_unwarping":False,
     "use_textline_orientation":False
 }
+
+# ========== STRUCTURE CONFIG (PP-Structure V3) ==========
+STRUCTURE_CONFIG = {
+    "device": "cpu",               
+    "enable_mkldnn": False,
+    "lang":"en",
+    "cpu_threads": 3,
+    "use_formula_recognition": False,  
+    "use_seal_recognition": False,
+    "use_table_recognition": False,
+    "use_chart_recognition": False,
+    "layout_detection_model_name": "PP-DocLayout-M",      
+    "text_detection_model_name": "PP-OCRv5_mobile_det",   
+    "text_recognition_model_name": "PP-OCRv5_mobile_rec", 
+}
+
+
+
 
 # ========== TEXT CLEANING CONFIG ==========
 # LƯU Ý: Với CCCD Mặt trước, extraction được thực hiện qua Traditional hoặc AI Processor.

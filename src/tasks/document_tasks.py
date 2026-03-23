@@ -4,7 +4,7 @@ import time
 from src.repositories.documents_repository import documents_repo
 from src.repositories.users_repository import users_repo
 from src.rag.rag_service import rag_service
-from src.utils.ocr_utils import ocr_extract, preprocess_for_ocr
+from src.utils.ocr_utils import ocr_extract, preprocess_for_ocr, ocr_structure_extract, smart_menu_ocr_extract
 from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
 from src.utils.word_utils import extract_text_from_word
 from src.utils.logger import Log
@@ -201,9 +201,24 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             if all_images:
                 ocr_results = []
                 ocr_times = []
+                # CHẾ ĐỘ MỚI: Dùng Structure V3 cho Invoice và SmartExtractor cho Menu
+                
                 for img_p in all_images:
                     t = time.time()
-                    res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
+                    if doc_type == 'menu':
+                        # Gom nhóm các dòng thông minh cho Menu
+                        res_formatted, _ = smart_menu_ocr_extract(img_p, img=preprocess_for_ocr(img_p))
+                        combined_text = "\n".join([r['content'] for r in res_formatted])
+                        res = [{"text": combined_text, "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0}]
+                    elif doc_type == 'invoice':
+                        # Dùng structure extract cho invoice
+                        res_formatted, _ = ocr_structure_extract(img_p, img=preprocess_for_ocr(img_p))
+                        combined_text = "\n".join([r['content'] for r in res_formatted])
+                        res = [{"text": combined_text, "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0}]
+                    else:
+                        # Mặc định dùng OCR V5 cho các loại khác (CCCD, Bằng lái...)
+                        res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
+                        
                     ocr_results.append(res)
                     ocr_times.append(time.time() - t)
                 
@@ -260,3 +275,14 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             Log.error(f"[Worker-Detect] Failed to trigger error background log: {log_e}")
     finally:
         if 'file_paths' in locals() and file_paths: silent_cleanup_files(file_paths)
+
+def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None):
+    """
+    Hàm bổ sung: Xử lý trích xuất sử dụng PP-Structure V3.
+    Dành riêng cho các loại tài liệu có cấu trúc phức tạp (Hóa đơn, Menu).
+    """
+    Log.info(f"[Worker-Structure] 🏗️ Starting structure detection task: {doc_type}")
+    # Gọi process_detection_task để tái sử dụng toàn bộ logic quản lý Document, Event và AI Processing.
+    # Bên trong process_detection_task đã có logic switch sang ocr_structure_extract nếu doc_type là invoice/menu.
+    return process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=raw_text)
+

@@ -3,7 +3,7 @@ Model Loader
 Load và quản lý OCR và AI models
 """
 import os
-from paddleocr import PaddleOCR
+from paddleocr import PaddleOCR, PPStructureV3
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from src.config import MODEL_PATH, OCR_CONFIG
@@ -15,6 +15,7 @@ class ModelLoader:
     
     _instance = None
     _ocr = None
+    _structure = None
     _tokenizer = None
     _model = None
     _device = None
@@ -34,12 +35,23 @@ class ModelLoader:
         
         # 1. Load OCR
         if self._ocr is None:
-            Log.info("📖 Loading PaddleOCR...")
+            Log.info("📖 Loading PaddleOCR (V5)...")
             try:
                 self._ocr = PaddleOCR(**OCR_CONFIG)
                 Log.info("✅ PaddleOCR loaded success!")
             except Exception as e:
                 Log.error(f"❌ Failed to load PaddleOCR: {e}")
+
+        # 1.1 Load Structure OCR
+        if self._structure is None:
+            from src.config import STRUCTURE_CONFIG
+            Log.info("📖 Loading PP-Structure V3 (Sync mode)...")
+            try:
+                self._structure = PPStructureV3(**STRUCTURE_CONFIG)
+                Log.info("✅ PP-Structure V3 loaded success!")
+            except Exception as e:
+                Log.error(f"❌ Failed to load PP-Structure: {e}")
+
 
         # 2. Setup device & AI Models
         if self._device is None:
@@ -63,6 +75,14 @@ class ModelLoader:
         if self._ocr is None:
             self._load_models()
         return self._ocr
+
+    @property
+    def structure(self):
+        """Get Structure instance, loading it if necessary"""
+        if self._structure is None:
+            self._load_models()
+        return self._structure
+
     
     @property
     def tokenizer(self):

@@ -13,7 +13,8 @@ listen = ['rag_tasks']
 print("📦 Pre-loading models (PaddleOCR, AI Models)...")
 from src.models.model_loader import model_loader
 # Accessing the property triggers the load once and stays in RAM
-_ = model_loader.ocr 
+_ = model_loader.ocr
+_ = model_loader.structure
 from src.tasks import document_tasks
 
 if __name__ == '__main__':

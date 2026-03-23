@@ -11,7 +11,7 @@ import uuid
 from src.utils.auth_middleware import require_auth
 from src.utils.file_utils import save_uploaded_files
 from src.utils.redis_client import rag_queue
-from src.tasks.document_tasks import process_detection_task
+from src.tasks.document_tasks import process_detection_task, process_structure_detection_task
 from src.repositories.documents_repository import documents_repo
 from src.utils.logger import Log
 from src.config import MAX_OCR_FILE_SIZE, DocStatus, PLANS_CONFIG, UPLOAD_FOLDER
@@ -353,9 +353,12 @@ def register_routes(app):
             channel = f"sse_user_{user_id}"
             pubsub.subscribe(channel)
 
+            # Choose task based on type
+            task_func = process_structure_detection_task if doc_type in ['invoice', 'menu'] else process_detection_task
+
             # ===== 4. Enqueue worker =====
             rag_queue.enqueue(
-                process_detection_task,
+                task_func,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
                 kwargs={"raw_text": raw_text},
                 job_timeout="5m"
@@ -481,8 +484,11 @@ def register_routes(app):
             if g.user.get('account_id'):
                 accounts_repo.increment_usage(g.user.get('account_id'))
 
+            # Choose task based on type
+            task_func = process_structure_detection_task if doc_type in ['invoice', 'menu'] else process_detection_task
+
             rag_queue.enqueue(
-                process_detection_task,
+                task_func,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
                 kwargs={"raw_text": raw_text},
                 job_timeout='5m'

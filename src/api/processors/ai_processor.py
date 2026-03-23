@@ -51,7 +51,10 @@ def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None,
         # Trigger Background Upload and Logging
         run_background_upload_and_log(user_id, doc_type, file_paths, info, metadata=metadata, document_id=document_id)
 
+        import json
+        Log.info(f"[API] 🎁 FINAL OUTPUT ({doc_type}):\n{json.dumps(info, ensure_ascii=False, indent=2)}")
         Log.info("[API] 🎉 Trả về kết quả OpenAI")
+
         return {
             "statusCode": 200,
             "message": "Success (OpenAI)",

@@ -96,6 +96,7 @@ class Document(BaseModel):
     entities: list[str] = Field(default_factory=list, description="Các thực thể (người, tổ chức)")
 
 class MenuItem(BaseModel):
+    category: Optional[str] = Field(description="Tên danh mục món ăn (ví dụ: Đồ uống, Món khai vị, Tráng miệng, v.v.), có thể null")
     name: Optional[str] = Field(description="Tên sản phẩm/món ăn")
     price: Optional[str] = Field(description="Giá sản phẩm/món ăn")
     description: Optional[str] = Field(description="Mô tả sản phẩm, có thể null")
