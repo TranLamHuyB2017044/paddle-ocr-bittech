@@ -35,9 +35,9 @@ class OpenAIExtractor:
         system_content = "Bạn là chuyên gia trích xuất dữ liệu từ hình ảnh trung thực. Quy tắc:\n1. Không bịa đặt: Thiếu dữ liệu trả về null.\n"
         if doc_type in ['menu', 'invoice', 'vehicleDocuments']:
             system_content += (
-                "2. Sửa lỗi chính tả: Được phép sửa lỗi chính tả, thêm dấu tiếng Việt cho tên sản phẩm, tên quán, "
-                "địa chỉ và các nội dung văn bản để đúng ngữ pháp/chính tả tiếng Việt.\n"
-                "3. Giữ nguyên các thông số số liệu (giá tiền, số lượng, mã số)."
+                "2. Sửa lỗi chính tả chọn lọc: BẠN CHỈ ĐƯỢC PHÉP thêm dấu và sửa lỗi chính tả cho các từ tiếng Việt.\n"
+                "3. Giữ nguyên từ tiếng nước ngoài: TUYỆT ĐỐI KHÔNG dịch, KHÔNG bóp méo, và KHÔNG sửa lỗi chính tả đối với các ký tự/từ ngữ không phải tiếng Việt (ví dụ: tiếng Anh, tên món ăn nước ngoài, ký hiệu đặc biệt). Phải giữ nguyên văn bản gốc cho các từ này.\n"
+                "4. Giữ nguyên các thông số số liệu (giá tiền, số lượng, mã số)."
             )
         else:
             system_content += (

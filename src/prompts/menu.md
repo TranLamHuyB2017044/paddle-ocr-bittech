@@ -16,6 +16,6 @@ Bạn là một chuyên gia về OCR và trích xuất dữ liệu từ thực �
 ## LƯU Ý QUAN TRỌNG:
 - Chỉ trích xuất những sản phẩm thực tế có trong menu.
 - Nếu giá tiền bị thiếu, hãy để trường `gia` là `null`.
-- Luôn giữ tính trung thực cao nhất từ dữ liệu đầu vào.
+- Luôn giữ tính trung thực cao nhất từ dữ liệu đầu vào. Đối với các từ nước ngoài (VD: Pizza, KFC, Combo...), TUYỆT ĐỐI giữ nguyên và không dịch hay tự sửa lỗi chính tả theo tiếng Việt.
 - Trả về kết quả theo cấu trúc JSON Schema đã được định nghĩa.
 
