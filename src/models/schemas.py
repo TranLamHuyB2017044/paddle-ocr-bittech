@@ -106,3 +106,19 @@ class RestaurantMenu(BaseModel):
     business_name: Optional[str] = Field(description="Tên quán ăn/nhành hàng")
     business_info: Optional[str] = Field(description="Thông tin chung về quán (địa chỉ, SĐT, v.v.)")
     menu_items: List[MenuItem] = Field(default_factory=list, description="Danh sách các sản phẩm/món ăn từ menu")
+
+# --- Schemas for Message Analysis ---
+class MessageAnalysisRequest(BaseModel):
+    message: str
+    sender_name: Optional[str] = Field(None, description="Tên người gửi tin nhắn (tùy chọn)")
+
+class MessageAnalysisMetadata(BaseModel):
+    date: Optional[str] = Field(None, description="Ngày giờ liên quan, định dạng hh-mm-ss, dd-mm-yyyy")
+    customer_name: Optional[str] = Field(None, description="Tên khách hàng nếu có")
+    amount: Optional[float] = Field(None, description="Giá tiền hoặc giá trị báo giá (kiểu số)")
+
+class MessageAnalysis(BaseModel):
+    intent: Optional[str] = Field(None, description="Ý định: leave_request, business_trip, quotation. Trả về null nếu không khớp")
+    confidence: float = Field(..., description="Độ tin cậy của việc xác định intent (0.0 đến 1.0)")
+    metadata: MessageAnalysisMetadata = Field(..., description="Các thông tin trích xuất được")
+# --- End of Schemas for Message Analysis ---
