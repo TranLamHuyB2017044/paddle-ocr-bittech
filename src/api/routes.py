@@ -18,6 +18,8 @@ from src.config import MAX_OCR_FILE_SIZE, DocStatus, PLANS_CONFIG, UPLOAD_FOLDER
 from src.services.subscription_service import subscription_service
 from src.repositories.accounts_repository import accounts_repo
 from src.api.processors.traditional_processor import process_traditional
+from src.extractors.openai_extractor import openai_extractor
+from src.models.schemas import MessageAnalysisRequest
 
 ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments', 'menu'}
 
@@ -630,4 +632,31 @@ def register_routes(app):
             Log.error(f"[API] Report Error: {e}")
             import traceback
             Log.error(traceback.format_exc())
+            return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+    @app.route("/api/analyze-message", methods=["POST"])
+    @require_auth
+    def handle_analyze_message():
+        """
+        Phân tích một tin nhắn văn bản để xác định ý định và trích xuất metadata.
+        """
+        try:
+            data = request.json
+            message = data.get("message")
+            sender_name = data.get("sender_name") # Lấy sender_name (optional)
+
+            if not message:
+                return jsonify({"statusCode": 400, "message": "Missing 'message' in request body"}), 400
+
+            # Gọi phương thức mới từ instance đã có với sender_name
+            result = openai_extractor.analyze_message(message, sender_name=sender_name)
+            
+            return jsonify({
+                "statusCode": 200,
+                "message": "Success",
+                "data": result.get("data", {})
+            }), 200
+
+        except Exception as e:
+            Log.error(f"[API] Analyze Message Error: {e}")
             return jsonify({"statusCode": 500, "message": str(e)}), 500
