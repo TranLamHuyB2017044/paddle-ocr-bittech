@@ -36,3 +36,4 @@ pymupdf
 redis
 rq
 requests
+rembg[cpu]==2.0.56
