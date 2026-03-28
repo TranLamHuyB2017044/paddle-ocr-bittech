@@ -31,11 +31,11 @@ class ModelLoader:
         However, Rembg model is loaded at startup to prevent blocking the first API request.
         """
         if self._rembg_session is None:
-            Log.info("🎨 Pre-loading Rembg Model (u2net) at startup...")
+            Log.info("🎨 Pre-loading Rembg Model (modnet) at startup...")
             try:
                 from rembg import new_session
-                self._rembg_session = new_session("u2net")
-                Log.info("✅ Rembg Model pre-loaded successfully!")
+                self._rembg_session = new_session("modnet")
+                Log.info("✅ Rembg Model (modnet) pre-loaded successfully!")
             except Exception as e:
                 Log.error(f"❌ Failed to pre-load Rembg Model: {e}")
 
@@ -81,11 +81,11 @@ class ModelLoader:
 
         # 3. Load Rembg Model
         if self._rembg_session is None:
-            Log.info("🎨 Loading Rembg Model (u2net)...")
+            Log.info("🎨 Loading Rembg Model (modnet)...")
             try:
                 from rembg import new_session
-                self._rembg_session = new_session("u2net")
-                Log.info("✅ Rembg Model loaded success!")
+                self._rembg_session = new_session("modnet")
+                Log.info("✅ Rembg Model (modnet) loaded success!")
             except Exception as e:
                 Log.error(f"❌ Failed to load Rembg Model: {e}")
     
