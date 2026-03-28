@@ -1,7 +1,4 @@
-"""
-Image Processing Utilities
-Các hàm helper xử lý ảnh thẻ: normalize, face detection, crop, quality validation, encode.
-"""
+
 import io
 import gc
 import base64
@@ -376,29 +373,56 @@ def crop_portrait_rgba(
 
 def detect_source_bg_color(img_rgb: Image.Image) -> str:
     """
-    Đoán màu nền gốc bằng cách lấy mẫu 4 góc ảnh.
-    Cần phát hiện trước khi tách nền để khử spill đúng kênh.
+    Đoán màu nền gốc bằng cách lấy mẫu 4 góc ảnh và vùng quanh mặt.
     """
     arr = np.array(img_rgb)
     h, w = arr.shape[:2]
-    s = 20
-    corners = np.concatenate([
-        arr[:s,   :s ].reshape(-1, 3),
-        arr[:s,  w-s:].reshape(-1, 3),
-        arr[h-s:,  :s].reshape(-1, 3),
-        arr[h-s:, w-s:].reshape(-1, 3),
-    ])
-    mean = corners.mean(axis=0)
+    
+    # 1. Lấy mẫu 4 góc (loại bỏ nếu là màu đen/xám quá đậm)
+    s = 30
+    corner_samples = [
+        arr[:s, :s], arr[:s, w-s:],
+        arr[h-s:, :s], arr[h-s:, w-s:]
+    ]
+    
+    valid_samples = []
+    for sample in corner_samples:
+        m = sample.mean(axis=(0,1))
+        # Nếu không phải màu đen (tổng RGB > 30)
+        if m.sum() > 30:
+            valid_samples.append(sample.reshape(-1, 3))
 
-    if all(c > 200 for c in mean) and max(mean) - min(mean) < 30:
+    # 2. Lấy mẫu vùng quanh mặt (phía trên đầu và 2 bên vai)
+    face_bbox = detect_face(img_rgb)
+    if face_bbox:
+        fx, fy, fw, fh = face_bbox
+        # Vùng trên đầu
+        if fy > 20:
+            valid_samples.append(arr[max(0, fy-40):fy, fx:fx+fw].reshape(-1, 3))
+        # Vùng bên trái mặt
+        if fx > 20:
+            valid_samples.append(arr[fy:fy+fh, max(0, fx-40):fx].reshape(-1, 3))
+        # Vùng bên phải mặt
+        if fx + fw < w - 20:
+            valid_samples.append(arr[fy:fy+fh, fx+fw:min(w, fx+fw+40)].reshape(-1, 3))
+
+    if not valid_samples:
+        return "none"
+
+    all_samples = np.concatenate(valid_samples)
+    mean = all_samples.mean(axis=0)
+
+    if all(c > 180 for c in mean) and max(mean) - min(mean) < 40:
         return "white"
+    
     dominant = int(np.argmax(mean))
-    if dominant == 2 and mean[2] > mean[0] * 1.3:
+    if dominant == 2 and mean[2] > mean[0] * 1.2: # Blue dominant
         return "blue"
-    if dominant == 1 and mean[1] > mean[0] * 1.3:
+    if dominant == 1 and mean[1] > mean[0] * 1.2: # Green
         return "green"
-    if dominant == 0 and mean[0] > mean[2] * 1.3:
+    if dominant == 0 and mean[0] > mean[2] * 1.2: # Red
         return "red"
+    
     return "none"
 
 
