@@ -68,13 +68,7 @@ def validate_image_size(img: Image.Image) -> list[str]:
 # ─── Face Detection & Alignment ───────────────────────────────────────────────
 
 def align_face(img_pil: Image.Image) -> tuple[Image.Image, float]:
-    """
-    Tự động xoay thẳng khuôn mặt, kể cả khi ảnh gốc bị nghiêng nặng.
-    1. Thử tìm mắt ở góc 0 độ.
-    2. Nếu không thấy, thử xoay ảnh ở các góc khác nhau và tìm lại mắt.
-    3. Tính toán góc xoay tổng hợp và xoay ảnh gốc một lần duy nhất.
-    4. Cắt bỏ phần nền trong suốt thừa sau khi xoay.
-    """
+
     img_rgba = img_pil.convert("RGBA")
 
     def _find_eyes_on_image(image: Image.Image) -> tuple[tuple[int, int], tuple[int, int]] | None:
@@ -111,32 +105,44 @@ def align_face(img_pil: Image.Image) -> tuple[Image.Image, float]:
                 dx = found_eyes[1][0] - found_eyes[0][0]
                 if dx == 0: continue
                 angle_on_rotated = float(np.degrees(np.arctan2(dy, dx)))
-                # Góc nghiêng gốc của ảnh = góc đo được trên ảnh xoay - góc xoay tạm
-                final_angle = angle_on_rotated - angle_offset
-                break # Dừng lại khi đã tìm thấy
+                # final_angle = bù trừ góc xoay tạm + góc đo được
+                final_angle = angle_offset + angle_on_rotated
+                break 
     else:
         # Tính góc nghiêng trên ảnh gốc
         dy = eye_coords[1][1] - eye_coords[0][1]
         dx = eye_coords[1][0] - eye_coords[0][0]
         if dx != 0:
+            # Góc dương trong PIL xoay ngược chiều kim đồng hồ
+            # Nếu mắt phải thấp (dy > 0), góc atan2 dương, ta xoay dương để level mắt
             final_angle = float(np.degrees(np.arctan2(dy, dx)))
 
     # 3. Xoay ảnh gốc một lần duy nhất với góc tổng hợp
     if abs(final_angle) < 0.5:
         return img_pil, 0.0
 
-    rotated_rgba = img_rgba.rotate(-final_angle, resample=Image.Resampling.BICUBIC, expand=True)
+    # Lấy màu nền để fill các góc trống thay vì màu đen
+    bg_color_name = detect_source_bg_color(img_pil)
+    fill_color = (255, 255, 255) # Mặc định trắng cho RGB
+    if bg_color_name == "blue":
+        fill_color = (78, 162, 229) # Xanh dương chuẩn
+    elif bg_color_name == "red":
+        fill_color = (255, 0, 0)
+
+    # Chuyển về RGB để rotate với fillcolor 3-tuple (tránh lỗi kênh alpha)
+    img_rgb = img_pil.convert("RGB")
+    rotated_rgb = img_rgb.rotate(final_angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill_color)
     
-    # 4. Cắt bỏ phần trong suốt dư thừa
-    rotated_cv = cv2.cvtColor(np.array(rotated_rgba), cv2.COLOR_RGBA2BGRA)
-    alpha_channel = rotated_cv[:, :, 3]
-    _, mask = cv2.threshold(alpha_channel, 1, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # 4. Cắt bỏ phần dư thừa (Bounding box của nội dung chính)
+    # Vì dùng fillcolor có màu giống nền nên ta cần crop lại để loại bỏ phần mở rộng quá mức của canvas xoay
+    # Ta dùng lại detect_face trên ảnh đã xoay để tìm vùng chứa người
+    face_bbox_rotated = detect_face(rotated_rgb)
+    if face_bbox_rotated:
+        # Nếu tìm thấy mặt trên ảnh đã xoay, ta có thể tự tin crop xung quanh mặt
+        # Ở đây ta chỉ cần trả về ảnh đã xoay thẳng, việc crop 3x4 sẽ do hàm khác lo
+        return rotated_rgb, final_angle
     
-    if contours:
-        all_points = np.concatenate(contours)
-        x, y, w, h = cv2.boundingRect(all_points)
-        rotated_rgba = rotated_rgba.crop((x, y, x + w, y + h))
+    return rotated_rgb, final_angle
     
     return rotated_rgba.convert("RGB"), final_angle
 
@@ -215,10 +221,12 @@ def crop_portrait_rgb(
     target_h: int
 ) -> Image.Image | None:
     """
-    [TYPE=CROP] Crop chuẩn ảnh thẻ trực tiếp từ ảnh RGB gốc (không cần tách nền).
-    Dùng heuristic dựa trên face_bbox để tính crop box, thay vì getbbox() alpha.
-    Padding bằng màu xám trắng nếu crop box vượt ra ngoài ảnh.
-    Trả về Image đã resize về (target_w, target_h) hoặc None nếu thất bại.
+    [TYPE=CROP] Crop chuẩn ảnh thẻ trực tiếp từ ảnh RGB gốc.
+    Ưu tiên: 
+    1. Giữ tỉ lệ target_w/target_h.
+    2. Cân đối mặt (chiếm ~40-45% chiều cao).
+    3. Không bao giờ thêm padding (luôn nằm trong ảnh gốc).
+    4. Ưu tiên lấy sát đáy (vì đây là ảnh chụp lại từ ảnh thẻ vật lý).
     """
     if face_bbox is None:
         return None
@@ -227,46 +235,73 @@ def crop_portrait_rgb(
     fx, fy, fw, fh = face_bbox
     ratio = target_w / target_h
 
-    # 1. Tính crop_h dựa trên tỉ lệ mặt chiếm ~40% chiều cao ảnh thẻ (tăng từ 45% để crop sát hơn)
-    crop_h = int(fh / 0.40)
-    crop_w = int(crop_h * ratio)
+    # 0. Xác định biên giới hạn (Effective Bounds)
+    # Nếu phát hiện nền xanh/trắng, ta sẽ crop trong vùng đó thay vì toàn bộ ảnh
+    bg_color = detect_source_bg_color(img_rgb)
+    bg_res = get_background_region_bbox(img_rgb, bg_color)
+    
+    if isinstance(bg_res, Image.Image):
+        # Nếu bg_res là Image, nghĩa là đã được perspective transform (làm phẳng)
+        # Ta cập nhật lại img_rgb và tính toán lại các thông số
+        img_rgb = bg_res
+        img_w, img_h = img_rgb.size
+        # Sau khi làm phẳng, ta cần detect lại mặt trên ảnh mới
+        new_bbox = detect_face(img_rgb)
+        if new_bbox is None: return None
+        fx, fy, fw, fh = new_bbox
+        min_x, min_y, max_x, max_y = 0, 0, img_w, img_h
+        eff_w, eff_h = img_w, img_h
+    elif bg_res:
+        # Nếu là tuple (bounding box thông thường)
+        min_x, min_y, max_x, max_y = bg_res
+        eff_w = max_x - min_x
+        eff_h = max_y - min_y
+    else:
+        min_x, min_y, max_x, max_y = 0, 0, img_w, img_h
+        eff_w, eff_h = img_w, img_h
 
-    # 2. Đảm bảo chiều rộng lấy được vai (tối thiểu 2.2x fw, giảm từ 2.5x để crop sát hơn)
-    min_crop_w = int(fw * 2.2)
-    if crop_w < min_crop_w:
-        crop_w = min_crop_w
+    # 1. Nếu tỉ lệ hiện tại đã gần khớp (sai số < 3%), chỉ resize vùng đó
+    current_ratio = eff_w / eff_h
+    if abs(current_ratio - ratio) / ratio < 0.03:
+        return img_rgb.crop((min_x, min_y, max_x, max_y)).resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+    # 2. Tính toán kích thước crop lớn nhất trong biên hiệu dụng
+    if current_ratio > ratio:
+        # Vùng nền quá rộng -> Lấy full chiều cao nền, cắt bớt 2 bên
+        crop_h = eff_h
+        crop_w = int(crop_h * ratio)
+    else:
+        # Vùng nền quá hẹp -> Lấy full chiều rộng nền, cắt bớt trên/dưới
+        crop_w = eff_w
         crop_h = int(crop_w / ratio)
 
-    # 3. Tâm ngang khuôn mặt
+    # 3. Định tâm theo mặt
     cx = fx + fw // 2
-
-    # 4. LUÔN LUÔN CĂN SÁT ĐÁY
-    # Đặt cạnh dưới của crop box (y2) bằng cạnh dưới của ảnh gốc (img_h)
-    y2 = img_h
-    # Tính ngược y1 từ y2 để giữ đúng tỉ lệ
-    y1 = y2 - crop_h
-
-    # Đặt x1 dựa trên tâm cx
     x1 = cx - crop_w // 2
     x2 = x1 + crop_w
 
-    # 5. Xử lý crop box vượt biên → Padding màu xám sáng
-    pad_l = max(0, -x1)
-    pad_t = max(0, -y1)
-    pad_r = max(0, x2 - img_w)
-    # pad_b sẽ luôn bằng 0 vì y2=img_h
-    pad_b = max(0, y2 - img_h)
+    # Clamp X trong biên hiệu dụng
+    if x1 < min_x:
+        x1, x2 = min_x, min_x + crop_w
+    elif x2 > max_x:
+        x2, x1 = max_x, max_x - crop_w
 
-    PADDING_COLOR = (240, 240, 240)  # Xám sáng
+    # 4. Định vị Y thông minh trong biên hiệu dụng
+    y2 = max_y
+    y1 = y2 - crop_h
 
-    if any([pad_l, pad_t, pad_r, pad_b]):
-        img_rgb = ImageOps.expand(
-            img_rgb, border=(pad_l, pad_t, pad_r, pad_b), fill=PADDING_COLOR
-        )
-        x1 += pad_l; y1 += pad_t
-        x2 += pad_l; y2 += pad_t
+    # Bảo vệ đỉnh đầu (trong biên hiệu dụng)
+    min_y1 = max(min_y, fy - int(fh * 0.25)) 
+    if y1 > min_y1:
+        y1 = min_y1
+        y2 = y1 + crop_h
 
-    # 7. Cắt và resize
+    # Đảm bảo y2 không vượt quá max_y sau khi điều chỉnh
+    if y2 > max_y:
+        y2 = max_y
+        y1 = y2 - crop_h
+
+    # 5. Cắt và resize
     cropped = img_rgb.crop((x1, y1, x2, y2))
     return cropped.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
@@ -365,6 +400,86 @@ def detect_source_bg_color(img_rgb: Image.Image) -> str:
     if dominant == 0 and mean[0] > mean[2] * 1.3:
         return "red"
     return "none"
+
+
+def order_points(pts: np.ndarray) -> np.ndarray:
+    """Sắp xếp 4 điểm theo thứ tự: top-left, top-right, bottom-right, bottom-left."""
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+    return rect
+
+def perspective_transform(img: np.ndarray, pts: np.ndarray) -> np.ndarray:
+    """Hiệu chỉnh phối cảnh (deskew) dựa trên 4 điểm góc."""
+    rect = order_points(pts)
+    (tl, tr, br, bl) = rect
+
+    widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+    widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+    maxWidth = max(int(widthA), int(widthB))
+
+    heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+    heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+    maxHeight = max(int(heightA), int(heightB))
+
+    dst = np.array([
+        [0, 0],
+        [maxWidth - 1, 0],
+        [maxWidth - 1, maxHeight - 1],
+        [0, maxHeight - 1]], dtype="float32")
+
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(img, M, (maxWidth, maxHeight))
+    return warped
+
+def get_background_region_bbox(img_rgb: Image.Image, color_name: str) -> tuple[int, int, int, int] | Image.Image | None:
+    """
+    Phát hiện và hiệu chỉnh vùng (bounding box) của nền màu (xanh hoặc trắng) trong ảnh.
+    Nếu phát hiện thấy biến dạng phối cảnh (xiên), thực hiện perspective transform.
+    """
+    if color_name not in ["blue", "white"]:
+        return None
+
+    cv_img = cv2.cvtColor(np.array(img_rgb), cv2.COLOR_RGB2BGR)
+    hsv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+    
+    if color_name == "blue":
+        lower = np.array([90, 50, 50])
+        upper = np.array([130, 255, 255])
+        mask = cv2.inRange(hsv, lower, upper)
+    else: # white
+        lower = np.array([0, 0, 180])
+        upper = np.array([180, 40, 255])
+        mask = cv2.inRange(hsv, lower, upper)
+
+    kernel = np.ones((5,5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    largest_cnt = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(largest_cnt) < (img_rgb.width * img_rgb.height * 0.05): # Tối thiểu 5%
+        return None
+
+    # Thử xấp xỉ contour thành đa giác 4 cạnh (quadrilateral)
+    peri = cv2.arcLength(largest_cnt, True)
+    approx = cv2.approxPolyDP(largest_cnt, 0.02 * peri, True)
+
+    if len(approx) == 4:
+        # Nếu là tứ giác (bị xiên/phối cảnh), thực hiện làm phẳng (deskew)
+        warped_cv = perspective_transform(cv_img, approx.reshape(4, 2))
+        return Image.fromarray(cv2.cvtColor(warped_cv, cv2.COLOR_BGR2RGB))
+    
+    # Nếu không phải tứ giác rõ ràng, trả về bounding box như cũ
+    x, y, w, h = cv2.boundingRect(largest_cnt)
+    return (x, y, x + w, y + h)
 
 
 def remove_color_spill(rgba: Image.Image, spill_color: str) -> Image.Image:
