@@ -43,43 +43,41 @@ class ModelLoader:
         """Load all required models"""
         Log.info("🔄 Đang load models...")
         
-        # --- TẠM THỜI ĐÓNG ĐỂ TEST PHOTO PROCESS ---
-        # # 1. Load OCR
-        # if self._ocr is None:
-        #     Log.info("📖 Loading PaddleOCR (V5)...")
-        #     try:
-        #         self._ocr = PaddleOCR(**OCR_CONFIG)
-        #         Log.info("✅ PaddleOCR loaded success!")
-        #     except Exception as e:
-        #         Log.error(f"❌ Failed to load PaddleOCR: {e}")
+        # 1. Load OCR
+        if self._ocr is None:
+            Log.info("📖 Loading PaddleOCR (V5)...")
+            try:
+                self._ocr = PaddleOCR(**OCR_CONFIG)
+                Log.info("✅ PaddleOCR loaded success!")
+            except Exception as e:
+                Log.error(f"❌ Failed to load PaddleOCR: {e}")
 
-        # # 1.1 Load Structure OCR
-        # if self._structure is None:
-        #     from src.config import STRUCTURE_CONFIG
-        #     Log.info("📖 Loading PP-Structure V3 (Sync mode)...")
-        #     try:
-        #         self._structure = PPStructureV3(**STRUCTURE_CONFIG)
-        #         Log.info("✅ PP-Structure V3 loaded success!")
-        #     except Exception as e:
-        #         Log.error(f"❌ Failed to load PP-Structure: {e}")
+        # 1.1 Load Structure OCR
+        if self._structure is None:
+            from src.config import STRUCTURE_CONFIG
+            Log.info("📖 Loading PP-Structure V3 (Sync mode)...")
+            try:
+                self._structure = PPStructureV3(**STRUCTURE_CONFIG)
+                Log.info("✅ PP-Structure V3 loaded success!")
+            except Exception as e:
+                Log.error(f"❌ Failed to load PP-Structure: {e}")
 
 
-        # # 2. Setup device & AI Models
-        # if self._device is None:
-        #     self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        #     Log.info(f"🖥️  Device selected: {self._device}")
+        # 2. Setup device & AI Models
+        if self._device is None:
+            self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            Log.info(f"🖥️  Device selected: {self._device}")
 
-        # if self._model is None:
-        #     Log.info(f"🤖 Loading AI model from {MODEL_PATH}...")
-        #     try:
-        #         self._tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-        #         self._model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_PATH).to(self._device)
-        #         self._model.eval()
-        #         Log.info("✅ AI models loaded success!")
-        #     except Exception as e:
-        #         Log.error(f"❌ Failed to load AI models: {e}")
-        #         traceback.print_exc()
-        # -------------------------------------------
+        if self._model is None:
+            Log.info(f"🤖 Loading AI model from {MODEL_PATH}...")
+            try:
+                self._tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+                self._model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_PATH).to(self._device)
+                self._model.eval()
+                Log.info("✅ AI models loaded success!")
+            except Exception as e:
+                Log.error(f"❌ Failed to load AI models: {e}")
+                traceback.print_exc()
 
         # 3. Load Rembg Model
         if self._rembg_session is None:
