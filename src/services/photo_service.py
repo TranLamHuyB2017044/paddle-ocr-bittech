@@ -117,6 +117,7 @@ def _process_crop(
     target_w: int,
     target_h: int,
     ignore_warnings: bool,
+    session_id: str = ""
 ) -> dict:
     """
     Pipeline type=crop: Chỉ normalize + detect face + crop RGB.
@@ -129,7 +130,9 @@ def _process_crop(
         img_rgb, tilt_angle = align_face(img_rgb)
         
         # Lưu ảnh gốc (đã xoay thẳng) để trả về URL
-        original_filename_out = f"original_{item_id}.jpg"
+        # Sử dụng session_id để dễ dàng cleanup sau này
+        prefix = f"{session_id}_" if session_id else ""
+        original_filename_out = f"{prefix}original_{item_id}.jpg"
         original_save_path = os.path.join(PREVIEW_DIR, original_filename_out)
         img_rgb.save(original_save_path, format="JPEG", quality=90)
         original_url = f"/uploads/{PREVIEW_SUBFOLDER}/{original_filename_out}"
@@ -155,7 +158,7 @@ def _process_crop(
                 result = _failed_item(item_id, original_filename, "Không thể crop ảnh.", original_url)
             else:
                 # 4. Lưu ảnh đã cắt và tạo URL
-                cropped_filename_out = f"photo_{target_w}x{target_h}_{item_id}.jpg"
+                cropped_filename_out = f"{prefix}photo_{target_w}x{target_h}_{item_id}.jpg"
                 cropped_save_path = os.path.join(PREVIEW_DIR, cropped_filename_out)
                 cropped.save(cropped_save_path, format="JPEG", quality=95, dpi=(300, 300))
                 cropped_url = f"/uploads/{PREVIEW_SUBFOLDER}/{cropped_filename_out}"
@@ -214,6 +217,7 @@ def process_batch(
     size_param: str,
     bg_color_param: str,
     ignore_warnings: bool,
+    session_id: str = ""
 ) -> list[dict]:
     """
     Xử lý batch nhiều file ảnh tuần tự.
@@ -226,7 +230,7 @@ def process_batch(
         filename = f.filename or "unknown.jpg"
         
         # Xử lý tuần tự từng file
-        result = _process_crop(f.stream, filename, item_id, target_w, target_h, ignore_warnings)
+        result = _process_crop(f.stream, filename, item_id, target_w, target_h, ignore_warnings, session_id=session_id)
         results.append(result)
 
     Log.info(
@@ -234,3 +238,27 @@ def process_batch(
         f"{sum(1 for r in results if r['status'] == 'failed')} failed / {len(results)} total."
     )
     return results
+
+
+def clear_session_data(session_id: str):
+    """
+    Xóa tất cả các file ảnh tạm thời thuộc về một session_id.
+    """
+    if not session_id or len(session_id) < 8:
+        return False
+    
+    count = 0
+    try:
+        # Duyệt qua các file trong thư mục preview
+        for filename in os.listdir(PREVIEW_DIR):
+            if filename.startswith(f"{session_id}_"):
+                file_path = os.path.join(PREVIEW_DIR, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    count += 1
+        
+        Log.info(f"[CLEAR] Session {session_id}: Removed {count} files.")
+        return True
+    except Exception as e:
+        Log.error(f"[CLEAR] Error clearing session {session_id}: {e}")
+        return False
