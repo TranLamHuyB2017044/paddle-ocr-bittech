@@ -4,7 +4,7 @@ from src.utils.logger import Log
 class LLMService:
     def chat(self, prompt, system_instruction="You are a helpful assistant.", provider="auto"):
         """
-        Generic chat method that tries OpenAI then Gemini.
+        Generic chat method that uses OpenAI.
         Returns: (answer_text, provider_name)
         """
         if provider == "openai":
@@ -37,7 +37,7 @@ class LLMService:
             ],
             temperature=0.7
         )
-        answer = completion.choices[0].message.content
+        answer = completion.choices[0].message.content or ""
         Log.info(f"[LLM-OpenAI] ✅ Received answer ({len(answer)} chars)")
         return answer
 

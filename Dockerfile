@@ -20,10 +20,6 @@ COPY requirements.txt .
 # Upgrade pip once (không đổi version lib)
 RUN pip install --upgrade pip setuptools wheel
 
-# Install CPU-only PyTorch (giữ nguyên cách cài)
-RUN pip install --no-cache-dir torch \
-    --index-url https://download.pytorch.org/whl/cpu
-
 # Install other deps
 RUN pip install --no-cache-dir -r requirements.txt
 

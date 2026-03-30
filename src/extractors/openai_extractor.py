@@ -280,7 +280,8 @@ class OpenAIExtractor:
                 max_tokens=150,
             )
             
-            data = json.loads(response.choices[0].message.content)
+            content = response.choices[0].message.content or "{}"
+            data = json.loads(content)
             
             # Bắt buộc chuyển amount về float nếu AI trả về string
             if data.get("metadata", {}).get("amount"):
