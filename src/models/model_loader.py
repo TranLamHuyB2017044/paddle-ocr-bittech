@@ -4,9 +4,7 @@ Load và quản lý OCR và AI models
 """
 import os
 from paddleocr import PaddleOCR, PPStructureV3
-import torch
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from src.config import MODEL_PATH, OCR_CONFIG
+from src.config import OCR_CONFIG
 from src.utils.logger import Log
 import traceback
 
@@ -16,8 +14,6 @@ class ModelLoader:
     _instance = None
     _ocr = None
     _structure = None
-    _tokenizer = None
-    _model = None
     _device = None
     _rembg_session = None
     
@@ -63,21 +59,11 @@ class ModelLoader:
                 Log.error(f"❌ Failed to load PP-Structure: {e}")
 
 
-        # 2. Setup device & AI Models
+        # 2. Setup device
         if self._device is None:
-            self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # Simple device check without torch
+            self._device = "cpu"
             Log.info(f"🖥️  Device selected: {self._device}")
-
-        if self._model is None:
-            Log.info(f"🤖 Loading AI model from {MODEL_PATH}...")
-            try:
-                self._tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-                self._model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_PATH).to(self._device)
-                self._model.eval()
-                Log.info("✅ AI models loaded success!")
-            except Exception as e:
-                Log.error(f"❌ Failed to load AI models: {e}")
-                traceback.print_exc()
 
         # 3. Load Rembg Model
         if self._rembg_session is None:
@@ -103,21 +89,6 @@ class ModelLoader:
             self._load_models()
         return self._structure
 
-    
-    @property
-    def tokenizer(self):
-        """Get tokenizer instance, loading it if necessary"""
-        if self._tokenizer is None:
-            self._load_models()
-        return self._tokenizer
-    
-    @property
-    def model(self):
-        """Get model instance, loading it if necessary"""
-        if self._model is None:
-            self._load_models()
-        return self._model
-    
     @property
     def device(self):
         """Get device, loading it if necessary"""

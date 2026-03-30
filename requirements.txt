@@ -8,12 +8,6 @@ opencv-python-headless
 Pillow
 numpy<2.0.0
 werkzeug
-torch
-transformers==4.55.0
-underthesea
-sentencepiece
-protobuf
-google-genai
 pydantic
 python-dotenv
 rapidfuzz

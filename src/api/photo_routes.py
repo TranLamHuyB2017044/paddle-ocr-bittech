@@ -55,10 +55,18 @@ def process_photo():
             ignore_warnings = ignore_warnings,
         )
 
-        # ── 5. Build summary ──────────────────────────────────────────────────
+        # ── 5. Build summary & Full URLs ──────────────────────────────────────
         total   = len(results)
         success = sum(1 for r in results if r["status"] == "success")
         failed  = total - success
+
+        # Chuyển đổi path tương đối thành Full URL
+        base_url = request.host_url.rstrip('/')
+        for r in results:
+            if r.get("original_url"):
+                r["original_url"] = base_url + r["original_url"]
+            if r.get("cropped_url"):
+                r["cropped_url"] = base_url + r["cropped_url"]
 
         return jsonify({
             "statusCode": 200,

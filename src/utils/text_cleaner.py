@@ -11,31 +11,14 @@ from src.utils.logger import Log
 
 def clean_text_basic(line):
     """
-    Hàm clean text cơ bản sử dụng model AI
+    Hàm clean text cơ bản (Bỏ AI model để tiết kiệm RAM)
     Làm sạch 1 dòng text duy nhất.
     """
     if not line or not line.strip():
         return ""
-
-    inputs = model_loader.tokenizer(
-        line, 
-        return_tensors="pt",
-        truncation=True, 
-        max_length=50 # Increased slightly for safety
-    ).to(model_loader.device)
-
-    outputs = model_loader.model.generate(
-        **inputs,
-        max_new_tokens=50,
-        num_beams=3,
-        num_return_sequences=1,
-        early_stopping=True,
-        do_sample=False,
-        length_penalty=1.0
-    )
-
-    cleaned_line = model_loader.tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return cleaned_line
+    
+    # Chỉ trả về text đã trim, không dùng model AI nữa
+    return line.strip()
 
 from rapidfuzz import fuzz
 

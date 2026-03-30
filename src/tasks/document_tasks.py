@@ -201,17 +201,12 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             if all_images:
                 ocr_results = []
                 ocr_times = []
-                # CHẾ ĐỘ MỚI: Dùng Structure V3 cho Invoice và SmartExtractor cho Menu
+                # CHẾ ĐỘ MỚI: Dùng Structure V3 cho Invoice và Menu
                 
                 for img_p in all_images:
                     t = time.time()
-                    if doc_type == 'menu':
-                        # Gom nhóm các dòng thông minh cho Menu
-                        res_formatted, _ = smart_menu_ocr_extract(img_p, img=preprocess_for_ocr(img_p))
-                        combined_text = "\n".join([r['content'] for r in res_formatted])
-                        res = [{"text": combined_text, "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0}]
-                    elif doc_type == 'invoice':
-                        # Dùng structure extract cho invoice
+                    if doc_type in ['menu', 'invoice']:
+                        # Dùng structure extract cho invoice và menu
                         res_formatted, _ = ocr_structure_extract(img_p, img=preprocess_for_ocr(img_p))
                         combined_text = "\n".join([r['content'] for r in res_formatted])
                         res = [{"text": combined_text, "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0}]
