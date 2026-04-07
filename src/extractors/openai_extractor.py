@@ -42,10 +42,10 @@ class OpenAIExtractor:
             )
         else:
             system_content += (
-                "2. Nguyên tắc sửa lỗi: Chỉ thêm dấu hoặc sửa lỗi chính tả nếu từ gốc có độ tương đồng cao với địa danh hành chính Việt Nam (Tỉnh/Huyện/Xã).\n"
-                "3. Xử lý xuống dòng: Kết hợp các dòng văn bản bị rời rạc của địa chỉ thành một chuỗi logic, đúng thứ tự hành chính. Không được tự ý thêm bớt thông tin nếu không có trong text gốc.\n"
-                "4. Không suy đoán: Tuyệt đối không tự ý điền thông tin (ngẫu nhiên) nếu text gốc bị mờ/mất chữ. Nếu không chắc chắn, trả về null.\n"
-                "5. Xử lý Họ Tên: Dựa vào các chữ cái gốc từ OCR, hãy ráp thêm dấu tiếng Việt chuẩn xác và hợp lý nhất (VD: NGUYEN VAN A -> NGUYỄN VĂN A), nhưng giữ nguyên các chữ cái gốc."
+                "2. Nguyên tắc sửa lỗi: ĐƯỢC PHÉP khôi phục dấu tiếng Việt bị thiếu cho phần 'Họ Tên' và 'Địa chỉ' do lỗi OCR. TUYỆT ĐỐI không sửa các chữ số (số ID, ngày tháng).\n"
+                "3. Quê quán & Nơi thường trú (QUAN TRỌNG): BẮT BUỘC bám sát 100% các chữ cái gốc từ đầu vào OCR. CHỈ ĐƯỢC PHÉP ráp thêm dấu tiếng Việt bị thiếu. TUYỆT ĐỐI KHÔNG tự bóp méo, tự đoán hay thay đổi tên Phường/Xã/Quận/Huyện/Tỉnh thành một địa danh khác (Chống ảo tưởng thông tin).\n"
+                "4. Xử lý xuống dòng: Nối các dòng văn bản địa chỉ bị rời rạc thành một chuỗi liền mạch. Nếu văn bản gốc quá mờ không thể đọc, trả về null. KHÔNG tự chế thông tin.\n"
+                "5. Xử lý Họ Tên: Dựa vào các chữ cái gốc từ OCR, ráp thêm dấu tiếng Việt chuẩn xác nhất (VD: NGUYEN VAN A -> NGUYỄN VĂN A), nhưng giữ nguyên các chữ cái gốc."
             )
         return system_content
 
