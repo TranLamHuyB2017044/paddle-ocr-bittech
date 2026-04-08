@@ -4,8 +4,8 @@ Các hàm tiện ích cho OCR extraction
 """
 import time
 from datetime import datetime
-from src.models.model_loader import model_loader
-from src.utils.logger import Log
+from ..models.model_loader import model_loader
+from .logger import Log
 
 import cv2
 import os
@@ -39,7 +39,7 @@ def preprocess_for_ocr(path_or_img, max_side=None):
 
     # 1. Resize logic: Giữ độ phân giải đủ cao
     if max_side is None:
-        from src.config import OCR_CONFIG
+        from ..config import OCR_CONFIG
         max_side = OCR_CONFIG.get("det_limit_side_len", 960)
 
     if max(h, w) > max_side:
@@ -63,7 +63,7 @@ def preprocess_for_ocr(path_or_img, max_side=None):
 
     # ---> LƯU ẢNH DEBUG VÀO THƯ MỤC TẠM ĐỂ XEM LẠI <---
     try:
-        from src.config import UPLOAD_FOLDER
+        from ..config import UPLOAD_FOLDER
         debug_dir = os.path.join(UPLOAD_FOLDER, "debug_ocr")
         os.makedirs(debug_dir, exist_ok=True)
         
