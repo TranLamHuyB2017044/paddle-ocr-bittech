@@ -11,9 +11,11 @@ import cv2
 import os
 import threading
 
-def preprocess_for_ocr(path_or_img):
+def preprocess_for_ocr(path_or_img, max_side=None):
     """
     Tiền xử lý ảnh: Resize, tăng độ tương phản và khử nhiễu để tối ưu OCR
+    Args:
+        max_side (int): Giới hạn chiều dài nhất của ảnh (mặc định lấy từ config hoặc 1536)
     Returns:
         numpy.ndarray: Ảnh đã được xử lý
     """
@@ -36,7 +38,10 @@ def preprocess_for_ocr(path_or_img):
     Log.info(f"[PREPROCESS] 📸 Original size: {w}x{h}")
 
     # 1. Resize logic: Giữ độ phân giải đủ cao
-    max_side = 1536 
+    if max_side is None:
+        from src.config import OCR_CONFIG
+        max_side = OCR_CONFIG.get("det_limit_side_len", 1536)
+
     if max(h, w) > max_side:
         scale = max_side / max(h, w)
         new_w = int(w * scale)

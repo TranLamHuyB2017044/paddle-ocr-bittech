@@ -33,8 +33,9 @@ def stream_events():
 
         try:
             while True:
-                # Timeout 15s: nếu không có message → gửi heartbeat giữ connection
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                # Timeout 5s: nếu không có message -> gửi heartbeat giữ connection
+                # Giảm xuống 5s để tránh Nginx/Proxy ngắt kết nối khi chưa có dữ liệu ngay (Timeout 15s trước đây quá sát nút)
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
 
                 if message:
                     if message['type'] == 'message':
@@ -58,9 +59,9 @@ def stream_events():
                             Log.error(f"[SSE] Parse error for user {user_id}: {e}")
                             yield f"data: {raw_data}\n\n"
                 else:
-                    # Heartbeat mỗi 15s để:
+                    # Heartbeat mỗi 5s để:
                     # 1. Nginx/proxy biết connection còn sống
-                    # 2. Flutter client không timeout
+                    # 2. Flutter/Browser client không timeout
                     yield ": heartbeat\n\n"
 
         except GeneratorExit:

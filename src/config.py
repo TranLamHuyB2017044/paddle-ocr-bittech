@@ -32,7 +32,7 @@ class DocStatus:
 
 # ========== MODEL CONFIG ==========
 # AI model path (transformers)
-MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Old online path
+MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Global instance
 # Model is located in cccd/local-protonx-model/protonx-legal-tc
 # MODEL_PATH = os.path.join(root_dir, "local-protonx-model", "protonx-legal-tc")
 
@@ -49,12 +49,15 @@ OCR_CONFIG = {
 STRUCTURE_CONFIG = {
     "device": "cpu",               
     "enable_mkldnn": False,
-    "lang":"vi", # Đổi từ 'en' sang 'vi'
+    "lang":"vi", # Đã chọn Tiếng Việt
     "cpu_threads": 3,
     "use_formula_recognition": False,  
     "use_seal_recognition": False,
-    "use_table_recognition": False,
+    "use_table_recognition": True, # Bật nếu cần Table
     "use_chart_recognition": False,
+    "layout_detection_model_name": "PP-DocLayout-M",      
+    "text_detection_model_name": "PP-OCRv5_mobile_det",   
+    "text_recognition_model_name": "PP-OCRv5_mobile_rec", 
 }
 
 
