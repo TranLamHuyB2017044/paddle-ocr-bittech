@@ -39,10 +39,10 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Global instance
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
     "lang": "vi", # Cấu hình bắt buộc để nhận diện đúng dấu Tiếng Việt
-    "use_angle_cls": True, # Tự phân loại chiều chữ
+    "use_angle_cls": False, # Tự phân loại chiều chữ
     "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
-    "det_limit_side_len": 1536 # Giữ 1536px để đọc chữ nhỏ nhất trên CCCD
+    "det_limit_side_len": 960 # Giữ 1536px để đọc chữ nhỏ nhất trên CCCD
 }
 
 # ========== STRUCTURE CONFIG (PP-Structure V3) ==========
