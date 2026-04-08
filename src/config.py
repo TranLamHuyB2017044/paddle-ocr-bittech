@@ -38,30 +38,29 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Global instance
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
-    "lang": "vi", # Cấu hình bắt buộc để nhận diện đúng dấu Tiếng Việt
-    "use_angle_cls": False, # Tự phân loại chiều chữ
     "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
-    "det_limit_side_len": 960 # Giữ 1536px để đọc chữ nhỏ nhất trên CCCD
+    "det_limit_side_len": 1280, # Reduced from 1280 for faster detection
+    "text_detection_model_name":"PP-OCRv5_mobile_det",
+    "text_recognition_model_name":"PP-OCRv5_mobile_rec",
+    "use_doc_orientation_classify":False,
+    "use_doc_unwarping":False,
+    "use_textline_orientation":False
 }
 
 # ========== STRUCTURE CONFIG (PP-Structure V3) ==========
 STRUCTURE_CONFIG = {
     "device": "cpu",               
     "enable_mkldnn": False,
-    "lang":"vi", # Đã chọn Tiếng Việt
     "cpu_threads": 3,
     "use_formula_recognition": False,  
     "use_seal_recognition": False,
-    "use_table_recognition": True, # Bật nếu cần Table
+    "use_table_recognition": False,
     "use_chart_recognition": False,
     "layout_detection_model_name": "PP-DocLayout-M",      
     "text_detection_model_name": "PP-OCRv5_mobile_det",   
     "text_recognition_model_name": "PP-OCRv5_mobile_rec", 
 }
-
-
-
 
 # ========== TEXT CLEANING CONFIG ==========
 # LƯU Ý: Với CCCD Mặt trước, extraction được thực hiện qua Traditional hoặc AI Processor.

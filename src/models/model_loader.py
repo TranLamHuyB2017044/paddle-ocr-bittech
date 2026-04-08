@@ -23,11 +23,11 @@ class ModelLoader:
         return cls._instance
     
     def __init__(self):
-        """Initialize ModelLoader and pre-load ALL models to prevent first-request latency."""
-        # Pre-load all models at startup (Eager Load)
+        """Initialize ModelLoader and pre-load only the essential OCR model."""
+        # Pre-load only OCR at startup (Minimize RAM)
         self._load_ocr()
-        self._load_structure()
-        self._load_rembg()
+        self._load_structure() 
+        # self._load_rembg()    # Tạm thời bỏ load
 
     def _load_ocr(self):
         """Load OCR model only when needed"""
@@ -73,7 +73,7 @@ class ModelLoader:
 
     @property
     def structure(self):
-        """Get Structure instance, loading it ONLY if necessary"""
+        """Get Structure instance (DISABLED)"""
         if self._structure is None:
             self._load_structure()
         return self._structure
@@ -87,9 +87,10 @@ class ModelLoader:
 
     @property
     def rembg_session(self):
-        """Get rembg session, loading it ONLY if necessary"""
+        """Get rembg session (DISABLED)"""
         if self._rembg_session is None:
-            self._load_rembg()
+            # self._load_rembg()
+            pass
         return self._rembg_session
 
 

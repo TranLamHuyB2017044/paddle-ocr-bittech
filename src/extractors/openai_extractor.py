@@ -42,9 +42,10 @@ class OpenAIExtractor:
             )
         else:
             system_content += (
-                "2. Nguyên tắc vô cùng nghiêm ngặt: KHÔNG ĐƯỢC PHÉP suy đoán chữ cái. BẠN CHỈ ĐƯỢC PHÉP ráp thêm dấu thanh (sắc, huyền, hỏi, ngã, nặng) NẾU rõ ràng OCR thiếu. Tuy nhiên, TUYỆT ĐỐI không được quyền tự ý thay đổi phụ âm hay nguyên âm (Ví dụ: OCR đưa 'u' thì phải giữ 'u', cấm tự đoán thành 'ư' hay 'o').\n"
-                "3. Quê quán, Địa chỉ & Họ tên (QUAN TRỌNG): Trích xuất chính xác dựa trên những gì OCR cung cấp. Nếu OCR đọc ra TRUC thì bạn phải dùng TRUC (có thể là TRÚC hoặc TRỤC dựa vào dấu thanh), nhưng TUYỆT ĐỐI không được tự suy diễn thành TRỰC vì đó là việc của OCR. Không tự chế thông tin.\n"
-                "4. Xử lý xuống dòng: Nối các dòng văn bản địa chỉ/quê quán bị tách vụn thành phân đoạn liền mạch. Nếu văn bản gốc quá mờ không thể đọc, có thể trả về null, nhưng KHÔNG ĐƯỢC tự chế thông tin."
+                 "2. Nguyên tắc sửa lỗi: Chỉ thêm dấu hoặc sửa lỗi chính tả nếu từ gốc có độ tương đồng cao với địa danh hành chính Việt Nam năm 2026(Tỉnh/Huyện/Xã).\n"
+                "3. Xử lý xuống dòng: Kết hợp các dòng văn bản bị rời rạc của địa chỉ thành một chuỗi logic, đúng thứ tự hành chính. Không được tự ý thêm bớt thông tin nếu không có trong text gốc.\n"
+                "4. Không suy đoán: Tuyệt đối không tự ý điền thông tin (ngẫu nhiên) nếu text gốc bị mờ/mất chữ. Nếu không chắc chắn, trả về null.\n"
+                "5. Giữ nguyên: Không thay đổi chữ cái gốc của Họ Tên (trừ thêm dấu) và Các số liệu."
             )
         return system_content
 
