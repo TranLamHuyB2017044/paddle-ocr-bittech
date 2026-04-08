@@ -42,10 +42,9 @@ class OpenAIExtractor:
             )
         else:
             system_content += (
-                "2. Nguyên tắc sửa lỗi: ĐƯỢC PHÉP khôi phục dấu tiếng Việt bị thiếu cho phần 'Họ Tên' và 'Địa chỉ' do lỗi OCR. TUYỆT ĐỐI không sửa các chữ số (số ID, ngày tháng).\n"
-                "3. Quê quán & Nơi thường trú (QUAN TRỌNG): BẮT BUỘC bám sát 100% các chữ cái gốc từ đầu vào OCR. CHỈ ĐƯỢC PHÉP ráp thêm dấu tiếng Việt bị thiếu. TUYỆT ĐỐI KHÔNG tự bóp méo, tự đoán hay thay đổi tên Phường/Xã/Quận/Huyện/Tỉnh thành một địa danh khác (Chống ảo tưởng thông tin).\n"
-                "4. Xử lý xuống dòng: Nối các dòng văn bản địa chỉ bị rời rạc thành một chuỗi liền mạch. Nếu văn bản gốc quá mờ không thể đọc, trả về null. KHÔNG tự chế thông tin.\n"
-                "5. Xử lý Họ Tên: Dựa vào các chữ cái gốc từ OCR, ráp thêm dấu tiếng Việt chuẩn xác nhất (VD: NGUYEN VAN A -> NGUYỄN VĂN A), nhưng giữ nguyên các chữ cái gốc."
+                "2. Nguyên tắc vô cùng nghiêm ngặt: KHÔNG ĐƯỢC PHÉP suy đoán chữ cái. BẠN CHỈ ĐƯỢC PHÉP ráp thêm dấu thanh (sắc, huyền, hỏi, ngã, nặng) NẾU rõ ràng OCR thiếu. Tuy nhiên, TUYỆT ĐỐI không được quyền tự ý thay đổi phụ âm hay nguyên âm (Ví dụ: OCR đưa 'u' thì phải giữ 'u', cấm tự đoán thành 'ư' hay 'o').\n"
+                "3. Quê quán, Địa chỉ & Họ tên (QUAN TRỌNG): Trích xuất chính xác dựa trên những gì OCR cung cấp. Nếu OCR đọc ra TRUC thì bạn phải dùng TRUC (có thể là TRÚC hoặc TRỤC dựa vào dấu thanh), nhưng TUYỆT ĐỐI không được tự suy diễn thành TRỰC vì đó là việc của OCR. Không tự chế thông tin.\n"
+                "4. Xử lý xuống dòng: Nối các dòng văn bản địa chỉ/quê quán bị tách vụn thành phân đoạn liền mạch. Nếu văn bản gốc quá mờ không thể đọc, có thể trả về null, nhưng KHÔNG ĐƯỢC tự chế thông tin."
             )
         return system_content
 

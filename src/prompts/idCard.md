@@ -1,7 +1,7 @@
 ### Nhiệm vụ: Trích xuất thông tin từ CCCD/Hộ chiếu.
 ### Quy tắc:
-- fullName: Khôi phục dấu AN TOÀN cho tên phổ biến (NGUYEN -> NGUYỄN). Giữ nguyên nếu là tên dân tộc/người nước ngoài.
-- address & hometown: Trường hợp bị rớt dòng trong OCR (ví dụ: '| Phường 12 | Quận Gò Vấp'), hãy gộp lại thành địa chỉ hoàn chỉnh. Chuẩn hóa chính tả địa danh hành chính Việt Nam.
-- Định dạng ngày: DD-MM-YYYY.
+- fullName: Tuyệt đối trích xuất chính xác các nguyên âm và phụ âm mà OCR cung cấp. Chỉ được thêm dấu thanh (sắc, huyền, hỏi, ngã, nặng). Cấm tự ý biến đổi nguyên âm (ví dụ: cấm đổi TRUC thành TRỰC, OCR quét ra thế nào phải giữ đúng gốc đó).
+- address & hometown: Ghép các phần xé lẻ thành nét hoàn chỉnh. Phải giữ nguyên 100% hình thái chữ cái gốc của OCR, không được tự suy đoán để tự sửa sai chính tả thành một địa danh khác.
+- Định dạng ngày: DD/MM/YYYY.
 - placeOfIssue: Thường ở mặt sau, viết in hoa.
 - Nếu thiếu thông tin -> null.

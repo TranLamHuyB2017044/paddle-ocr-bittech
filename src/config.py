@@ -38,11 +38,11 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Old online path
 
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
+    "lang": "vi", # Cấu hình bắt buộc để nhận diện dấu Tiếng Việt
+    "use_angle_cls": True, # Tự phân loại chiều chữ
     "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 1536, # Tăng lên 1536 để phát hiện tốt chữ siêu nhỏ trên CCCD
-    "text_detection_model_name":"PP-OCRv5_mobile_det",
-    "text_recognition_model_name":"PP-OCRv5_mobile_rec",
     "use_doc_orientation_classify":False,
     "use_doc_unwarping":False,
     "use_textline_orientation":False
@@ -52,15 +52,12 @@ OCR_CONFIG = {
 STRUCTURE_CONFIG = {
     "device": "cpu",               
     "enable_mkldnn": False,
-    "lang":"en",
+    "lang":"vi", # Đổi từ 'en' sang 'vi'
     "cpu_threads": 3,
     "use_formula_recognition": False,  
     "use_seal_recognition": False,
     "use_table_recognition": False,
     "use_chart_recognition": False,
-    "layout_detection_model_name": "PP-DocLayout-M",      
-    "text_detection_model_name": "PP-OCRv5_mobile_det",   
-    "text_recognition_model_name": "PP-OCRv5_mobile_rec", 
 }
 
 
