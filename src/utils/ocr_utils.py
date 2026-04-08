@@ -141,3 +141,11 @@ def smart_menu_ocr_extract(image_path, img=None):
         res.append({"type": "text", "content": " - ".join([b['text'] for b in l])})
     
     return res, [r['content'] for r in res]
+
+def filter_useless_lines(ocr_data):
+    """Pass-through filter."""
+    return ocr_data
+
+def filter_back_side_lines(ocr_data):
+    """Pass-through filter."""
+    return ocr_data
