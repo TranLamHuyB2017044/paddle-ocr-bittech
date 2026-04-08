@@ -4,8 +4,8 @@ Load và quản lý OCR và AI models
 """
 import os
 from paddleocr import PaddleOCR, PPStructureV3
-from src.config import OCR_CONFIG
-from src.utils.logger import Log
+from ..config import OCR_CONFIG
+from ..utils.logger import Log
 import traceback
 
 class ModelLoader:
@@ -23,10 +23,11 @@ class ModelLoader:
         return cls._instance
     
     def __init__(self):
-        """Initialize ModelLoader and pre-load only the essential OCR model to speed up first request."""
-        # Pre-load OCR (Essential, medium RAM usage)
+        """Initialize ModelLoader and pre-load ALL models to prevent first-request latency."""
+        # Pre-load all models at startup (Eager Load)
         self._load_ocr()
-        # Structure and Rembg are NOT loaded here (Strict Lazy load only)
+        self._load_structure()
+        self._load_rembg()
 
     def _load_ocr(self):
         """Load OCR model only when needed"""
@@ -42,7 +43,7 @@ class ModelLoader:
     def _load_structure(self):
         """Load Structure model only when needed"""
         if self._structure is None:
-            from src.config import STRUCTURE_CONFIG
+            from ..config import STRUCTURE_CONFIG
             Log.info("📖 Loading PP-Structure V3 (Sync mode)...")
             try:
                 self._structure = PPStructureV3(**STRUCTURE_CONFIG)
