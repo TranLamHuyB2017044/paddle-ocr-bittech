@@ -39,7 +39,6 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Global instance
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
     "lang": "vi", # Cấu hình bắt buộc để nhận diện đúng dấu Tiếng Việt
-    "use_angle_cls": True, # Tự phân loại chiều chữ để nhận diện dấu chuẩn hơn
     "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 960, # Reduced from 1280 for faster detection
