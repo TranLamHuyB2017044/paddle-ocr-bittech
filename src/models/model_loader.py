@@ -23,23 +23,13 @@ class ModelLoader:
         return cls._instance
     
     def __init__(self):
-        """Initialize ModelLoader instance without loading OCR/AI models immediately.
-        However, Rembg model is loaded at startup to prevent blocking the first API request.
-        """
-        if self._rembg_session is None:
-            Log.info("🎨 Pre-loading Rembg Model (modnet) at startup...")
-            try:
-                from rembg import new_session
-                self._rembg_session = new_session("modnet")
-                Log.info("✅ Rembg Model (modnet) pre-loaded successfully!")
-            except Exception as e:
-                Log.error(f"❌ Failed to pre-load Rembg Model: {e}")
+        """Initialize ModelLoader and pre-load only the essential OCR model to speed up first request."""
+        # Pre-load OCR (Essential, medium RAM usage)
+        self._load_ocr()
+        # Structure and Rembg are NOT loaded here (Strict Lazy load only)
 
-    def _load_models(self):
-        """Load all required models"""
-        Log.info("🔄 Đang load models...")
-        
-        # 1. Load OCR
+    def _load_ocr(self):
+        """Load OCR model only when needed"""
         if self._ocr is None:
             Log.info("📖 Loading PaddleOCR (V5)...")
             try:
@@ -47,8 +37,10 @@ class ModelLoader:
                 Log.info("✅ PaddleOCR loaded success!")
             except Exception as e:
                 Log.error(f"❌ Failed to load PaddleOCR: {e}")
+        return self._ocr
 
-        # 1.1 Load Structure OCR
+    def _load_structure(self):
+        """Load Structure model only when needed"""
         if self._structure is None:
             from src.config import STRUCTURE_CONFIG
             Log.info("📖 Loading PP-Structure V3 (Sync mode)...")
@@ -57,15 +49,10 @@ class ModelLoader:
                 Log.info("✅ PP-Structure V3 loaded success!")
             except Exception as e:
                 Log.error(f"❌ Failed to load PP-Structure: {e}")
+        return self._structure
 
-
-        # 2. Setup device
-        if self._device is None:
-            # Simple device check without torch
-            self._device = "cpu"
-            Log.info(f"🖥️  Device selected: {self._device}")
-
-        # 3. Load Rembg Model
+    def _load_rembg(self):
+        """Load Rembg model only when needed"""
         if self._rembg_session is None:
             Log.info("🎨 Loading Rembg Model (modnet)...")
             try:
@@ -74,33 +61,34 @@ class ModelLoader:
                 Log.info("✅ Rembg Model (modnet) loaded success!")
             except Exception as e:
                 Log.error(f"❌ Failed to load Rembg Model: {e}")
-    
+        return self._rembg_session
+
     @property
     def ocr(self):
-        """Get OCR instance, loading it if necessary"""
+        """Get OCR instance, loading it ONLY if necessary"""
         if self._ocr is None:
-            self._load_models()
+            self._load_ocr()
         return self._ocr
 
     @property
     def structure(self):
-        """Get Structure instance, loading it if necessary"""
+        """Get Structure instance, loading it ONLY if necessary"""
         if self._structure is None:
-            self._load_models()
+            self._load_structure()
         return self._structure
 
     @property
     def device(self):
-        """Get device, loading it if necessary"""
+        """Get device, default to cpu"""
         if self._device is None:
-            self._load_models()
+            self._device = "cpu"
         return self._device
 
     @property
     def rembg_session(self):
-        """Get rembg session, loading it if necessary"""
+        """Get rembg session, loading it ONLY if necessary"""
         if self._rembg_session is None:
-            self._load_models()
+            self._load_rembg()
         return self._rembg_session
 
 
