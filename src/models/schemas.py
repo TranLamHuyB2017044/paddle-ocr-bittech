@@ -1,6 +1,16 @@
 from typing import Optional, Union, List
 from pydantic import BaseModel, Field
 
+class BusinessRegistration(BaseModel):
+    taxCode: Optional[str] = Field(description="Mã số doanh nghiệp")
+    companyNameVi: Optional[str] = Field(description="Tên công ty viết bằng tiếng Việt")
+    address: Optional[str] = Field(description="Địa chỉ trụ sở chính")
+    phone: Optional[str] = Field(description="Điện thoại")
+    email: Optional[str] = Field(description="Email")
+    representativeName: Optional[str] = Field(description="Họ và tên người đại diện pháp luật")
+    representativeResidence: Optional[str] = Field(description="Địa chỉ thường trú của người đại diện")
+    representativeContact: Optional[str] = Field(description="Địa chỉ liên lạc của người đại diện")
+
 class IdCard(BaseModel):
     fullName: Optional[str] = Field(description="Fullname/Họ và tên")
     idNumber: Optional[str] = Field(description="Số/Number/No")
@@ -25,78 +35,56 @@ class DriverLicense(BaseModel):
 
 
 class Invoice(BaseModel):
-    # =========================
-    # Header Information
-    # =========================
     ten_hoa_don: Optional[str] = Field(description="Tên hóa đơn (Ví dụ: Hóa đơn GTGT, Phiếu thu...)")
     so_hoa_don: Optional[str] = Field(description="Số hóa đơn")
     ngay_lap_hoa_don: Optional[str] = Field(description="Ngày lập hóa đơn")
-    
-    # =========================
-    # Customer / Buyer
-    # =========================
     ten_khach_hang: Optional[str] = Field(description="Tên khách hàng / người mua")
     dia_chi_khach_hang: Optional[str] = Field(description="Địa chỉ khách hàng")
-    
-    # =========================
-    # Seller (Optional but good to have)
-    # =========================
     ten_nguoi_ban: Optional[str] = Field(description="Tên người bán / cửa hàng")
     dia_chi_nguoi_ban: Optional[str] = Field(description="Địa chỉ người bán")
-
-    # =========================
-    # Financials
-    # =========================
     tong_tien: Optional[str] = Field(description="Tổng tiền thanh toán / Thành tiền")
-    
-    # =========================
-    # Line Items (Simplified)
-    # =========================
-    danh_sach_san_pham: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Danh sách sản phẩm/dịch vụ. Mỗi phần tử là một chuỗi text mô tả dòng hàng (Tên + SL + Giá)"
-    )
+    danh_sach_san_pham: Optional[List[str]] = Field(default_factory=list, description="Danh sách sản phẩm/dịch vụ.")
 
 class VehicleDocument(BaseModel):
-    documentType: Optional[str] = Field(description="Loại giấy tờ nhận diện được, CHỈ ĐƯỢC CHỌN 1 TRONG 7 LOẠI SAU: REGISTRATION (Giấy đăng ký xe), INSPECTION (Giấy chứng nhận kiểm định / Đăng kiểm), CIVIL_INSURANCE (BH TNDS bắt buộc), VOLUNTARY_INSURANCE (BH vật chất xe tự nguyện), ROAD_FEE (Phí sử dụng đường bộ), TRANSPORT_LICENSE (Giấy phép kinh doanh vận tải / Phù hiệu), TRAINING_PERMIT (Giấy phép xe tập lái)")
-    
-    # Thông tin chung (Common Fields)
-    plateNumber: Optional[str] = Field(description="Biển số xe (Plate Number)")
-    documentNumber: Optional[str] = Field(description="Số seri / Số giấy chứng nhận / Số quản lý / Số biên lai / Số phù hiệu")
-    dateOfIssue: Optional[str] = Field(description="Ngày cấp / Ngày nộp phí (DD-MM-YYYY)")
-    effectiveDate: Optional[str] = Field(description="Ngày bắt đầu hiệu lực (DD-MM-YYYY)")
-    expiryDate: Optional[str] = Field(description="Ngày hết hạn / Có giá trị đến (DD-MM-YYYY)")
-    issuedBy: Optional[str] = Field(description="Nơi cấp / Đơn vị cấp / Công ty bảo hiểm / Cơ quan quản lý")
-    
-    # Thông tin chủ thể (Owner / Entity)
-    ownerName: Optional[str] = Field(description="Tên chủ xe / Người được bảo hiểm / Tên doanh nghiệp / Tên cơ sở đào tạo")
+    documentType: Optional[str] = Field(description="Loại giấy tờ")
+    plateNumber: Optional[str] = Field(description="Biển số xe")
+    documentNumber: Optional[str] = Field(description="Số seri")
+    dateOfIssue: Optional[str] = Field(description="Ngày cấp")
+    effectiveDate: Optional[str] = Field(description="Ngày bắt đầu hiệu lực")
+    expiryDate: Optional[str] = Field(description="Ngày hết hạn")
+    issuedBy: Optional[str] = Field(description="Nơi cấp")
+    ownerName: Optional[str] = Field(description="Tên chủ xe")
     address: Optional[str] = Field(description="Địa chỉ")
-    
-    # Thông tin kỹ thuật xe (Vehicle Details)
-    engineNumber: Optional[str] = Field(description="Số máy (Engine No)")
-    chassisNumber: Optional[str] = Field(description="Số khung (Chassis No)")
-    vehicleBrand: Optional[str] = Field(description="Nhãn hiệu (Brand)")
-    vehicleType: Optional[str] = Field(description="Loại xe / Số chỗ ngồi / Tải trọng")
+    engineNumber: Optional[str] = Field(description="Số máy")
+    chassisNumber: Optional[str] = Field(description="Số khung")
+    vehicleBrand: Optional[str] = Field(description="Nhãn hiệu")
+    vehicleType: Optional[str] = Field(description="Loại xe")
     color: Optional[str] = Field(description="Màu sơn")
-    
-    # Thông tin tiền phí (Financial Info)
-    feeAmount: Optional[str] = Field(description="Số tiền phí / Phí bảo hiểm / Phí đường bộ")
-
-    # Thông tin đặc thù khác (Specific Info)
-    transportType: Optional[str] = Field(description="Loại hình kinh doanh vận tải (Ví dụ: Taxi, Hợp đồng, Tuyến cố định...)")
-    route: Optional[str] = Field(description="Tuyến / Vùng hoạt động")
-    teacherName: Optional[str] = Field(description="Tên giáo viên (Dành cho giấy phép xe tập lái)")
-
+    feeAmount: Optional[str] = Field(description="Số tiền phí")
+    transportType: Optional[str] = Field(description="Loại hình kinh doanh")
+    route: Optional[str] = Field(description="Tuyến hoạt động")
+    teacherName: Optional[str] = Field(description="Tên giáo viên")
 
 class Document(BaseModel):
     title: Optional[str] = Field(description="Tiêu đề tài liệu")
     summary: Optional[str] = Field(description="Tóm tắt nội dung")
-    keywords: list[str] = Field(default_factory=list, description="Từ khóa chính")
-    dates: list[str] = Field(default_factory=list, description="Các mốc thời gian")
-    entities: list[str] = Field(default_factory=list, description="Các thực thể (người, tổ chức)")
+    
+    # Business Registration Fields (Optional)
+    taxCode: Optional[str] = Field(description="Mã số doanh nghiệp (nếu là giấy đăng ký kinh doanh)")
+    companyNameVi: Optional[str] = Field(description="Tên công ty tiếng Việt")
+    address: Optional[str] = Field(description="Địa chỉ trụ sở chính")
+    phone: Optional[str] = Field(description="SĐT")
+    email: Optional[str] = Field(description="Email")
+    representativeName: Optional[str] = Field(description="Người đại diện pháp luật")
+    representativeResidence: Optional[str] = Field(description="Địa chỉ thường trú người đại diện")
+    representativeContact: Optional[str] = Field(description="Địa chỉ liên lạc người đại diện")
+
+    keywords: List[str] = Field(default_factory=list, description="Từ khóa chính")
+    dates: List[str] = Field(default_factory=list, description="Các mốc thời gian")
+    entities: List[str] = Field(default_factory=list, description="Các thực thể (người, tổ chức)")
 
 class MenuItem(BaseModel):
-    category: Optional[str] = Field(description="Tên danh mục món ăn (ví dụ: Đồ uống, Món khai vị, Tráng miệng, v.v.), có thể null")
+    category: Optional[str] = Field(description="Tên danh mục món ăn, có thể null")
     name: Optional[str] = Field(description="Tên sản phẩm/món ăn")
     price: Optional[str] = Field(description="Giá sản phẩm/món ăn")
     description: Optional[str] = Field(description="Mô tả sản phẩm, có thể null")
@@ -110,15 +98,14 @@ class RestaurantMenu(BaseModel):
 # --- Schemas for Message Analysis ---
 class MessageAnalysisRequest(BaseModel):
     message: str
-    sender_name: Optional[str] = Field(None, description="Tên người gửi tin nhắn (tùy chọn)")
+    sender_name: Optional[str] = Field(None, description="Tên người gửi tin nhắn")
 
 class MessageAnalysisMetadata(BaseModel):
-    date: Optional[str] = Field(None, description="Ngày giờ liên quan, định dạng hh-mm-ss, dd-mm-yyyy")
+    date: Optional[str] = Field(None, description="Ngày giờ liên quan")
     customer_name: Optional[str] = Field(None, description="Tên khách hàng nếu có")
-    amount: Optional[float] = Field(None, description="Giá tiền hoặc giá trị báo giá (kiểu số)")
+    amount: Optional[float] = Field(None, description="Giá tiền hoặc giá trị báo giá")
 
 class MessageAnalysis(BaseModel):
-    intent: Optional[str] = Field(None, description="Ý định: leave_request, business_trip, quotation. Trả về null nếu không khớp")
-    confidence: float = Field(..., description="Độ tin cậy của việc xác định intent (0.0 đến 1.0)")
-    metadata: MessageAnalysisMetadata = Field(..., description="Các thông tin trích xuất được")
-# --- End of Schemas for Message Analysis ---
+    intent: Optional[str] = Field(None, description="Ý định")
+    confidence: float = Field(..., description="Độ tin cậy")
+    metadata: MessageAnalysisMetadata = Field(..., description="Thông tin trích xuất")
