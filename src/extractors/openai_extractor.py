@@ -42,7 +42,7 @@ class OpenAIExtractor:
             )
         else:
             system_content += (
-                 "2. Nguyên tắc sửa lỗi: Chỉ thêm dấu hoặc sửa lỗi chính tả nếu từ gốc có độ tương đồng cao với địa danh hành chính Việt Nam năm 2026(Tỉnh/Huyện/Xã).\n"
+                "2. Nguyên tắc sửa lỗi: Chỉ thêm dấu hoặc sửa lỗi chính tả nếu từ gốc có độ tương đồng cao với địa danh hành chính Việt Nam năm 2026(Tỉnh/Huyện/Xã).\n"
                 "3. Xử lý xuống dòng: Kết hợp các dòng văn bản bị rời rạc của địa chỉ thành một chuỗi logic, đúng thứ tự hành chính. Không được tự ý thêm bớt thông tin nếu không có trong text gốc.\n"
                 "4. Không suy đoán: Tuyệt đối không tự ý điền thông tin (ngẫu nhiên) nếu text gốc bị mờ/mất chữ. Nếu không chắc chắn, trả về null.\n"
                 "5. Giữ nguyên: Không thay đổi chữ cái gốc của Họ Tên (trừ thêm dấu) và Các số liệu."
