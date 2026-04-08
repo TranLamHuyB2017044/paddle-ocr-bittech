@@ -42,7 +42,7 @@ OCR_CONFIG = {
     "use_angle_cls": True, # Tự phân loại chiều chữ
     "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
-    "det_limit_side_len": 1536 # Tăng lên 1536 để phát hiện tốt chữ siêu nhỏ trên CCCD
+    "det_limit_side_len": 960 # Tăng lên 1536 để phát hiện tốt chữ siêu nhỏ trên CCCD
 }
 
 # ========== STRUCTURE CONFIG (PP-Structure V3) ==========
