@@ -36,7 +36,7 @@ def preprocess_for_ocr(path_or_img):
     Log.info(f"[PREPROCESS] 📸 Original size: {w}x{h}")
 
     # 1. Resize logic: Giữ độ phân giải đủ cao
-    max_side = 960 
+    max_side = 1536 
     if max(h, w) > max_side:
         scale = max_side / max(h, w)
         new_w = int(w * scale)
@@ -44,22 +44,37 @@ def preprocess_for_ocr(path_or_img):
         img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
         Log.info(f"[PREPROCESS] 📉 Resized {w}x{h} -> {new_w}x{new_h}")
 
-    # 2. Chuyển sang ảnh xám để xử lý cường độ sáng
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # CẢI THIỆN OCR CHẤT LƯỢNG CAO CHO CCCD:
+    # 2. Không chuyển sang Grayscale hay làm mờ nhiễu (GaussianBlur cỡ lớn) 
+    # vì sẽ làm dính các dấu tiếng Việt (hỏi, ngã, nặng) và tiêu hủy nét nhỏ.
+    # PaddleOCR V5 được tối ưu cho ảnh màu BGR.
+    
+    # Sử dụng kỹ thuật Unsharp Masking nhẹ để làm sắc nét viền chữ
+    gaussian_blur = cv2.GaussianBlur(img, (0, 0), 2.0)
+    final_img = cv2.addWeighted(img, 1.5, gaussian_blur, -0.5, 0)
 
-    # 3. Áp dụng CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    # Giúp làm rõ chữ trong các vùng quá tối hoặc quá sáng (do đèn flash hoặc bóng đổ)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced_img = clahe.apply(gray)
+    # Nếu ảnh gốc quá sáng/tối có thể cân nhắc LAB CLAHE trên kênh màu L để không hư màu, 
+    # nhưng mặc định Unsharp Masking trên BGR là an toàn nhất cho chữ.
 
-    # 4. Khử nhiễu nhẹ (Denoising)
-    # Sử dụng GaussianBlur nhẹ để làm mịn các hạt nhiễu nhỏ mà không làm mờ chữ
-    denoised_img = cv2.GaussianBlur(enhanced_img, (3, 3), 0)
+    # ---> LƯU ẢNH DEBUG VÀO THƯ MỤC TẠM ĐỂ XEM LẠI <---
+    try:
+        from src.config import UPLOAD_FOLDER
+        debug_dir = os.path.join(UPLOAD_FOLDER, "debug_ocr")
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        # Tạo tên file
+        if isinstance(path_or_img, str):
+            base_name = os.path.basename(path_or_img)
+            debug_path = os.path.join(debug_dir, f"preprocessed_{base_name}")
+        else:
+            debug_path = os.path.join(debug_dir, f"preprocessed_{int(time.time()*1000)}.jpg")
+            
+        cv2.imwrite(debug_path, final_img)
+        Log.info(f"[PREPROCESS] 💾 Saved debug image to: {debug_path}")
+    except Exception as e:
+        Log.error(f"[PREPROCESS] ❌ Failed to save debug image: {e}")
 
-    # Nếu model OCR của bạn yêu cầu 3 kênh màu (BGR), chuyển đổi lại
-    final_img = cv2.cvtColor(denoised_img, cv2.COLOR_GRAY2BGR)
-
-    Log.info(f"[PREPROCESS] ✨ Image enhancement applied (CLAHE + Denoise)")
+    Log.info(f"[PREPROCESS] ✨ Image enhancement applied (Unsharp Mask on BGR)")
     return final_img
 
 def ocr_extract(image_path, img=None, retry_mode=False):

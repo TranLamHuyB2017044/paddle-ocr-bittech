@@ -40,7 +40,7 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Old online path
 OCR_CONFIG = {
     "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
-    "det_limit_side_len": 960, # Reduced from 1280 for faster detection
+    "det_limit_side_len": 1536, # Tăng lên 1536 để phát hiện tốt chữ siêu nhỏ trên CCCD
     "text_detection_model_name":"PP-OCRv5_mobile_det",
     "text_recognition_model_name":"PP-OCRv5_mobile_rec",
     "use_doc_orientation_classify":False,

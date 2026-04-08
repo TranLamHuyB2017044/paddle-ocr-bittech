@@ -205,13 +205,13 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                 
                 for img_p in all_images:
                     t = time.time()
-                    if doc_type in ['menu', 'invoice', 'idCard']:
-                        # Dùng structure extract cho invoice, menu và idCard để giữ context tốt hơn
+                    if doc_type in ['menu', 'invoice']:
+                        # Dùng structure extract cho invoice, menu để giữ context tốt hơn
                         res_formatted, _ = ocr_structure_extract(img_p, img=preprocess_for_ocr(img_p))
                         combined_text = "\n".join([r['content'] for r in res_formatted])
                         res = [{"text": combined_text, "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0}]
                     else:
-                        # Mặc định dùng OCR V5 cho các loại khác (Bằng lái...)
+                        # Mặc định dùng OCR V5 cho các loại khác (Bằng lái, CCCD...)
                         res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
                         
                     ocr_results.append(res)
