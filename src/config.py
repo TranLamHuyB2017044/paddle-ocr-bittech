@@ -44,7 +44,7 @@ OCR_CONFIG = {
     "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 960, # Reduced from 1280 for faster detection
     "text_detection_model_name":"PP-OCRv5_mobile_det",
-    "text_recognition_model_name":"PP-OCRv5_server_rec",
+    "text_recognition_model_name":"PP-OCRv5_mobile_rec",
     "use_doc_orientation_classify":False,
     "use_doc_unwarping":False,
 }
