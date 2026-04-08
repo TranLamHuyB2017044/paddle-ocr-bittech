@@ -52,9 +52,9 @@ def preprocess_for_ocr(path_or_img):
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced_img = clahe.apply(gray)
 
-    # 4. Khử nhiễu nhẹ (Denoising)
-    # Sử dụng GaussianBlur nhẹ để làm mịn các hạt nhiễu nhỏ mà không làm mờ chữ
-    denoised_img = cv2.GaussianBlur(enhanced_img, (3, 3), 0)
+    # 4. Khử nhiễu nhẹ (Denoising) - TẠM TẮT để giữ độ nét cho dấu Tiếng Việt
+    # denoised_img = cv2.GaussianBlur(enhanced_img, (3, 3), 0)
+    denoised_img = enhanced_img # Bỏ qua bước làm mờ
 
     # Nếu model OCR của bạn yêu cầu 3 kênh màu (BGR), chuyển đổi lại
     final_img = cv2.cvtColor(denoised_img, cv2.COLOR_GRAY2BGR)
