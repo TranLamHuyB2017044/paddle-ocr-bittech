@@ -26,8 +26,8 @@ class ModelLoader:
         """Initialize ModelLoader and pre-load only the essential OCR model."""
         # Pre-load only OCR at startup (Minimize RAM)
         self._load_ocr()
-        self._load_structure() 
-        # self._load_rembg()    # Tạm thời bỏ load
+        # self._load_structure()
+        # self._load_rembg() # Tạm thời bỏ load
 
     def _load_ocr(self):
         """Load OCR model only when needed"""
@@ -75,7 +75,8 @@ class ModelLoader:
     def structure(self):
         """Get Structure instance (DISABLED)"""
         if self._structure is None:
-            self._load_structure()
+            # self._load_structure()
+            pass
         return self._structure
 
     @property

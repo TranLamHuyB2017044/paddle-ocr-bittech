@@ -1,16 +1,16 @@
 import time
 import os
 from flask import jsonify
-from src.utils.logger import Log
-from src.services.log_service import log_service
-from src.utils.cloudinary_utils import cloudinary_service
-from src.repositories.users_repository import users_repo
-from src.utils.smart_config import get_smart_config
-from src.utils.smart_spatial_extractor import SmartSpatialExtractor
-from src.utils.ocr_utils import filter_useless_lines
-from src.utils.text_cleaner import clean_text_lines
-from src.utils.background_tasks import run_background_upload_and_log
-from src.utils.post_cleaner import PostCleaner
+from ...utils.logger import Log
+from ...services.log_service import log_service
+from ...utils.cloudinary_utils import cloudinary_service
+from ...repositories.users_repository import users_repo
+from ...utils.smart_config import get_smart_config
+from ...utils.smart_spatial_extractor import SmartSpatialExtractor
+from ...utils.ocr_utils import filter_useless_lines
+from ...utils.text_cleaner import clean_text_lines
+from ...utils.background_tasks import run_background_upload_and_log
+from ...utils.post_cleaner import PostCleaner
 
 def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None, file_paths=None, document_id=None):
     request_start = timer_info["start"]

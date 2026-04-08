@@ -1,20 +1,27 @@
 import os
 import traceback
 import time
-from src.repositories.documents_repository import documents_repo
-from src.repositories.users_repository import users_repo
-from src.rag.rag_service import rag_service
-from src.utils.ocr_utils import ocr_extract, preprocess_for_ocr, ocr_structure_extract, smart_menu_ocr_extract
-from src.utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
-from src.utils.word_utils import extract_text_from_word
-from src.utils.logger import Log
-from src.api.processors.ai_processor import process_with_openai
-from src.api.processors.traditional_processor import process_traditional
-from src.utils.redis_client import publish_event, redis_conn
-from src.utils.file_utils import calculate_files_hash
-from src.utils.post_cleaner import PostCleaner
-from src.utils.text_cleaner import clean_text_lines
-from src.config import DocStatus
+from ..repositories.documents_repository import documents_repo
+from ..repositories.users_repository import users_repo
+from ..rag.rag_service import rag_service
+from ..utils.ocr_utils import ocr_extract, preprocess_for_ocr, ocr_structure_extract, smart_menu_ocr_extract
+from ..utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
+from ..utils.word_utils import extract_text_from_word
+from ..utils.logger import Log
+from ..services.log_service import log_service
+from ..utils.cloudinary_utils import cloudinary_service
+from ..repositories.users_repository import users_repo
+from ..utils.smart_config import get_smart_config
+from ..utils.smart_spatial_extractor import SmartSpatialExtractor
+from ..utils.ocr_utils import filter_useless_lines
+from ..utils.text_cleaner import clean_text_lines
+from ..utils.background_tasks import run_background_upload_and_log
+from ..utils.post_cleaner import PostCleaner
+from ..api.processors.ai_processor import process_with_openai
+from ..api.processors.traditional_processor import process_traditional
+from ..utils.redis_client import publish_event, redis_conn
+from ..utils.file_utils import calculate_files_hash
+from ..config import DocStatus
 import threading
 import json
 
@@ -123,7 +130,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                 Log.info(f"[Worker-Detect] 📊 Quota incremented for Manual KIE (User: {user_id})")
             
             # Trigger Background Upload and Logging for consistency
-            from src.utils.background_tasks import run_background_upload_and_log
+            from ..utils.background_tasks import run_background_upload_and_log
             metadata = {
                 "total_time": f"{total_time:.2f}s",
                 "provider": "manual_kie"
@@ -205,17 +212,8 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                 
                 for img_p in all_images:
                     t = time.time()
-                    if doc_type in ['menu', 'invoice']:
-                        # Dùng structure extract cho invoice, menu để giữ context tốt hơn
-                        # Giới hạn 1024px để tránh treo/timeout do PP-Structure rất nặng trên CPU
-                        res_formatted, _ = ocr_structure_extract(img_p, img=preprocess_for_ocr(img_p, max_side=1024))
-                        combined_text = "\n".join([r['content'] for r in res_formatted])
-                        res = [{"text": combined_text, "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0}]
-                    else:
-                        # Mặc định dùng OCR V5 cho các loại khác (Bằng lái, CCCD...)
-                        # Dùng max_side mặc định (1536px) để đảm bảo độ nét cho chữ nhỏ
-                        res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
-                        
+                    # Sử dụng OCR V5 truyền thống (Mobile) cho tất cả các loại tài liệu theo yêu cầu
+                    res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
                     ocr_results.append(res)
                     ocr_times.append(time.time() - t)
                 
@@ -261,7 +259,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         
         # Push error log to database and upload to Cloudinary for debugging
         try:
-            from src.utils.background_tasks import run_background_upload_and_log
+            from ..utils.background_tasks import run_background_upload_and_log
             if 'file_paths' in locals() and file_paths:
                 metadata = {"status": "failed", "error": str(e)}
                 # Copy file_paths to prevent thread conflicts, though both may attempt cleanup
