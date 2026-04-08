@@ -40,7 +40,7 @@ def preprocess_for_ocr(path_or_img, max_side=None):
     # 1. Resize logic: Giữ độ phân giải đủ cao
     if max_side is None:
         from src.config import OCR_CONFIG
-        max_side = OCR_CONFIG.get("det_limit_side_len", 1536)
+        max_side = OCR_CONFIG.get("det_limit_side_len", 960)
 
     if max(h, w) > max_side:
         scale = max_side / max(h, w)
