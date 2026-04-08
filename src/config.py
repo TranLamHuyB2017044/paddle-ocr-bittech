@@ -39,6 +39,7 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Global instance
 # ========== OCR CONFIG ==========
 OCR_CONFIG = {
     "lang": "vi", # Cấu hình bắt buộc để nhận diện đúng dấu Tiếng Việt
+    "use_angle_cls": True, # Tự phân loại chiều chữ để nhận diện dấu chuẩn hơn
     "enable_mkldnn": False, # Acceleration for Intel CPUs
     "cpu_threads": 3, # Parallel processing
     "det_limit_side_len": 960, # Reduced from 1280 for faster detection
@@ -46,7 +47,6 @@ OCR_CONFIG = {
     "text_recognition_model_name":"PP-OCRv5_mobile_rec",
     "use_doc_orientation_classify":False,
     "use_doc_unwarping":False,
-    "use_textline_orientation":False
 }
 
 # ========== STRUCTURE CONFIG (PP-Structure V3) ==========
