@@ -1,8 +1,8 @@
 import re
 import os
 import time
-from src.utils.logger import Log
-from src.config import CCCD_PROVINCE_CODE_MAP, DEFAULT_PLACE_OF_ISSUE, DEFAULT_NATIONALITY
+from .logger import Log
+from ..config import CCCD_PROVINCE_CODE_MAP, DEFAULT_PLACE_OF_ISSUE, DEFAULT_NATIONALITY
 from datetime import datetime 
 
 class PostCleaner:
@@ -30,7 +30,7 @@ class PostCleaner:
             return PostCleaner._corrections_cache[cache_key]
 
         try:
-            from src.repositories.corrections_repository import corrections_repo
+            from ..repositories.corrections_repository import corrections_repo
             rules = corrections_repo.get_common_corrections(doc_type, min_count=2)
             
             # Organize for O(1) field-based lookup
@@ -94,7 +94,7 @@ class PostCleaner:
             return text
             
         from rapidfuzz import process, fuzz
-        from src.config import CCCD_PROVINCE_CODE_MAP
+        from ..config import CCCD_PROVINCE_CODE_MAP
         
         provinces = list(set(CCCD_PROVINCE_CODE_MAP.values()))
         

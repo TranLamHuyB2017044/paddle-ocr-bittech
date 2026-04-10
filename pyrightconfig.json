@@ -1,8 +1,9 @@
 {
   "pythonVersion": "3.11",
   "venvPath": ".",
-  "venv": ".venv",
-  "include": ["src"],
+  "venv": "venv",
+  "include": ["src", "."],
+  "extraPaths": ["src"],
   "ignore": ["**/__pycache__"],
   "typeCheckingMode": "basic",
   "reportMissingImports": "none",

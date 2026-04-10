@@ -10,8 +10,9 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 root_dir = os.path.dirname(basedir)
 load_dotenv(os.path.join(root_dir, '.env'))
 
-# Fix Paddle OCR hanging issue (oneDNN)
-os.environ["ONEDNN_PRIMITIVE_CACHE_CAPACITY"] = "10"
+# ========== DeepDoc + VietOCR paths (override via .env) ==========
+# DEEPDOC_ONNX_DIR  = path to directory containing det.onnx
+# VIETOCR_WEIGHT    = path to vgg_seq2seq.pth weight file
 
 
 
@@ -36,31 +37,14 @@ MODEL_PATH = "protonx-models/distilled-protonx-legal-tc" # Global instance
 # Model is located in cccd/local-protonx-model/protonx-legal-tc
 # MODEL_PATH = os.path.join(root_dir, "local-protonx-model", "protonx-legal-tc")
 
-# ========== OCR CONFIG ==========
+# ========== OCR CONFIG (DeepDoc + VietOCR) ==========
+# Các tham số cấu hình cho DeepDoc+VietOCR engine
 OCR_CONFIG = {
-    "lang": "vi", # Cấu hình bắt buộc để nhận diện đúng dấu Tiếng Việt
-    "use_angle_cls": True, # Tự phân loại chiều chữ để nhận diện dấu chuẩn hơn
-    "enable_mkldnn": False, # Acceleration for Intel CPUs
-    "cpu_threads": 3, # Parallel processing
-    "det_limit_side_len": 960, # Reduced from 1280 for faster detection
-    "text_detection_model_name":"PP-OCRv5_mobile_det",
-    "text_recognition_model_name":"PP-OCRv5_mobile_rec",
-    "use_doc_orientation_classify":False,
-    "use_doc_unwarping":False,
-}
-
-# ========== STRUCTURE CONFIG (PP-Structure V3) ==========
-STRUCTURE_CONFIG = {
-    "device": "cpu",               
-    "enable_mkldnn": False,
-    "cpu_threads": 3,
-    "use_formula_recognition": False,  
-    "use_seal_recognition": False,
-    "use_table_recognition": False,
-    "use_chart_recognition": False,
-    "layout_detection_model_name": "PP-DocLayout-M",      
-    "text_detection_model_name": "PP-OCRv5_mobile_det",   
-    "text_recognition_model_name": "PP-OCRv5_mobile_rec", 
+    "onnx_dir": os.environ.get("DEEPDOC_ONNX_DIR", 
+                               os.path.join(basedir, "deepdoc", "onnx")),
+    "vietocr_weight": os.environ.get("VIETOCR_WEIGHT",
+                                     os.path.join(basedir, "deepdoc", "vietocr_weights", "vgg_seq2seq.pth")),
+    "drop_score": 0.0,
 }
 
 # ========== TEXT CLEANING CONFIG ==========
