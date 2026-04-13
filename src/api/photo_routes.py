@@ -117,12 +117,12 @@ def clear_photo_session():
         if success:
             return jsonify({
                 "statusCode": 200,
-                "message": f"Successfully cleared data for session {session_id}"
+                "message": f"Successfully cleared data for session {session_id}" if session_id != "all" else "Successfully cleared all temporary files"
             }), 200
         else:
             return jsonify({
                 "statusCode": 500, 
-                "message": f"Failed to clear data for session {session_id}"
+                "message": f"Failed to clear data for session {session_id}" if session_id != "all" else "Failed to clear temporary files"
             }), 500
 
     except Exception as e:
