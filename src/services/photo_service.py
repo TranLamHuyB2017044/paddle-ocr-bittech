@@ -243,15 +243,16 @@ def process_batch(
 def clear_session_data(session_id: str):
     """
     Xóa tất cả các file ảnh tạm thời thuộc về một session_id.
+    Nếu session_id == "all", xóa TOÀN BỘ file trong thư mục preview.
     """
-    if not session_id or len(session_id) < 8:
+    if not session_id or len(session_id) < 3:
         return False
     
     count = 0
     try:
         # Duyệt qua các file trong thư mục preview
         for filename in os.listdir(PREVIEW_DIR):
-            if filename.startswith(f"{session_id}_"):
+            if session_id == "all" or filename.startswith(f"{session_id}_") or filename.startswith(f"autocrop_{session_id}"):
                 file_path = os.path.join(PREVIEW_DIR, filename)
                 if os.path.isfile(file_path):
                     os.remove(file_path)
