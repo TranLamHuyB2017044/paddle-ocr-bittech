@@ -55,13 +55,9 @@ COPY --from=builder /opt/venv /opt/venv
 COPY src ./src
 COPY app.py .
 COPY run_worker.py .
-COPY setup_models.py .
 
 # Đảm bảo các model đã được "bake" vào image
-# (Lệnh này sẽ thực thi nếu thư mục tồn tại trên máy host)
-COPY src/deepdoc/onnx ./src/deepdoc/onnx
-COPY src/deepdoc/vietocr_weights ./src/deepdoc/vietocr_weights
-
+# (Các file model sẽ được copy cùng với src)
 # Thiết lập thư mục và user bảo mật (không chạy app bằng quyền root)
 RUN mkdir -p uploads logs storage && \
     useradd -m -u 1000 appuser && \
