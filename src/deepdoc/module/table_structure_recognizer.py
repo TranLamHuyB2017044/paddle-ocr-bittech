@@ -36,14 +36,17 @@ class TableStructureRecognizer(Recognizer):
     ]
 
     def __init__(self):
-        try:
-            super().__init__(self.labels, "tsr", os.path.join(
-                    get_project_base_directory(),
-                    "onnx"))
-        except Exception:
-            super().__init__(self.labels, "tsr", snapshot_download(repo_id="InfiniFlow/deepdoc",
+        model_dir = os.path.join(
+            get_project_base_directory(),
+            "onnx")
+        if not os.path.exists(os.path.join(model_dir, "tsr.onnx")):
+            try:
+                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
                                               local_dir=os.path.join(get_project_base_directory(), "onnx"),
-                                              local_dir_use_symlinks=False))
+                                              local_dir_use_symlinks=False)
+            except Exception:
+                pass
+        super().__init__(self.labels, "tsr", model_dir)
 
     def __call__(self, images, thr=0.2):
         tbls = super().__call__(images, thr)

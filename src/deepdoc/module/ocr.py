@@ -288,36 +288,29 @@ class OCR:
         """
 
         if not model_dir:
-            try:
-                model_dir = os.path.join(
+            model_dir = os.path.join(
                         get_project_base_directory(),
                         "onnx")
-                
-                # Append muti-gpus task to the list
-                if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 0:
-                    self.text_detector = []
-                    self.text_recognizer = []
-                    for device_id in range(PARALLEL_DEVICES):
-                        self.text_detector.append(TextDetector(model_dir, device_id))
-                        self.text_recognizer.append(TextRecognizer(model_dir, device_id))
-                else:
-                    self.text_detector = [TextDetector(model_dir, 0)]
-                    self.text_recognizer = [TextRecognizer(model_dir, 0)]
 
-            except Exception:
+        if not os.path.exists(os.path.join(model_dir, "det.onnx")):
+            try:
                 model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
                                               local_dir=os.path.join(get_project_base_directory(), "onnx"),
                                               local_dir_use_symlinks=False)
-                
-                if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 0:
-                    self.text_detector = []
-                    self.text_recognizer = []
-                    for device_id in range(PARALLEL_DEVICES):
-                        self.text_detector.append(TextDetector(model_dir, device_id))
-                        self.text_recognizer.append(TextRecognizer(model_dir, device_id))
-                else:
-                    self.text_detector = [TextDetector(model_dir, 0)]
-                    self.text_recognizer = [TextRecognizer(model_dir, 0)]
+            except Exception as e:
+                logging.error(f"Failed to download models: {e}")
+                # Nếu model_dir hiện tại không có det.onnx, lỗi sẽ xảy ra ở bước sau
+
+        # Append muti-gpus task to the list
+        if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 0:
+            self.text_detector = []
+            self.text_recognizer = []
+            for device_id in range(PARALLEL_DEVICES):
+                self.text_detector.append(TextDetector(model_dir, device_id))
+                self.text_recognizer.append(TextRecognizer(model_dir, device_id))
+        else:
+            self.text_detector = [TextDetector(model_dir, 0)]
+            self.text_recognizer = [TextRecognizer(model_dir, 0)]
 
         self.drop_score = 0.5
         self.crop_image_res_index = 0

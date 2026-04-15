@@ -15,8 +15,8 @@
 #
 import os
 import logging
-from utils import get_base_config, decrypt_database_config
-from utils.file_utils import get_project_base_directory
+from . import get_base_config, decrypt_database_config
+from .file_utils import get_project_base_directory
 
 # Server
 RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")

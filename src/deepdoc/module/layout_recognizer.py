@@ -44,16 +44,17 @@ class LayoutRecognizer(Recognizer):
     ]
 
     def __init__(self, domain):
-        try:
-            model_dir = os.path.join(
-                get_project_base_directory(),
-                "onnx")
-            super().__init__(self.labels, domain, model_dir)
-        except Exception:
-            model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
-                                          local_dir=os.path.join(get_project_base_directory(), "onnx"),
-                                          local_dir_use_symlinks=False)
-            super().__init__(self.labels, domain, model_dir)
+        model_dir = os.path.join(
+            get_project_base_directory(),
+            "onnx")
+        if not os.path.exists(os.path.join(model_dir, domain + ".onnx")):
+            try:
+                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
+                                              local_dir=os.path.join(get_project_base_directory(), "onnx"),
+                                              local_dir_use_symlinks=False)
+            except Exception:
+                pass
+        super().__init__(self.labels, domain, model_dir)
 
         self.garbage_layouts = ["footer", "header", "reference"]
         self.client = None

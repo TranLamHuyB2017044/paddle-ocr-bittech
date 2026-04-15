@@ -16,7 +16,6 @@
 
 import logging
 import sys
-import six
 import cv2
 import numpy as np
 import math
@@ -37,7 +36,7 @@ class DecodeImage:
 
     def __call__(self, data):
         img = data['image']
-        if six.PY2:
+        if sys.version_info[0] == 2:
             assert isinstance(img, str) and len(
                 img) > 0, "invalid input 'img' in DecodeImage"
         else:

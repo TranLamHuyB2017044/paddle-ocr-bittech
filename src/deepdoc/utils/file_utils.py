@@ -26,8 +26,8 @@ from PIL import Image
 from cachetools import LRUCache, cached
 from ruamel.yaml import YAML
 
-from utils.db import FileType
-from utils.constants import IMG_BASE64_PREFIX
+from .db import FileType
+from .constants import IMG_BASE64_PREFIX
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
 RAG_BASE = os.getenv("RAG_BASE")

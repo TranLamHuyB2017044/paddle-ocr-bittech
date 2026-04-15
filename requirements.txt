@@ -35,6 +35,7 @@ ruamel.yaml
 cachetools
 filelock
 pycryptodomex
+strenum
 
 # ============================================================
 # Document & AI Processing

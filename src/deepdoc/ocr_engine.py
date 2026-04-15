@@ -11,8 +11,7 @@ from deepdoc.module.ocr_onnx import OCR
 
 class DeepDocOCR:
     def __init__(self):
-        model_dir = os.path.join(current_dir, "onnx")
-        self.engine = OCR(model_dir=model_dir)
+        self.engine = OCR()
 
     def __call__(self, img):
         return self.engine(img)
