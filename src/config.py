@@ -43,7 +43,7 @@ OCR_CONFIG = {
     "onnx_dir": os.environ.get("DEEPDOC_ONNX_DIR", 
                                os.path.join(basedir, "deepdoc", "onnx")),
     "vietocr_weight": os.environ.get("VIETOCR_WEIGHT",
-                                     os.path.join(basedir, "deepdoc", "vietocr_weights", "vgg_seq2seq.pth")),
+                                     os.path.join(basedir, "deepdoc", "vietocr", "weight", "vgg_seq2seq.pth")),
     "drop_score": 0.0,
 }
 

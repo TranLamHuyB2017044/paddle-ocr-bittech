@@ -17,11 +17,11 @@ tokenizers>=0.19.0
 onnxruntime
 
 # Cài đặt torch bản CPU để nhẹ venv
-# Note: Chạy 'pip install torch --index-url https://download.pytorch.org/whl/cpu' nếu gặp lỗi
-torch
+# Note: Chạy 'pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu' nếu gặp lỗi
+# Đã loại bỏ torch và torchvision khỏi file này để tránh ghi đè trong Docker bằng bản GPU.
+# torch
+# torchvision
 
-# Text Recognition (VietOCR - Tối ưu tiếng Việt)
-torchvision
 vietocr
 
 # DeepDoc & Image utilities
@@ -30,6 +30,12 @@ pyclipper
 opencv-python-headless
 Pillow>=10.2.0
 numpy<2.0.0
+pdfplumber
+ruamel.yaml
+cachetools
+filelock
+pycryptodomex
+strenum
 
 # ============================================================
 # Document & AI Processing
