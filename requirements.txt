@@ -41,6 +41,7 @@ fastembed
 qdrant-client>=1.10.1
 rapidfuzz
 transformers
+insightface
 
 # ============================================================
 # Database & Infrastructure

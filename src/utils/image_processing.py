@@ -10,6 +10,21 @@ from PIL import Image, ImageColor, ImageOps, ImageFilter
 
 warnings.filterwarnings("ignore")
 
+_FACE_ANALYZER = None
+
+def get_face_analyzer():
+    """Lazy load InsightFace FaceAnalysis."""
+    global _FACE_ANALYZER
+    if _FACE_ANALYZER is None:
+        try:
+            from insightface.app import FaceAnalysis
+            _FACE_ANALYZER = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
+            _FACE_ANALYZER.prepare(ctx_id=0, det_size=(640, 640))
+        except Exception as e:
+            print(f"Error loading InsightFace: {e}")
+            return None
+    return _FACE_ANALYZER
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 PHOTO_SIZES = {
@@ -146,9 +161,25 @@ def align_face(img_pil: Image.Image) -> tuple[Image.Image, float]:
 
 def detect_face(img_pil: Image.Image) -> tuple[int, int, int, int] | None:
     """
-    Phát hiện khuôn mặt lớn nhất. 
-    Hỗ trợ thử xoay ảnh nếu không tìm thấy ở góc mặc định (cho ảnh chụp nghiêng).
+    Phát hiện khuôn mặt lớn nhất bằng InsightFace (nếu có) hoặc Haar Cascade (fallback).
+    Trả về: (x, y, w, h)
     """
+    # 1. Thử dùng InsightFace (Chính xác cao)
+    analyzer = get_face_analyzer()
+    if analyzer:
+        try:
+            cv_img = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
+            faces = analyzer.get(cv_img)
+            if faces:
+                # Lấy mặt to nhất
+                face = max(faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]))
+                bbox = face.bbox.astype(int)
+                x, y, x2, y2 = bbox
+                return (x, y, x2 - x, y2 - y)
+        except Exception as e:
+            print(f"InsightFace error: {e}")
+
+    # 2. Fallback sang Haar Cascade (Tốc độ cao, độ chính xác thấp hơn)
     cv_img = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
 
@@ -158,23 +189,49 @@ def detect_face(img_pil: Image.Image) -> tuple[int, int, int, int] | None:
             return max(faces, key=lambda f: f[2] * f[3])
         return None
 
-    # Thử góc 0 độ
     face = _try_detect(gray)
     if face is not None:
         return tuple(face.tolist()) # type: ignore
 
-    # Nếu không thấy, thử xoay nhẹ sang trái/phải 20 độ (trường hợp người dùng up ảnh nghiêng sẵn)
+    # Thử xoay nhẹ
     rows, cols = gray.shape
-    for angle in [20, -20, 35, -35]:
+    for angle in [20, -20]:
         M = cv2.getRotationMatrix2D((cols/2, rows/2), angle, 1)
         rotated_gray = cv2.warpAffine(gray, M, (cols, rows))
         face = _try_detect(rotated_gray)
         if face is not None:
-            # Lưu ý: Trả về face ở góc này chỉ để biết là CÓ mặt, 
-            # align_face sẽ lo việc xoay chuẩn dựa trên mắt sau.
             return tuple(face.tolist()) # type: ignore
 
     return None
+
+
+def get_face_landmarks(img_pil: Image.Image) -> dict | None:
+    """
+    Lấy các điểm mốc khuôn mặt (landmarks) bằng InsightFace.
+    """
+    analyzer = get_face_analyzer()
+    if not analyzer:
+        return None
+        
+    try:
+        cv_img = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
+        faces = analyzer.get(cv_img)
+        if not faces:
+            return None
+            
+        face = max(faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]))
+        kps = face.kps # 5 points: left_eye, right_eye, nose, left_mouth, right_mouth
+        
+        return {
+            "left_eye": kps[0],
+            "right_eye": kps[1],
+            "nose": kps[2],
+            "left_mouth": kps[3],
+            "right_mouth": kps[4],
+            "center_nose": kps[2]
+        }
+    except:
+        return None
 
 
 # ─── Quality Validation ───────────────────────────────────────────────────────
