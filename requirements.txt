@@ -1,33 +1,72 @@
+# ============================================================
+# Core Web Framework
+# ============================================================
 flask
 flask-cors
 gunicorn
-paddleocr[doc-parser]==3.4.0
-paddlepaddle==3.3.0
-paddlex==3.4.2
-opencv-python-headless
-Pillow
-numpy<2.0.0
 werkzeug
 pydantic
 python-dotenv
+
+# ============================================================
+# OCR Engine: DeepDoc + VietOCR 
+# ============================================================
+# Core AI dependencies (Sửa lỗi conflict: ưu tiên bản mới)
+huggingface_hub>=0.23.0
+tokenizers>=0.19.0
+onnxruntime
+
+# Cài đặt torch bản CPU để nhẹ venv
+# Note: Chạy 'pip install torch --index-url https://download.pytorch.org/whl/cpu' nếu gặp lỗi
+torch
+
+# Text Recognition (VietOCR - Tối ưu tiếng Việt)
+torchvision
+vietocr
+
+# DeepDoc & Image utilities
+shapely
+pyclipper
+opencv-python-headless
+Pillow>=10.2.0
+numpy<2.0.0
+
+# ============================================================
+# Document & AI Processing
+# ============================================================
+python-docx
+pymupdf
+openai
+fastembed
+qdrant-client>=1.10.1
 rapidfuzz
+transformers
+insightface
+
+# ============================================================
+# Database & Infrastructure
+# ============================================================
+pymongo[srv]>=4.0
+redis
+rq
+bcrypt
+pyjwt
+email-validator==2.3.0
+certifi
+
+# ============================================================
+# Google APIs & Authentication
+# ============================================================
 google-api-python-client
 google-auth
 gspread
 google-auth-httplib2
 google-auth-oauthlib
-pymongo[srv]>=4.0
-bcrypt 
-pyjwt 
-email-validator == 2.3.0
-certifi
-openai
+
+# ============================================================
+# Utilities & Monitoring
+# ============================================================
 cloudinary
-fastembed
-qdrant-client>=1.10.1
-python-docx
-pymupdf
-redis
-rq
 requests
 rembg[cpu]==2.0.56
+psutil  # Để chạy benchmark RAM/CPU

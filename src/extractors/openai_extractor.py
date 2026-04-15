@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import re
 from typing import Optional
 from openai import OpenAI
 from src.config import OPENAI_API_KEY
@@ -20,40 +21,24 @@ SCHEMA_MAP = {
 
 class OpenAIExtractor:
     def __init__(self):
+        self.client = None
         if not OPENAI_API_KEY:
-            Log.warning("[OPENAI] ⚠️ Warning: OPENAI_API_KEY is not set. Check .env file.")
-            self.client = None
+            Log.warning("[OPENAI] ⚠️ Warning: OPENAI_API_KEY is not set.")
         else:
             try:
                 self.client = OpenAI(api_key=OPENAI_API_KEY)
                 Log.info("[OPENAI] ✅ OpenAI Client initialized successfully.")
             except Exception as e:
                 Log.error(f"[OPENAI] ❌ Error configuring OpenAI Client: {e}")
-                self.client = None
 
     def _get_system_message(self, doc_type):
-        """Helper to get system prompt based on doc_type"""
-        system_content = "Bạn là chuyên gia trích xuất dữ liệu từ hình ảnh trung thực. Quy tắc:\n1. Không bịa đặt: Thiếu dữ liệu trả về null.\n"
-        if doc_type in ['menu', 'invoice', 'vehicleDocuments']:
-            system_content += (
-                "2. Sửa lỗi chính tả chọn lọc: BẠN CHỈ ĐƯỢC PHÉP thêm dấu và sửa lỗi chính tả cho các từ tiếng Việt.\n"
-                "3. Giữ nguyên từ tiếng nước ngoài: TUYỆT ĐỐI KHÔNG dịch, KHÔNG bóp méo, và KHÔNG sửa lỗi chính tả đối với các ký tự/từ ngữ không phải tiếng Việt (ví dụ: tiếng Anh, tên món ăn nước ngoài, ký hiệu đặc biệt). Phải giữ nguyên văn bản gốc cho các từ này.\n"
-                "4. Giữ nguyên các thông số số liệu (giá tiền, số lượng, mã số)."
-            )
-        else:
-            system_content += (
-                "2. Nguyên tắc sửa lỗi: Chỉ thêm dấu hoặc sửa lỗi chính tả nếu từ gốc có độ tương đồng cao với địa danh hành chính Việt Nam năm 2026(Tỉnh/Huyện/Xã).\n"
-                "3. Xử lý xuống dòng: Kết hợp các dòng văn bản bị rời rạc của địa chỉ thành một chuỗi logic, đúng thứ tự hành chính. Không được tự ý thêm bớt thông tin nếu không có trong text gốc.\n"
-                "4. Không suy đoán: Tuyệt đối không tự ý điền thông tin (ngẫu nhiên) nếu text gốc bị mờ/mất chữ. Nếu không chắc chắn, trả về null.\n"
-                "5. Giữ nguyên: Không thay đổi chữ cái gốc của Họ Tên (trừ thêm dấu) và Các số liệu."
-            )
-        return system_content
+        """Tối ưu Token: Chỉ để lại chỉ thị cốt lõi nhất."""
+        return "Bạn là trợ lý trích xuất dữ liệu trung thực. Chỉ trích xuất thông tin từ đầu vào, không suy đoán. Trả về null nếu thiếu."
 
     def _get_prompt(self, doc_type):
-        """Helper to read prompt from file"""
+        """Đọc Prompt từ file .md trong thư mục prompts"""
         prompt_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts')
-        prompt_file = f"{doc_type}.md"
-        prompt_path = os.path.join(prompt_dir, prompt_file)
+        prompt_path = os.path.join(prompt_dir, f"{doc_type}.md")
 
         if not os.path.exists(prompt_path):
              Log.error(f"[OPENAI] ❌ Prompt file not found: {prompt_path}")
@@ -63,22 +48,28 @@ class OpenAIExtractor:
             with open(prompt_path, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
-            Log.warning(f"[OPENAI] ⚠️ Could not read prompt file: {e}.")
+            Log.warning(f"[OPENAI] ⚠️ Could not read prompt file: {e}")
             return None
 
     def extract(self, text_lines, doc_type):
-        """Traditional OCR-text based extraction"""
-        if not self.client:
-            return {"data": {}, "metadata": {}}
+        """Xử lý trích xuất dựa trên Text OCR (Token Optimized)"""
+        if not self.client: 
+            return {"data": {}, "metadata": {"error": "client_not_init"}}
 
-        text_block = "\n".join(text_lines)
+        text_block = "\n".join(text_lines).strip()
+        
+        if not text_block or len(text_block) < 3:
+            Log.warning(f"[OPENAI] ⚠️ Input too short for {doc_type}. Skipping...")
+            return {"data": {}, "metadata": {"status": "empty_input"}}
+
         prompt_template = self._get_prompt(doc_type)
-        if not prompt_template: return {"data": {}, "metadata": {}}
+        if not prompt_template: 
+            return {"data": {}, "metadata": {"error": "prompt_not_found"}}
         
         prompt = f"{prompt_template}\n\nINPUT DATA (OCR TEXT):\n{text_block}"
         response_schema = SCHEMA_MAP.get(doc_type)
 
-        Log.info(f"[OPENAI] 🚀 Sending Text-based request ({doc_type})...")
+        Log.info(f"[OPENAI] 🚀 Key Extraction for {doc_type}...")
         try:
             completion = self.client.beta.chat.completions.parse(
                 model="gpt-4o-mini",
@@ -89,45 +80,39 @@ class OpenAIExtractor:
                 response_format=response_schema,
                 temperature=0,
             )
-            return self._process_completion(completion)
+            return self._process_completion(completion, doc_type)
         except Exception as e:
             Log.error(f"[OPENAI] ❌ OpenAI Error: {e}")
             raise e
 
     def extract_with_vision(self, image_path, doc_type):
-        """VLM-based extraction: Sending IMAGE directly to AI"""
-        if not self.client:
-            return {"data": {}, "metadata": {}}
+        """Vision-based extraction (Cảnh báo: Tốn kèm hơn Text-based)"""
+        if not self.client: 
+            return {"data": {}, "metadata": {"error": "client_not_init"}}
 
-        # 1. Encode image
         try:
             with open(image_path, "rb") as image_file:
                 base64_image = base64.b64encode(image_file.read()).decode('utf-8')
         except Exception as e:
-            Log.error(f"[OPENAI-VLM] ❌ Error encoding image: {e}")
+            Log.error(f"[OPENAI-VLM] ❌ Image encoding error: {e}")
             return {"data": {}, "metadata": {}}
 
         prompt_template = self._get_prompt(doc_type)
-        if not prompt_template: return {"data": {}, "metadata": {}}
-        
         response_schema = SCHEMA_MAP.get(doc_type)
 
-        Log.info(f"[OPENAI-VLM] 👁️ Sending Vision-based request ({doc_type})...")
+        Log.info(f"[OPENAI-VLM] 👁️ Vision Extraction for {doc_type}...")
         try:
             completion = self.client.beta.chat.completions.parse(
-                model="gpt-4o-mini", # Support Vision by default
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": self._get_system_message(doc_type)},
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": f"{prompt_template}\n\nHãy trích xuất dữ liệu từ hình ảnh đính kèm theo cấu trúc đã định nghĩa."},
+                            {"type": "text", "text": f"{prompt_template}\n\nHãy trích xuất dữ liệu từ hình ảnh đính kèm."},
                             {
                                 "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}",
-                                    "detail": "high"
-                                },
+                                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
                             },
                         ],
                     }
@@ -135,186 +120,80 @@ class OpenAIExtractor:
                 response_format=response_schema,
                 temperature=0,
             )
-            return self._process_completion(completion)
+            return self._process_completion(completion, doc_type)
         except Exception as e:
             Log.error(f"[OPENAI-VLM] ❌ OpenAI Error: {e}")
             raise e
 
-    def _process_completion(self, completion):
-        """Helper to process completion result"""
+    def _process_completion(self, completion, doc_type: str):
+        """Hậu xử lý kết quả: Chuyển đổi tiền tệ thông minh cho Invoice/Menu"""
         message = completion.choices[0].message
         data = message.parsed.model_dump(mode='json', by_alias=True) if message.parsed else {}
+        
+        if doc_type in ['invoice', 'menu']:
+            currency_fields = ['totalAmount', 'subtotal', 'taxAmount', 'price']
+            for field in currency_fields:
+                if field in data and isinstance(data[field], str):
+                    data[field] = self._parse_vietnamese_amount(data[field])
+                if 'items' in data and isinstance(data['items'], list):
+                    for item in data['items']:
+                        if field in item and isinstance(item[field], str):
+                             item[field] = self._parse_vietnamese_amount(item[field])
+
         metadata = {
-            "prompt_tokens": completion.usage.prompt_tokens,
-            "completion_tokens": completion.usage.completion_tokens,
-            "total_tokens": completion.usage.total_tokens,
+            "usage": {
+                "prompt_tokens": completion.usage.prompt_tokens,
+                "completion_tokens": completion.usage.completion_tokens,
+                "total_tokens": completion.usage.total_tokens,
+            }
         }
         return {"data": data, "metadata": metadata}
 
-    def _parse_vietnamese_amount(self, text: Optional[str]) -> Optional[float]:
-        """Helper to parse Vietnamese amount strings like '200tr', '5 triệu', '100k' to float."""
+    def _parse_vietnamese_amount(self, text: str) -> Optional[float]:
         if not text: return None
         try:
-            # Clean string: remove commas, dots (except decimal), and spaces
             text = text.lower().replace(',', '').replace(' ', '')
-            
-            # Define multipliers
             multipliers = {
-                'tr': 1_000_000,
-                'triệu': 1_000_000,
-                'trieu': 1_000_000,
-                'k': 1_000,
-                'ngàn': 1_000,
-                'nghin': 1_000,
-                'nghìn': 1_000,
-                'tỉ': 1_000_000_000,
-                'tỷ': 1_000_000_000,
-                'vnđ': 1,
-                'đ': 1,
-                'd': 1
+                'tr': 1_000_000, 'triệu': 1_000_000, 'trieu': 1_000_000,
+                'k': 1_000, 'ngàn': 1_000, 'nghìn': 1_000,
+                'tỉ': 1_000_000_000, 'tỷ': 1_000_000_000
             }
-            
-            # Find numeric part and unit part
-            match = re.search(r'(\d+\.?\d*)\s*(.*)', text)
+            match = re.search(r'(\d+\.?\d*)', text)
             if match:
                 number = float(match.group(1))
-                unit = match.group(2)
-                
-                # Apply multiplier if unit found
                 for u, m in multipliers.items():
-                    if u in unit:
-                        return number * m
+                    if u in text: return number * m
                 return number
-        except:
-            pass
+        except: pass
         return None
 
     def analyze_message(self, message: str, sender_name: Optional[str] = None):
-        """Optimized message analysis with Regex Fast-Path (Hybrid) and Amount Parsing"""
-        if not self.client:
-            return {"data": {}, "metadata": {}}
-
-        import re
-        from datetime import datetime, timezone, timedelta
-
-        # 1. Fast-Path Setup (Regex)
-        pre_extracted = {"date": None, "amount": None, "intent": None}
+        """Hybrid analysis: Regex Fast-path + AI Fallback"""
+        if not self.client: return {"data": {}, "metadata": {}}
+        
         msg_lower = message.lower()
-        
-        # Bắt giá tiền (ví dụ: 200tr, 5 triệu, 500k)
-        amount_match = re.search(r'(\d+[\s.,]?\d*\s?(?:tr|triệu|k|vnđ|đ|usd|tỉ|tỷ|ngàn|nghìn))', message, re.IGNORECASE)
-        if amount_match:
-            pre_extracted["amount"] = self._parse_vietnamese_amount(amount_match.group(1))
+        if "nghỉ" in msg_lower and len(message) < 50:
+             return {
+                "data": {"intent": "leave_request", "confidence": 0.95, "metadata": {"customer_name": sender_name}},
+                "metadata": {"source": "regex"}
+             }
 
-        # Bắt ngày tháng đơn giản (dd/mm/yyyy hoặc dd-mm-yyyy)
-        date_match = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', message)
-        if date_match:
-            pre_extracted["date"] = date_match.group(1)
-
-        # Bắt Intent qua từ khóa (Fast detection)
-        if any(k in msg_lower for k in ["nghỉ", "nghỉ phép", "xin nghỉ", "off"]):
-            pre_extracted["intent"] = "leave_request"
-        elif any(k in msg_lower for k in ["báo giá", "giá", "quotation", "chốt giá"]):
-            pre_extracted["intent"] = "quotation"
-        elif any(k in msg_lower for k in ["công tác", "business trip", "đi công tác"]):
-            pre_extracted["intent"] = "business_trip"
-
-        # 2. Context & Current Time
-        utc_plus_7 = timezone(timedelta(hours=7))
-        current_time_dt = datetime.now(utc_plus_7)
-        current_time_str = current_time_dt.strftime("%H:%M:%S, %d-%m-%Y")
-
-        # 3. Fast-Path Decision (If intent is clear and message is simple)
-        if pre_extracted["intent"] and len(message) < 60:
-            # Kiểm tra nếu đủ metadata tối thiểu để trả kết quả ngay
-            is_fast_path = False
-            if pre_extracted["intent"] == "leave_request":
-                # Nghỉ phép cần date, nếu không có regex bắt được, mặc định là ngày hiện tại hoặc mai (nếu có từ 'mai')
-                if "mai" in msg_lower:
-                    tomorrow = current_time_dt + timedelta(days=1)
-                    pre_extracted["date"] = tomorrow.strftime("%H:%M:%S, %d-%m-%Y")
-                elif not pre_extracted["date"]:
-                    pre_extracted["date"] = current_time_str
-                is_fast_path = True
-            elif pre_extracted["intent"] == "quotation" and pre_extracted["amount"]:
-                # Báo giá cần amount
-                if not pre_extracted["date"]: pre_extracted["date"] = current_time_str
-                is_fast_path = True
-
-            if is_fast_path:
-                Log.info(f"[HYBRID] 🚀 Fast-Path Hit (Regex)! Latency: <10ms")
-                return {
-                    "data": {
-                        "intent": pre_extracted["intent"],
-                        "confidence": 0.98,
-                        "metadata": {
-                            "date": pre_extracted["date"],
-                            "customer_name": sender_name if pre_extracted["intent"] == "leave_request" else None,
-                            "amount": pre_extracted["amount"]
-                        }
-                    },
-                    "metadata": {"source": "regex_fast_path"}
-                }
-
-        # 4. Fallback to OpenAI (If Fast-Path missed)
         prompt_template = self._get_prompt("message_analysis")
-        if not prompt_template: return {"data": {}, "metadata": {}}
-
-        context_parts = [f"Time: {current_time_str}"]
-        if sender_name: context_parts.append(f"Sender: {sender_name}")
-        if pre_extracted["amount"]: context_parts.append(f"Regex_Amount: {pre_extracted['amount']}")
-        if pre_extracted["date"]: context_parts.append(f"Regex_Date: {pre_extracted['date']}")
-        
-        user_prompt = f"Context: {', '.join(context_parts)}\nPrompt: {prompt_template}\nInput: {message}"
-
-        Log.info(f"[OPENAI] ⚡ Calling AI (Fast-Path Missed)...")
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Fast Vietnamese message analyzer. Intent MUST be leave_request, business_trip, or quotation. Else return null. Output JSON only."},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "system", "content": "Vietnamese Intent Analyzer. Output JSON only."},
+                    {"role": "user", "content": f"Context: {sender_name}\nPrompt: {prompt_template}\nInput: {message}"},
                 ],
                 response_format={"type": "json_object"},
                 temperature=0,
-                max_tokens=150,
             )
-            
-            content = response.choices[0].message.content or "{}"
-            data = json.loads(content)
-            
-            # Bắt buộc chuyển amount về float nếu AI trả về string
-            if data.get("metadata", {}).get("amount"):
-                raw_amt = data["metadata"]["amount"]
-                if isinstance(raw_amt, str):
-                    data["metadata"]["amount"] = self._parse_vietnamese_amount(raw_amt)
-            
-            # Combine Regex results if AI missed them
-            if not data.get("metadata", {}).get("amount") and pre_extracted["amount"]:
-                data.setdefault("metadata", {})["amount"] = pre_extracted["amount"]
-            
-            # Đảm bảo intent là null nếu không thuộc 3 loại yêu cầu
-            allowed_intents = ["leave_request", "business_trip", "quotation"]
-            if data.get("intent") not in allowed_intents:
-                data["intent"] = None
-
-            return {
-                "data": data, 
-                "metadata": {
-                    "source": "openai",
-                    "usage": {
-                        "prompt_tokens": response.usage.prompt_tokens,
-                        "completion_tokens": response.usage.completion_tokens,
-                        "total_tokens": response.usage.total_tokens
-                    }
-                }
-            }
+            data = json.loads(response.choices[0].message.content)
+            return {"data": data, "metadata": {"source": "openai"}}
         except Exception as e:
-            Log.error(f"[OPENAI] ❌ Analysis Error: {e}")
-            raise e
+            Log.error(f"[OPENAI] ❌ Message analysis error: {e}")
+            return {"data": {}, "metadata": {}}
 
-# Global instance
-openai_extractor = OpenAIExtractor()
-
-# Global instance
+# Singleton instance
 openai_extractor = OpenAIExtractor()

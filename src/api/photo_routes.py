@@ -133,15 +133,11 @@ def clear_photo_session():
 @photo_bp.route("/api/driver-center/ai/auto-crop", methods=["POST"])
 @require_auth
 def auto_crop_face():
-    """
-    API Tự Động Nhận Diện Và Cắt Ảnh Chân Dung (Auto-Crop)
-    Theo yêu cầu tại AI_Cropper_Requirements.md
-    """
     import os
     import uuid
     from PIL import Image
     from werkzeug.utils import secure_filename
-    from src.utils.image_processing import detect_face
+    from src.utils.image_processing import detect_face, get_face_landmarks
     from src.services.photo_service import PREVIEW_DIR, PREVIEW_SUBFOLDER
 
     try:
@@ -186,15 +182,20 @@ def auto_crop_face():
 
         face_x, face_y, face_w, face_h = face_bbox
 
-        # 3. Tính toán Padding Box (margin)
-        # Tăng mạnh margin để lấy nhiều không gian hơn (đặc biệt là 2 bên vai và phần thân dưới)
-        # Chiều rộng tăng 150% so với khuôn mặt, chiều cao tăng 180%
+        # 3. Lấy landmarks để định tâm chính xác (nếu dùng InsightFace)
+        landmarks = get_face_landmarks(img)
+        center_x = face_x + face_w / 2
+        
+        if landmarks and "center_nose" in landmarks:
+            # Ưu tiên dùng tọa độ mũi để căn giữa chiều ngang
+            center_x = landmarks["center_nose"][0]
+
+        # 4. Tính toán Padding Box (margin)
         padding_w = face_w * 1.5
         padding_h = face_h * 1.8
 
-        ideal_x = face_x - (padding_w / 2)
-        # Ở trục Y, đẩy lên trên một chút để lấy đỉnh đầu (trừ đi 1/3 padding_h),
-        # phần lớn padding_h (2/3) sẽ dồn xuống dưới để lấy phần thân người/vai
+        # Định tâm theo center_x thay vì chỉ dựa vào face_x
+        ideal_x = center_x - ((face_w + padding_w) / 2)
         ideal_y = face_y - (padding_h / 3)
 
         ideal_w = face_w + padding_w
@@ -299,25 +300,46 @@ def auto_crop_face():
             elif aspect_ratio == '1:1':
                 final_h = final_w
 
+        # 6. ĐẢM BẢO GIỮ TÂM MŨI KHI CHẠM MÉP (Shrink instead of Shift)
+        # Nếu khung crop bị tràn ra ngoài ảnh, ta thu nhỏ khung lại thay vì dịch chuyển x/y
+        # để khuôn mặt luôn nằm ở chính giữa chiều ngang.
+        
         final_x = int(ideal_x)
         final_y = int(ideal_y)
+        final_w = int(ideal_w)
+        final_h = int(ideal_h)
 
-        # Dịch chuyển (shift) khung vào bên trong ảnh nếu bị tràn ra ngoài
-        if final_x < 0:
-            final_x = 0
-        elif final_x + final_w > img_w:
-            final_x = img_w - final_w
+        # Kiểm tra tràn biên trái/phải
+        dist_to_left_edge = center_x
+        dist_to_right_edge = img_w - center_x
+        
+        # Chiều rộng tối đa có thể có để giữ center_x ở giữa
+        max_half_w = min(dist_to_left_edge, dist_to_right_edge)
+        if (final_w / 2) > max_half_w:
+            # Thu nhỏ w để vừa khít, và thu nhỏ h theo tỉ lệ
+            new_w = int(max_half_w * 2 * 0.98) # Lấy 98% cho an toàn
+            ratio = final_h / final_w
+            final_w = new_w
+            final_h = int(final_w * ratio)
             
+            # Cập nhật lại x, y dựa trên center_x và final_h mới
+            final_x = int(center_x - final_w / 2)
+            # Giữ nguyên y_top (ideal_y) hoặc tính lại nếu cần
+            # Ở đây ta giữ nguyên khoảng cách đỉnh đầu
+        
+        # Kiểm tra tràn biên trên/dưới
         if final_y < 0:
             final_y = 0
-        elif final_y + final_h > img_h:
-            final_y = img_h - final_h
             
-        # Để an toàn lần cuối
-        final_x = max(0, final_x)
-        final_y = max(0, final_y)
+        if final_y + final_h > img_h:
+            final_h = img_h - final_y
+            # Điều chỉnh lại w để giữ ratio nếu cần (tùy chọn)
 
-        # 6. Cắt ảnh và lưu để tạo URL xem trước
+        # Double check lọt lòng ảnh
+        final_x = max(0, min(final_x, img_w - final_w))
+        final_y = max(0, min(final_y, img_h - final_h))
+
+        # 7. Cắt ảnh và lưu để tạo URL xem trước
         cropped_img = img.crop((final_x, final_y, final_x + final_w, final_y + final_h))
         
         session_id = str(uuid.uuid4())

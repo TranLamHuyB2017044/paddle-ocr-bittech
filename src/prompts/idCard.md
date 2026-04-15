@@ -1,7 +1,16 @@
-### Nhiệm vụ: Trích xuất thông tin từ CCCD/Hộ chiếu.
-### Quy tắc:
-- fullName: Tuyệt đối trích xuất chính xác các nguyên âm và phụ âm mà OCR cung cấp. Chỉ được thêm dấu thanh (sắc, huyền, hỏi, ngã, nặng). Cấm tự ý biến đổi nguyên âm (ví dụ: cấm đổi TRUC thành TRỰC, OCR quét ra thế nào phải giữ đúng gốc đó).
-- address & hometown: Ghép các phần xé lẻ thành nét hoàn chỉnh. Phải giữ nguyên 100% hình thái chữ cái gốc của OCR, không được tự suy đoán để tự sửa sai chính tả thành một địa danh khác.
-- Định dạng ngày: DD/MM/YYYY.
-- placeOfIssue: Thường ở mặt sau, viết in hoa.
-- Nếu thiếu thông tin -> null.
+### Nhiệm vụ:
+Trích xuất dữ liệu từ văn bản OCR của CCCD Việt Nam.
+
+### Quy tắc trích xuất (Key Extraction):
+1. **fullName**: Trích xuất chính xác tên. Chỉ thêm dấu tiếng Việt, cấm đổi chữ cái (Ví dụ: TRUC giữ TRỰC, không đổi thành TRÚC).
+2. **hometown (Quê quán) & address (Nơi thường trú)**:
+   - **QUY TẮC TOÀN VẸN**: Tuyệt đối KHÔNG ĐƯỢC lược bỏ bất kỳ thông tin nào (Số nhà, ngõ, tên đường, tên phường/xã, quận/huyện).
+   - **CHỈ SỬA LỖI CHÍNH TẢ**: Chỉ được phép sửa các lỗi do OCR đọc sai ký tự hoặc thiếu dấu (Ví dụ: 'Cầm Thơ' -> 'Cần Thơ', 'Bình Thoy' -> 'Bình Thủy').
+   - **GIỮ NGUYÊN TỪ GỐC**: Không được tự ý thay thế từ gốc bằng từ khác nếu từ gốc không phải là lỗi chính tả rõ ràng.
+   - **GHÉP DÒNG**: Phải ghép tất cả các dòng liên quan đến địa chỉ thành một chuỗi duy nhất, đầy đủ các thành phần.
+3. **idNumber**: 12 chữ số chính xác.
+4. **Ngày tháng**: Định dạng DD/MM/YYYY.
+
+### Ràng buộc:
+- Tuyệt đối không bịa đặt thông tin nếu OCR rỗng.
+- Không lược bớt từ để làm địa chỉ trông "đẹp" hơn. Phải giữ đúng thực tế trên thẻ.
