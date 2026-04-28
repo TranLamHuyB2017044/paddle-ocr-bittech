@@ -20,8 +20,8 @@ class ModelLoader:
         return cls._instance
     
     def __init__(self):
-        """Initialize ModelLoader and pre-load OCR model."""
-        self._load_ocr()
+        """Initialize ModelLoader (sử dụng cơ chế Lazy Load để cứu RAM cho API container)."""
+        pass
 
     def _load_ocr(self):
         """Load DeepDoc + VietOCR engine"""
