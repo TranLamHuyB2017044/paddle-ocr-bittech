@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
+    libzbar0 \
     curl \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*

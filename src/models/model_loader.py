@@ -28,6 +28,13 @@ class ModelLoader:
         if self._ocr is None:
             Log.info("📖 Loading DeepDoc + VietOCR OCR engine...")
             try:
+                # Triển khai xác thực Hugging Face bằng Token
+                hf_token = os.getenv("HF_TOKEN")
+                if hf_token:
+                    from huggingface_hub import login
+                    login(token=hf_token)
+                    Log.info("🔑 Hugging Face Hub authenticated successfully with HF_TOKEN!")
+                
                 from ..deepdoc.ocr_engine import DeepDocOCR
                 self._ocr = DeepDocOCR()
                 Log.info("✅ DeepDoc + VietOCR loaded successfully!")
