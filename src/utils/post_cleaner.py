@@ -126,11 +126,41 @@ class PostCleaner:
             if field in cleaned_data and cleaned_data[field]:
                 cleaned_data[field] = PostCleaner._normalize_address_part(cleaned_data[field])
 
-        # 1. Clean ID Number (Xóa khoảng trắng, ký tự lại)
+        # 1. Clean ID Number (Xóa khoảng trắng, ký tự lại, Regex semantic CCCD/CMND/GPLX)
         if "idNumber" in cleaned_data and cleaned_data["idNumber"]:
-            raw_id = cleaned_data["idNumber"]
-            # Chỉ giữ lại số
-            clean_id = re.sub(r"[^0-9]", "", str(raw_id))
+            raw_id = str(cleaned_data["idNumber"]).replace(" ", "")
+            
+            if doc_type == "idCard":
+                # Quy tắc ngầm CCCD 12 số:
+                # - 3 số đầu: Mã tỉnh (001 đến 096)
+                # - 1 số kế: Thế kỷ & Giới tính (0-9)
+                # - 2 số kế: Năm sinh (00-99)
+                # - 6 số cuối: Ngẫu nhiên
+                # Regex CCCD chuẩn: (Mã tỉnh 001-096)(Thế kỷ 0-5)(Năm sinh 2 số)(Ngẫu nhiên 6 số) -> (0[0-8][0-9]|09[0-6])[0-5]\d{8}
+                # CMND cũ: 9 số bất kỳ
+                cccd_pattern = r"(?<!\d)((0[0-8][0-9]|09[0-6])[0-5]\d{8}|\d{9})(?!\d)"
+                match = re.search(cccd_pattern, raw_id)
+                if match:
+                    clean_id = match.group(1)
+                else:
+                    # Fallback bóc tách 12 số (chấp nhận rủi ro sai OCR ở mã tỉnh/thế kỷ) hoặc 9 số
+                    clean_id = re.sub(r"[^0-9]", "", raw_id)
+                    match_fallback = re.search(r"(\d{12}|\d{9})", clean_id)
+                    if match_fallback:
+                        clean_id = match_fallback.group(1)
+            elif doc_type == "driverLicense":
+                # GPLX luôn có 12 số
+                match = re.search(r"(?<!\d)(\d{12})(?!\d)", raw_id)
+                if match:
+                    clean_id = match.group(1)
+                else:
+                    clean_id = re.sub(r"[^0-9]", "", raw_id)
+                    match_fallback = re.search(r"(\d{12})", clean_id)
+                    if match_fallback:
+                        clean_id = match_fallback.group(1)
+            else:
+                clean_id = re.sub(r"[^0-9]", "", raw_id)
+                
             cleaned_data["idNumber"] = clean_id
             
         # 2. Clean Date Fields (Chuẩn hóa DD/MM/YYYY)

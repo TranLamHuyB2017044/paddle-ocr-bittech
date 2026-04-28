@@ -111,6 +111,27 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         
         request_start = time.time()
         
+        # 0. QR Code Fast Path for CCCD
+        if not raw_text and doc_type == 'idCard' and file_paths:
+            try:
+                from pyzbar.pyzbar import decode
+                import cv2
+                for p in file_paths:
+                    if str(p).lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+                        img = cv2.imread(p)
+                        if img is not None:
+                            decoded = decode(img)
+                            if decoded:
+                                qr_text = decoded[0].data.decode('utf-8')
+                                if '|' in qr_text:
+                                    Log.info(f"[Worker-Detect] 🎯 Quét thành công mã QR từ CCCD: {qr_text}")
+                                    raw_text = qr_text
+                                    break
+            except ImportError:
+                Log.warning("[Worker-Detect] Thư viện pyzbar chưa được cài đặt. Bỏ qua quét QR.")
+            except Exception as e:
+                Log.warning(f"[Worker-Detect] Lỗi khi quét QR: {e}")
+
         # 1. Manual KIE Fast Path (Specific for CCCD/DriverLicense if raw_text format matches)
         manual_data = None
         if raw_text:
@@ -235,13 +256,18 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         
         # 4. Processing Phase
         result_response = None
-        if provider != 'traditional':
+        
+        # Luôn ưu tiên dùng AI Processor cho idCard như yêu cầu
+        if provider != 'traditional' or doc_type == 'idCard':
             try:
+                Log.info(f"[Worker-Detect] Dùng AI Processor cho {doc_type}")
                 result_response = process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id, file_paths, document_id=doc_id)
             except Exception as e:
                 Log.error(f"[Worker-Detect] OpenAI failed: {e}")
 
-        if result_response is None or provider == 'traditional':
+        # Chỉ dùng Traditional cho các loại giấy tờ khác nếu được yêu cầu hoặc AI lỗi
+        if result_response is None and doc_type != 'idCard':
+            Log.info(f"[Worker-Detect] Fallback sang Traditional Processor cho {doc_type}")
             result_response = process_traditional(raw_front, raw_back, timer_info, doc_type, user_id, file_paths, document_id=doc_id)
 
         # 5. Completion

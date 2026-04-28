@@ -76,3 +76,4 @@ cloudinary
 requests
 rembg[cpu]==2.0.56
 psutil  # Để chạy benchmark RAM/CPU
+pyzbar  # Đọc mã QR siêu tốc
