@@ -34,16 +34,35 @@ class DriverLicense(BaseModel):
     dateOfBegining: Optional[str] = Field(description="Ngày trúng tuyển")
 
 
+class InvoiceItem(BaseModel):
+    ten_hang_hoa: Optional[str] = Field(description="Tên hàng hóa / dịch vụ")
+    ma_hang: Optional[str] = Field(description="Mã hàng (nếu có)")
+    don_vi_tinh: Optional[str] = Field(description="Đơn vị tính: cái, kg, giờ...")
+    so_luong: Optional[float] = Field(description="Số lượng")
+    don_gia: Optional[float] = Field(description="Đơn giá chưa thuế")
+
+
 class Invoice(BaseModel):
     ten_hoa_don: Optional[str] = Field(description="Tên hóa đơn (Ví dụ: Hóa đơn GTGT, Phiếu thu...)")
     so_hoa_don: Optional[str] = Field(description="Số hóa đơn")
-    ngay_lap_hoa_don: Optional[str] = Field(description="Ngày lập hóa đơn")
-    ten_khach_hang: Optional[str] = Field(description="Tên khách hàng / người mua")
-    dia_chi_khach_hang: Optional[str] = Field(description="Địa chỉ khách hàng")
-    ten_nguoi_ban: Optional[str] = Field(description="Tên người bán / cửa hàng")
+    loai_hoa_don: Optional[str] = Field(
+        description="Loại hóa đơn: gtgt | ban_hang | le | dich_vu | khac"
+    )
+
+    ngay_lap_phieu: Optional[str] = Field(
+        description="Ngày lập hóa đơn (YYYY-MM-DD)"
+    )
+    gio_lap_phieu: Optional[str] = Field(
+        description="Giờ lập hóa đơn (HH:MM:SS)"
+    )
+
+    ten_nguoi_ban: Optional[str] = Field(description="Tên người bán / đơn vị bán")
     dia_chi_nguoi_ban: Optional[str] = Field(description="Địa chỉ người bán")
     tong_tien: Optional[str] = Field(description="Tổng tiền thanh toán / Thành tiền")
-    danh_sach_san_pham: Optional[List[str]] = Field(default_factory=list, description="Danh sách sản phẩm/dịch vụ.")
+    vat: Optional[str] = Field(description="VAT")
+    danh_sach_hang_hoa: Optional[List[InvoiceItem]] = Field(
+        description="Danh sách hàng hóa / dịch vụ"
+    )
 
 class VehicleDocument(BaseModel):
     documentType: Optional[str] = Field(description="Loại giấy tờ")

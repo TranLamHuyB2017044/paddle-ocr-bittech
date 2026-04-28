@@ -1,63 +1,131 @@
 services:
+  # ============================================================
   # Redis - Hàng đợi công việc
+  # SECURITY: Đã thêm password, chỉ bind localhost, pin version
+  # ============================================================
   redis:
-    image: redis:latest
+    image: redis:7.2-alpine                         # [FIX-1] Pin version cụ thể, dùng alpine (nhẹ hơn, ít attack surface hơn)
     container_name: paddle-ocr-redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}               
+      --bind 0.0.0.0
+      --protected-mode no
+      --maxmemory 512mb                             
+      --maxmemory-policy allkeys-lru
+      --loglevel warning
+      --rename-command CONFIG ""
+      --rename-command DEBUG ""
+      --rename-command SLAVEOF ""
+      --rename-command REPLICAOF ""
     ports:
-      - "63799:6379" # Đổi cổng host từ 6379 thành 63799 để tránh xung đột
-    restart: always
+      - "127.0.0.1:63799:6379"                     # [FIX-2] Chỉ bind localhost, KHÔNG public ra internet
+    restart: unless-stopped                         # [FIX-3] Dùng unless-stopped thay always (tránh restart loop vô tận)
     networks:
       - ocr-network
+    volumes:
+      - redis-data:/data                            # [FIX-4] Persistent data vào named volume, không mount host path
+    security_opt:
+      - no-new-privileges:true                      # [FIX-5] Chặn container tự leo thang đặc quyền
+    read_only: true                                 # [FIX-6] Filesystem container read-only
+    tmpfs:
+      - /tmp                                        # Redis cần /tmp để write tạm
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 600M                             # [FIX-7] Giới hạn RAM để tránh DoS
 
-  # Background Worker - Nơi xử lý OCR và Embedding nặng
+  # ============================================================
+  # Background Worker - Xử lý OCR và Embedding nặng
+  # SECURITY: Bỏ user root, thêm security options
+  # ============================================================
   worker:
     build: .
     container_name: paddle-ocr-worker
     command: python run_worker.py
-    user: root
-    restart: always
+    # user: root ← ĐÃ XÓA [FIX-8] Dùng appuser từ Dockerfile (UID 1000)
+    restart: unless-stopped
     depends_on:
-      - redis
-    links:
-      - redis
+      redis:
+        condition: service_healthy                 # [FIX-9] Chờ Redis healthy thật sự mới start
     networks:
       - ocr-network
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0  # [FIX-10] Redis URL có password
     volumes:
-      - ./uploads:/app/uploads
+      - ./uploads:/app/uploads                     # Worker cần đọc/ghi file upload
       - ./logs:/app/logs
-      - ./storage:/app/storage
+      - ./storage:/app/storage:ro                  # [FIX-11] Storage chỉ đọc với worker
+    security_opt:
+      - no-new-privileges:true                     # [FIX-12] Chặn leo thang đặc quyền
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
 
-  # Flask API - Chỉ nhận file và trả về 202
+  # ============================================================
+  # Flask API - Nhận file và đẩy vào queue
+  # SECURITY: Bỏ user root, bind localhost, thêm security options
+  # ============================================================
   ocr-api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: paddle-ocr-app
-    user: root
-    restart: always
+    # user: root ← ĐÃ XÓA [FIX-13] Dùng appuser từ Dockerfile (UID 1000)
+    restart: unless-stopped
     depends_on:
-      - redis
-    links:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - ocr-network
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"                     # [FIX-14] Chỉ bind localhost → bắt buộc dùng Nginx reverse proxy
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
-      - ./storage:/app/storage
+      - ./storage:/app/storage:ro                  # [FIX-15] Storage read-only với API
     env_file:
       - .env
     environment:
       - PORT=8080
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - PYTHONUNBUFFERED=1
+    security_opt:
+      - no-new-privileges:true                     # [FIX-16] Chặn leo thang đặc quyền
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 
+# ============================================================
+# Networks
+# ============================================================
 networks:
   ocr-network:
     driver: bridge
+    internal: false                                # Vẫn cần ra internet để gọi OpenAI, MongoDB Atlas
+
+# ============================================================
+# Volumes
+# ============================================================
+volumes:
+  redis-data:                                      # Named volume cho Redis persistence
+    driver: local
