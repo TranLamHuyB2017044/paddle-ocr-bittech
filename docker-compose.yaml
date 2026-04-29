@@ -19,7 +19,7 @@ services:
       --rename-command SLAVEOF ""
       --rename-command REPLICAOF ""
     ports:
-      - "127.0.0.1:63799:6379"                     # [FIX-2] Chỉ bind localhost, KHÔNG public ra internet
+      - "127.0.0.1:16379:6379"                     # [FIX-2] Chỉ bind localhost, KHÔNG public ra internet
     restart: unless-stopped                         # [FIX-3] Dùng unless-stopped thay always (tránh restart loop vô tận)
     networks:
       - ocr-network
@@ -90,7 +90,7 @@ services:
     networks:
       - ocr-network
     ports:
-      - "127.0.0.1:8080:8080"                     # [FIX-14] Chỉ bind localhost → bắt buộc dùng Nginx reverse proxy
+      - "${API_BIND_IP:-}8080:8080"                     # Local: rỗng -> 8080:8080. VPS: 127.0.0.1: -> 127.0.0.1:8080:8080
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs

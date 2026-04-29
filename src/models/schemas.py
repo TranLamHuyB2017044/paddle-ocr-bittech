@@ -39,7 +39,7 @@ class InvoiceItem(BaseModel):
     ma_hang: Optional[str] = Field(description="Mã hàng (nếu có)")
     don_vi_tinh: Optional[str] = Field(description="Đơn vị tính: cái, kg, giờ...")
     so_luong: Optional[float] = Field(description="Số lượng")
-    don_gia: Optional[float] = Field(description="Đơn giá chưa thuế")
+    don_gia: Optional[str] = Field(description="Đơn giá chưa thuế (định dạng 100,000)")
 
 
 class Invoice(BaseModel):
@@ -58,7 +58,7 @@ class Invoice(BaseModel):
 
     ten_nguoi_ban: Optional[str] = Field(description="Tên người bán / đơn vị bán")
     dia_chi_nguoi_ban: Optional[str] = Field(description="Địa chỉ người bán")
-    tong_tien: Optional[str] = Field(description="Tổng tiền thanh toán / Thành tiền")
+    tong_tien: Optional[str] = Field(description="Tổng tiền thanh toán / Thành tiền (định dạng 100,000)")
     vat: Optional[str] = Field(description="VAT")
     danh_sach_hang_hoa: Optional[List[InvoiceItem]] = Field(
         description="Danh sách hàng hóa / dịch vụ"

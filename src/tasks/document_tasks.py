@@ -120,13 +120,29 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                     if str(p).lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
                         img = cv2.imread(p)
                         if img is not None:
+                            # Chiến thuật 1: Quét ảnh gốc
                             decoded = decode(img)
+                            
+                            # Chiến thuật 2: Nếu thất bại, thử phóng to ảnh (Upscale) - Hiệu quả với QR nhỏ/mờ
+                            if not decoded:
+                                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                                upscale = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+                                decoded = decode(upscale)
+                                
+                            # Chiến thuật 3: Thử cân bằng xám/độ tương phản (Thresholding)
+                            if not decoded:
+                                _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+                                decoded = decode(thresh)
+
                             if decoded:
                                 qr_text = decoded[0].data.decode('utf-8')
                                 if '|' in qr_text:
-                                    Log.info(f"[Worker-Detect] 🎯 Quét thành công mã QR từ CCCD: {qr_text}")
+                                    Log.info(f"\n{'='*70}\n[Worker-Detect] 🚀 [THÀNH CÔNG] ĐÃ ĐỌC ĐƯỢC MÃ QR CCCD:\n{qr_text}\n{'='*70}\n")
                                     raw_text = qr_text
                                     break
+                
+                if not raw_text:
+                    Log.info("[Worker-Detect] ⚠️ Không tìm thấy mã QR hợp lệ trong ảnh. Chuyển sang bước OCR...")
             except ImportError:
                 Log.warning("[Worker-Detect] Thư viện pyzbar chưa được cài đặt. Bỏ qua quét QR.")
             except Exception as e:
@@ -138,6 +154,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             if doc_type == 'idCard' and '|' in raw_text:
                 Log.info("[Worker-Detect] ⚡ Manual KIE Fast-Path activated for CCCD")
                 manual_data = PostCleaner.extract_cccd_manual(raw_text)
+                Log.info(f"\n{'*'*70}\n[Worker-Detect] 🎯 [KẾT QUẢ TỪ QR] DỮ LIỆU ĐƯỢC BÓC TÁCH:\n{json.dumps(manual_data, indent=4, ensure_ascii=False)}\n{'*'*70}\n")
             elif doc_type == 'driverLicense':
                 Log.info("[Worker-Detect] ⚡ Manual KIE Fast-Path activated for DriverLicense")
                 manual_data = PostCleaner.extract_driver_manual(raw_text)
