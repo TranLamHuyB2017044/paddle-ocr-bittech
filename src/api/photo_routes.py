@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify
 
 from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
+from src.utils.rate_limit import get_limiter
 from src.services.photo_service import (
     validate_batch_request,
     process_batch,
@@ -15,9 +16,11 @@ from src.services.photo_service import (
 
 photo_bp = Blueprint('photo_routes', __name__)
 
+limiter = get_limiter()
 
 @photo_bp.route("/api/photo/process", methods=["POST"])
 @require_auth
+@limiter.limit("20 per minute")
 def process_photo():
     
     try:

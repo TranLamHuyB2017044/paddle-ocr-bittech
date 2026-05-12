@@ -8,12 +8,16 @@ import os
 
 import src.config as config
 from src.api.routes import register_routes
+from src.utils.rate_limit import init_limiter
 # Model loader is no longer explicitly imported here to prevent unnecessary loading
 
 
 # ==================== FLASK APP SETUP ====================
 app = Flask(__name__)
 CORS(app)
+
+# Khởi tạo Rate Limiter (dùng chung Redis hiện tại)
+init_limiter(app)
 
 # Initialize MongoDB Connection
 from src.database import mongo
@@ -22,7 +26,8 @@ from src.database import mongo
 os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
 
-
+# ==================== INITIALIZE RATE LIMITER ====================
+limiter = init_limiter(app)
 
 # Ensure JSON response keys are NOT sorted (preserve order)
 app.json.sort_keys = False

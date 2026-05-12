@@ -172,6 +172,9 @@ DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT"
 # ========== AI API KEY CONFIG ==========
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+# ========== REDIS CONFIG ==========
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 # ========== MONGODB CONFIG ==========
 MONGODB_URI = os.getenv("MONGODB_URI", "")
 

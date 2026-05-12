@@ -10,6 +10,7 @@ from src.models.user import User
 from src.models.auth_service import AuthService
 from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
+from src.utils.rate_limit import get_limiter
 
 auth_bp = Blueprint('auth_bp', __name__)
 
@@ -124,7 +125,10 @@ def update_profile():
         Log.error(f"[Auth] Update failed: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
+limiter = get_limiter()
+
 @auth_bp.route('/api/auth/register', methods=['POST'])
+@limiter.limit("5 per minute")
 def register():
     try:
         data = request.json
@@ -309,6 +313,7 @@ def admin_get_accounts():
     return protected_get_accounts()
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     try:
         data = request.json

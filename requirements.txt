@@ -7,6 +7,7 @@ gunicorn
 werkzeug
 pydantic
 python-dotenv
+flask-limiter>=3.5.0
 
 # ============================================================
 # OCR Engine: DeepDoc + VietOCR 

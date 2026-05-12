@@ -10,6 +10,7 @@ from datetime import datetime
 import uuid
 from src.utils.auth_middleware import require_auth
 from src.utils.file_utils import save_uploaded_files
+from src.utils.rate_limit import get_limiter
 from src.utils.redis_client import rag_queue
 from src.tasks.document_tasks import process_detection_task, process_structure_detection_task
 from src.repositories.documents_repository import documents_repo
@@ -44,6 +45,8 @@ def register_routes(app):
     """
     Đăng ký các routes cho Flask app
     """
+    limiter = get_limiter()
+    
     @app.route("/", methods=["GET"])
     def health_check():
         return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
@@ -121,6 +124,7 @@ def register_routes(app):
 
     @app.route("/api/traditional", methods=["POST"])
     @require_auth
+    @limiter.limit("30 per minute")
     def detect_traditional():
         import time
         import json
@@ -277,6 +281,7 @@ def register_routes(app):
 
     @app.route("/api/detect-sync", methods=["POST"])
     @require_auth
+    @limiter.limit("30 per minute")
     def detect_sync():
         """
         [SYNC-VIA-WORKER]
@@ -438,6 +443,7 @@ def register_routes(app):
 
     @app.route("/api/detect", methods=["POST"])
     @require_auth
+    @limiter.limit("30 per minute")
     def detect():
         try:
             doc_type, error_resp, status_code = validate_request_params(request)
