@@ -134,12 +134,10 @@ def register():
         fullname = data.get('fullname')
         phone = data.get('phone')
         
-        # Default role is 2 (user)
         role = data.get('role', 2)
         account_id = data.get('account_id')
-        plan = data.get('plan', 0) # Default plan is 0 (Free)
+        plan = data.get('plan', 0) 
 
-        # RBAC Check: If x-api-key header is present, handle manager creating sub-users
         api_key = request.headers.get("x-api-key")
         if api_key:
             from src.repositories.users_repository import users_repo
@@ -179,21 +177,20 @@ def register():
                                 role = 2
                                 account_id = creator.get('account_id')
                                 plan = 0 # Managers cannot set plans for sub-users (they share account)
-                            
-                             # Admin (role 0) can specify role, account_id, AND plan.
-                             # If not Admin, plan is forced to 0 (already default) unless it's a self-register?
-                             # Self-register logic below assumes no auth header usually, or just ignores it?
-                             # Actually self-register shouldn't be able to set plan > 0 without payment.
-                             # So we should enforce plan=0 if not (Auth & Admin).
+
                             
                             if creator_role != 0:
                                 plan = 0
+                                if creator_role == 1:
+                                    role = 2  
+                                else:
+                                    role = 2 
 
             except Exception as e:
                 Log.error(f"[Auth] Permission check during register failed: {e}")
         else:
-            # Self-registration or no Auth provided -> Force Plan 0
             plan = 0
+            role = 2
 
         if not email or not password or not username:
             return jsonify({"statusCode": 400, "message": "Email, password and username are required"}), 400
