@@ -49,6 +49,7 @@ def register_routes(app):
         return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
 
     @app.route('/uploads/<path:filename>')
+    @require_auth
     def serve_uploaded_file(filename):
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
