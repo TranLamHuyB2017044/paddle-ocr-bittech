@@ -169,13 +169,81 @@ class ExtractionLogsRepository(BaseRepository):
                     "filename": filename,
                     "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
                     "total_time": total_time,
-                    "detector_name": detector_name
+                    "detector_name": detector_name,
+                    "extraction_result": doc.get("extraction_result")
                 })
             
             return recent_logs
         except Exception as e:
             print(f"Error getting recent extractions: {e}")
             return []
+
+    def get_paginated_extractions(self, user_id, page=1, limit=10):
+        from src.repositories.documents_repository import documents_repo
+        from src.repositories.users_repository import users_repo
+        
+        try:
+            uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
+            query = {"user_id": uid}
+            
+            skip = (page - 1) * limit
+            cursor = self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            total = self.collection.count_documents(query)
+            
+            logs = []
+            doc_cache = {}
+            
+            # Simple cache for mapping user_id to fullname
+            user_cache = {}
+
+            for doc in cursor:
+                # Get detector account info
+                doc_uid = doc.get("user_id")
+                detector_name = "Unknown"
+                if doc_uid:
+                    uid_str = str(doc_uid)
+                    if uid_str not in user_cache:
+                        user_info = users_repo.find_by_id(doc_uid)
+                        user_cache[uid_str] = user_info.get("fullname", "Unknown") if user_info else "Unknown"
+                    detector_name = user_cache[uid_str]
+                    
+                filename = None
+                raw_doc_id = doc.get("document_id")
+                if raw_doc_id:
+                    doc_id_str = str(raw_doc_id)
+                    if doc_id_str not in doc_cache:
+                        try:
+                            document = documents_repo.find_by_id(doc_id_str)
+                            doc_cache[doc_id_str] = document.get("filename") if document else None
+                        except Exception:
+                            doc_cache[doc_id_str] = None
+                    filename = doc_cache[doc_id_str]
+
+                metadata = doc.get("metadata", {}) or {}
+                total_time = "N/A"
+                if isinstance(metadata, dict):
+                    total_time = metadata.get("total_time", "N/A")
+                
+                logs.append({
+                    "document_id": str(raw_doc_id) if raw_doc_id else None,
+                    "document_type": doc.get("document_type"),
+                    "filename": filename,
+                    "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+                    "total_time": total_time,
+                    "detector_name": detector_name,
+                    "extraction_result": doc.get("extraction_result")
+                })
+            
+            return {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "data": logs,
+                "total_pages": (total + limit - 1) // limit if limit > 0 else 0
+            }
+        except Exception as e:
+            print(f"Error getting paginated extractions: {e}")
+            return {"total": 0, "page": page, "limit": limit, "data": [], "total_pages": 0}
 
 # Global instance
 extraction_logs_repo = ExtractionLogsRepository()

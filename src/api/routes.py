@@ -182,6 +182,28 @@ def register_routes(app):
             Log.error(f"[API] Error fetching user stats: {e}")
             return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
 
+    @app.route("/api/extractions", methods=["GET"])
+    @require_auth
+    def get_user_extractions():
+        try:
+            user_id = getattr(g, 'user_id', None)
+            if not user_id:
+                return jsonify({"statusCode": 401, "message": "User not authenticated"}), 401
+            
+            page = request.args.get('page', 1, type=int)
+            limit = request.args.get('limit', 10, type=int)
+            
+            from src.repositories.extraction_logs_repository import extraction_logs_repo
+            result = extraction_logs_repo.get_paginated_extractions(user_id, page=page, limit=limit)
+            
+            return jsonify({
+                "statusCode": 200,
+                "message": "Success",
+                "data": result
+            }), 200
+        except Exception as e:
+            Log.error(f"[API] Error fetching paginated extractions: {e}")
+            return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
 
     @app.route("/api/traditional", methods=["POST"])
     @require_auth
