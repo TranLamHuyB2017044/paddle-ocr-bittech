@@ -285,12 +285,18 @@ def upload_to_workspace(workspace_id):
         for idx, file_path in enumerate(saved_paths):
             original_filename = files[idx].filename
             
-            # Save Initial Doc record
+            # Save Initial Doc record (kèm source_files để ownership check)
             doc_id = documents_repo.save_document(
                 user_id=g.user_id,
                 workspace_id=workspace_id,
                 filename=original_filename,
-                status=DocStatus.UPLOADED
+                status=DocStatus.UPLOADED,
+                source_files=[
+                    {
+                        "file_name": os.path.basename(file_path),
+                        "storage_path": file_path.replace("\\", "/")
+                    }
+                ]
             )
             
             # Enqueue Background Task

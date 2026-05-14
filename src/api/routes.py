@@ -54,6 +54,67 @@ def register_routes(app):
     @app.route('/uploads/<path:filename>')
     @require_auth
     def serve_uploaded_file(filename):
+        """
+        Serve file từ uploads/ với kiểm soát quyền RBAC:
+          - Owner (role=2):   xem file của mình.
+          - Manager (role=1): xem file trong cùng account_id.
+          - Admin (role=0):   phải dùng /api/files/<doc_id>/admin-view (break-glass).
+        """
+        from src.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
+        from src.repositories.audit_log_repository import audit_log_repo, AuditEvent
+
+        actor_role = g.user.get('role', 2)
+
+        # Admin: tự động từ chối qua route này — yêu cầu dùng break-glass endpoint
+        if actor_role == ROLE_ADMIN:
+            storage_path_norm = f"uploads/{filename}"
+            doc = documents_repo.find_by_storage_path(storage_path_norm)
+            doc_id = str(doc["_id"]) if doc else filename
+            ctx = get_request_context()
+            audit_log_repo.log_event(
+                event_type=AuditEvent.ACCESS_DENIED,
+                actor_user_id=g.user_id,
+                actor_role=ROLE_ADMIN,
+                target_doc_id=doc_id,
+                target_file=filename,
+                reason="Admin must use /api/files/<doc_id>/admin-view (break-glass)",
+                **ctx,
+            )
+            return jsonify({
+                "statusCode": 403,
+                "message": "Admin không thể xem file trực tiếp. Hãy dùng /api/files/<doc_id>/admin-view và cung cấp lý do."
+            }), 403
+
+        # Lookup document ownership
+        storage_path = f"{app.config['UPLOAD_FOLDER']}/{filename}"
+        doc = documents_repo.find_by_storage_path(storage_path)
+        if not doc:
+            storage_path_norm = f"uploads/{filename}"
+            doc = documents_repo.find_by_storage_path(storage_path_norm)
+
+        if not doc:
+            return jsonify({"statusCode": 404, "message": "File không tìm thấy hoặc không thuộc tài liệu nào."}), 404
+
+        # Gắn account_id từ user nếu doc chưa có (backward compat)
+        if not doc.get("account_id") and g.user.get("account_id"):
+            doc["account_id"] = g.user.get("account_id")
+
+        access = check_file_access(g.user, doc)
+        ctx = get_request_context()
+
+        if not access.allowed:
+            from src.repositories.audit_log_repository import audit_log_repo, AuditEvent
+            audit_log_repo.log_event(
+                event_type=AuditEvent.ACCESS_DENIED,
+                actor_user_id=g.user_id,
+                actor_role=actor_role,
+                target_doc_id=str(doc["_id"]),
+                target_file=filename,
+                reason=access.reason,
+                **ctx,
+            )
+            return jsonify({"statusCode": 403, "message": access.reason}), 403
+
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
     @app.route("/api/stats", methods=["GET"])
@@ -149,11 +210,21 @@ def register_routes(app):
             if not all_temp_files:
                 return jsonify({"statusCode": 400, "message": "No images provided"}), 400
 
+            # Xây source_files metadata để lưu ownership
+            source_files_meta = [
+                {
+                    "file_name": os.path.basename(p),
+                    "storage_path": p.replace("\\", "/")
+                }
+                for p in all_temp_files
+            ]
+
             user_id = getattr(g, 'user_id', None)
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,
                 filename=os.path.basename(all_temp_files[0]),
-                status=DocStatus.UPLOADED
+                status=DocStatus.UPLOADED,
+                source_files=source_files_meta
             )
 
             # Check quota
@@ -336,6 +407,15 @@ def register_routes(app):
             provider = request.form.get("provider", "openai")
             user_id = getattr(g, "user_id", None)
 
+            # Xây source_files metadata để lưu ownership
+            source_files_meta = [
+                {
+                    "file_name": os.path.basename(p),
+                    "storage_path": p.replace("\\", "/")
+                }
+                for p in all_temp_files
+            ] if all_temp_files else []
+
             # ===== 2. Lưu document =====
             doc_id = documents_repo.save_document(
                 user_id=user_id,
@@ -344,7 +424,8 @@ def register_routes(app):
                     os.path.basename(all_temp_files[0])
                     if all_temp_files else "raw_text_input"
                 ),
-                status=DocStatus.UPLOADED
+                status=DocStatus.UPLOADED,
+                source_files=source_files_meta
             )
 
             # Check quota
@@ -468,10 +549,20 @@ def register_routes(app):
             if not all_temp_files and not raw_text:
                 return jsonify({"statusCode": 400, "message": "No images or raw_text provided"}), 400
            
+            # Xây source_files metadata để lưu ownership
+            source_files_meta = [
+                {
+                    "file_name": os.path.basename(p),
+                    "storage_path": p.replace("\\", "/")
+                }
+                for p in all_temp_files
+            ] if all_temp_files else []
+
             doc_id = documents_repo.save_document(
                 user_id=user_id, doc_type=doc_type,
                 filename=os.path.basename(all_temp_files[0]) if all_temp_files else "raw_text_input",
-                status=DocStatus.UPLOADED
+                status=DocStatus.UPLOADED,
+                source_files=source_files_meta
             )
 
             # Check quota

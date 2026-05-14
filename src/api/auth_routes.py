@@ -19,11 +19,10 @@ import cloudinary
 import cloudinary.uploader
 from datetime import datetime
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+from src.config import ALLOWED_IMAGE_EXTENSIONS
+from src.utils.file_utils import validate_image_file
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # ==================== AUTHENTICATION ROUTES (JWT) ====================
 @auth_bp.route('/api/user/update-user-avatar', methods=['PUT'])
@@ -38,9 +37,10 @@ def update_user_avatar():
         if file.filename == '':
             return jsonify({"statusCode": 400, "message": "Bạn chưa chọn file nào."}), 400
             
-        # 2. Validate File Type
-        if not file or not allowed_file(file.filename):
-            return jsonify({"statusCode": 400, "message": f"Chỉ hỗ trợ các định dạng: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
+        # 2. Validate File Type — kiểm tra cả extension lẫn MIME type thật
+        is_valid, reason = validate_image_file(file, file.filename)
+        if not is_valid:
+            return jsonify({"statusCode": 400, "message": reason}), 400
 
         # 3. Check filesize constraints
         file.seek(0, 2)
