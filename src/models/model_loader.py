@@ -4,7 +4,95 @@ Load và quản lý DeepDoc + VietOCR models (không còn PaddleOCR)
 """
 import os
 import traceback
+import numpy as np
+import json
+import onnxruntime as ort
+from PIL import Image
 from ..utils.logger import Log
+
+
+class VietOCRONNXPredictor:
+    def __init__(self, encoder_path, decoder_path, vocab_path):
+        options = ort.SessionOptions()
+        # options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        
+        self.encoder_session = ort.InferenceSession(encoder_path, sess_options=options, providers=['CPUExecutionProvider'])
+        self.decoder_session = ort.InferenceSession(decoder_path, sess_options=options, providers=['CPUExecutionProvider'])
+        
+        with open(vocab_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            self.i2c = data['i2c']
+        
+        self.max_seq_length = 128
+        self.sos_token = 1
+        self.eos_token = 2
+
+    def preprocess(self, pil_img):
+        # VietOCR standard preprocessing: resize to height 32, maintain aspect ratio
+        w, h = pil_img.size
+        new_w = int(32 * w / h)
+        img = pil_img.convert('RGB')
+        img = img.resize((new_w, 32))
+        img = np.array(img).astype(np.float32) / 255.0
+        # Normalize (standard VietOCR: mean 0.5, std 0.5)
+        img = (img - 0.5) / 0.5
+        img = img.transpose(2, 0, 1) # HWC -> CHW
+        img = np.expand_dims(img, axis=0) # CHW -> BCHW
+        return img
+
+    def predict(self, pil_img):
+        img = self.preprocess(pil_img)
+        
+        # Encoder
+        encoder_input_name = self.encoder_session.get_inputs()[0].name
+        encoder_outputs = self.encoder_session.run(None, {encoder_input_name: img})
+        
+        # Determine encoder outputs structure
+        if len(encoder_outputs) == 2:
+            encoder_out, hidden = encoder_outputs
+        else:
+            encoder_out = encoder_outputs[0]
+            hidden = None
+            
+        translated_sentence = [self.sos_token]
+        
+        for _ in range(self.max_seq_length):
+            tgt = np.array([translated_sentence], dtype=np.int64).T
+            
+            input_names = [i.name for i in self.decoder_session.get_inputs()]
+            decoder_inputs = {input_names[0]: tgt}
+            
+            if len(input_names) == 2:
+                # Transformer style: (tgt, memory)
+                decoder_inputs[input_names[1]] = encoder_out # type: ignore
+            elif len(input_names) == 3:
+                # Seq2Seq style: (tgt, hidden, encoder_out)
+                decoder_inputs[input_names[1]] = hidden # type: ignore
+                decoder_inputs[input_names[2]] = encoder_out # type: ignore
+            
+            outputs = self.decoder_session.run(None, decoder_inputs)
+            output = outputs[0]
+            
+            # Predict next token (Greedy Search)
+            if hasattr(output, "ndim") and output.ndim == 3: # type: ignore
+                # Check if sequence first [Seq, Batch, Vocab] or batch first [Batch, Seq, Vocab]
+                if output.shape[0] == tgt.shape[0]: # type: ignore
+                    last_token_logits = output[-1, 0, :] # type: ignore
+                else: # Batch first
+                    last_token_logits = output[0, -1, :] # type: ignore
+            else:
+                last_token_logits = output[0] # type: ignore
+                
+            next_token = int(np.argmax(last_token_logits))
+            
+            if next_token == self.eos_token:
+                break
+                
+            translated_sentence.append(next_token)
+            
+        # Decode tokens to string
+        return "".join([self.i2c.get(str(t), "") for t in translated_sentence if t not in [self.sos_token, self.eos_token, 0]])
+
 
 
 class ModelLoader:
@@ -57,25 +145,27 @@ class ModelLoader:
         return self._rembg_session
 
     def _load_handwritten(self):
-        """Load VietOCR Handwritten Fine-tuned model"""
+        """Load VietOCR Handwritten ONNX model"""
         if self._handwritten_predictor is None:
-            Log.info("📖 Loading Handwritten OCR model...")
+            Log.info("📖 Loading Handwritten OCR model (ONNX)...")
             try:
-                import PIL
-                if not hasattr(PIL.Image, 'ANTIALIAS'):
-                    PIL.Image.ANTIALIAS = getattr(PIL.Image, 'Resampling', PIL.Image).LANCZOS
-                    
-                from vietocr.tool.predictor import Predictor
-                from vietocr.tool.config import Cfg
-                config = Cfg.load_config_from_name('vgg_transformer')
-                from huggingface_hub import hf_hub_download
-                model_path = hf_hub_download(repo_id="DungHugging/vietocr-handwritten-finetune", filename="transformerocr.pth")
-                config['weights'] = model_path
-                config['device'] = 'cpu'
-                self._handwritten_predictor = Predictor(config)
-                Log.info("✅ Handwritten OCR loaded successfully!")
+                # Paths to ONNX models and vocab
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                hw_dir = os.path.join(base_dir, "hand_writting")
+                
+                encoder_path = os.path.join(hw_dir, "vietocr_encoder_sim.onnx")
+                decoder_path = os.path.join(hw_dir, "vietocr_decoder_sim.onnx")
+                vocab_path = os.path.join(hw_dir, "vocab.json")
+                
+                # Check if files exist
+                for p in [encoder_path, decoder_path, vocab_path]:
+                    if not os.path.exists(p):
+                        raise FileNotFoundError(f"Missing ONNX file: {p}")
+
+                self._handwritten_predictor = VietOCRONNXPredictor(encoder_path, decoder_path, vocab_path)
+                Log.info("✅ Handwritten OCR (ONNX) loaded successfully!")
             except Exception as e:
-                Log.error(f"❌ Failed to load Handwritten OCR: {e}")
+                Log.error(f"❌ Failed to load Handwritten OCR (ONNX): {e}")
                 Log.error(traceback.format_exc())
         return self._handwritten_predictor
 

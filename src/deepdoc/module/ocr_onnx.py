@@ -283,8 +283,8 @@ class TextDetector:
 
     def clip_det_res(self, points, img_height, img_width):
         for pno in range(points.shape[0]):
-            points[pno, 0] = int(min(max(points[pno, 0], 0), img_width - 1))
-            points[pno, 1] = int(min(max(points[pno, 1], 0), img_height - 1))
+            points[pno, 0] = min(max(points[pno, 0], 0), img_width - 1)
+            points[pno, 1] = min(max(points[pno, 1], 0), img_height - 1)
         return points
 
     def filter_tag_det_res(self, dt_boxes, image_shape):
@@ -328,6 +328,7 @@ class TextDetector:
         img = img.copy()
         input_dict = {}
         input_dict[self.input_tensor.name] = img
+        outputs = None
         for i in range(100000):
             try:
                 outputs = self.predictor.run(None, input_dict, self.run_options)
@@ -339,8 +340,11 @@ class TextDetector:
 
         if self.postprocess_op is None:
             raise ValueError("postprocess_op is None")
+        if outputs is None:
+            raise ValueError("OCR prediction failed to return outputs")
+            
         post_result = self.postprocess_op({"maps": outputs[0]}, shape_list)
-        dt_boxes = post_result[0]['points']
+        dt_boxes = post_result[0]['points'] # type: ignore
         dt_boxes = self.filter_tag_det_res(dt_boxes, ori_im.shape)
 
         return dt_boxes, time.time() - st
@@ -401,12 +405,12 @@ class OCR:
         assert len(points) == 4, "shape of points must be 4*2"
         img_crop_width = int(
             max(
-                np.linalg.norm(points[0] - points[1]),
-                np.linalg.norm(points[2] - points[3])))
+                float(np.linalg.norm(points[0] - points[1])),
+                float(np.linalg.norm(points[2] - points[3]))))
         img_crop_height = int(
             max(
-                np.linalg.norm(points[0] - points[3]),
-                np.linalg.norm(points[1] - points[2])))
+                float(np.linalg.norm(points[0] - points[3])),
+                float(np.linalg.norm(points[1] - points[2]))))
         pts_std = np.array([[0, 0], [img_crop_width, 0],
                             [img_crop_width, img_crop_height],
                             [0, img_crop_height]], dtype="float32")

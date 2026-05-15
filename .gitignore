@@ -186,3 +186,4 @@ user_sheets_map.json
 user_tokens.json
 client_secret.json
 
+src/hand_writting/*.onnx

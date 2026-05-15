@@ -30,7 +30,8 @@ app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
 limiter = init_limiter(app)
 
 # Ensure JSON response keys are NOT sorted (preserve order)
-app.json.sort_keys = False
+if hasattr(app, 'json'):
+    app.json.sort_keys = False # type: ignore
 app.config['JSON_SORT_KEYS'] = False
 
 # ==================== LOAD MODELS ====================

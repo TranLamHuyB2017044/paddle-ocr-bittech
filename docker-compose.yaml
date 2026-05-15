@@ -65,6 +65,7 @@ services:
       - ./uploads:/app/uploads                     
       - ./logs:/app/logs
       - ./storage:/app/storage:ro                  
+      - ./src/hand_writting:/app/src/hand_writting
     security_opt:
       - no-new-privileges:true                     
     deploy:
@@ -92,6 +93,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./storage:/app/storage:ro
+      - ./src/hand_writting:/app/src/hand_writting
     env_file:
       - .env
     environment:

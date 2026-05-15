@@ -4,7 +4,17 @@
   "venv": "venv",
   "include": ["src", "."],
   "extraPaths": ["src"],
-  "ignore": ["**/__pycache__"],
+  "ignore": [
+    "**/__pycache__",
+    "venv",
+    "d:\\__pyrefly_virtual__\\**"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "venv",
+    "d:\\__pyrefly_virtual__\\**"
+  ],
   "typeCheckingMode": "basic",
   "reportMissingImports": "none",
   "reportMissingModuleSource": "none"
