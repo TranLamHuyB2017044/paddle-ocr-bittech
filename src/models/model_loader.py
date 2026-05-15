@@ -71,43 +71,49 @@ class VietOCRONNXPredictor:
         translated_sentence = [self.sos_token]
         
         for _ in range(self.max_seq_length):
-            tgt = np.array([translated_sentence], dtype=np.int64).T
+            curr_len = len(translated_sentence)
+            
+            # [FIX] Luôn tạo tgt có độ dài cố định 128 để tránh lỗi Broadcast (2 by 8)
+            tgt_fixed = np.zeros((self.max_seq_length, 1), dtype=np.int64)
+            tgt_fixed[:curr_len, 0] = translated_sentence
             
             input_names = [i.name for i in self.decoder_session.get_inputs()]
             
-            # Khởi tạo inputs dựa trên tên đầu vào thực tế của model
             decoder_inputs = {}
             if "tgt" in input_names:
-                decoder_inputs["tgt"] = tgt
+                decoder_inputs["tgt"] = tgt_fixed # Dùng bản cố định 128
             
             if "src" in input_names:
                 decoder_inputs["src"] = encoder_out
             elif "memory" in input_names:
                 decoder_inputs["memory"] = encoder_out
                 
-            # Xử lý mask nếu model yêu cầu (lỗi "expected: tensor(bool)" nằm ở đây)
             if "tgt_key_padding_mask" in input_names:
-                decoder_inputs["tgt_key_padding_mask"] = np.zeros((1, len(translated_sentence)), dtype=bool)
+                # Mask cũng phải cố định 128. False cho dữ liệu thật, True cho padding.
+                mask = np.ones((1, self.max_seq_length), dtype=bool)
+                mask[0, :curr_len] = False
+                decoder_inputs["tgt_key_padding_mask"] = mask
 
-            # Trường hợp model cũ dùng index (fallback)
+            # Fallback nếu không khớp tên (hiếm gặp)
             if not decoder_inputs:
-                decoder_inputs[input_names[0]] = tgt
+                decoder_inputs[input_names[0]] = tgt_fixed
                 if len(input_names) > 1:
                     decoder_inputs[input_names[1]] = encoder_out
 
             outputs = self.decoder_session.run(None, decoder_inputs)
-            output = outputs[0]
+            # Ép kiểu về np.ndarray để tránh lỗi linting/type checking
+            output = np.array(outputs[0])
             
-            # Predict next token (Greedy Search)
-            if hasattr(output, "ndim") and output.ndim == 3: # type: ignore
-                # Check if sequence first [Seq, Batch, Vocab] or batch first [Batch, Seq, Vocab]
-                if output.shape[0] == tgt.shape[0]: # type: ignore
-                    last_token_logits = output[-1, 0, :] # type: ignore
-                else: # Batch first
-                    last_token_logits = output[0, -1, :] # type: ignore
+            # Predict next token: Lấy logits tại vị trí cuối cùng của chuỗi THẬT (curr_len - 1)
+            if output.ndim == 3:
+                # Output thường là [Seq, Batch, Vocab]
+                if output.shape[0] == self.max_seq_length:
+                    last_token_logits = output[curr_len - 1, 0, :] 
+                else: # Batch first [Batch, Seq, Vocab]
+                    last_token_logits = output[0, curr_len - 1, :]
             else:
-                last_token_logits = output[0] # type: ignore
-                
+                last_token_logits = output[0]
+            
             next_token = int(np.argmax(last_token_logits))
             
             if next_token == self.eos_token:
