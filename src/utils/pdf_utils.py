@@ -83,14 +83,17 @@ def get_pdf_pages_as_images(pdf_path, temp_dir="uploads/temp"):
     os.makedirs(temp_dir, exist_ok=True)
     image_paths = []
     
+    import uuid
     try:
         doc = fitz.open(pdf_path)
+        safe_base_name = str(uuid.uuid4())
         for page_num in range(len(doc)):
             page = doc[page_num]
             # Higher DPI for better OCR
             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) 
             
-            img_path = os.path.join(temp_dir, f"{os.path.basename(pdf_path)}_p{page_num}.jpg")
+            # Use a safe UUID filename to avoid Unicode path errors in fitz.save()
+            img_path = os.path.join(temp_dir, f"{safe_base_name}_p{page_num}.jpg")
             pix.save(img_path)
             image_paths.append(img_path)
             

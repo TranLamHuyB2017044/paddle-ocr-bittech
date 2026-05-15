@@ -169,26 +169,9 @@ class ExtractionLogsRepository(BaseRepository):
                     provider = metadata.get("provider", "unknown")
                     total_time = metadata.get("total_time", "N/A")
                 
-                # Fetch Cloudinary URL if available
+                # Fetch Cloudinary URL if available - SKIPPED for list performance
+                # URL will be fetched lazily when user opens document details
                 image_url = None
-                if raw_doc_id:
-                    from src.repositories.file_storage_repository import file_storage_repo
-                    from src.utils.cloudinary_utils import cloudinary_service
-                    
-                    # Strategy 1: Look for new Private/Signed URL metadata
-                    file_metas = file_storage_repo.find_by_document(str(raw_doc_id))
-                    if file_metas:
-                        public_id = file_metas[0].get("cloudinary_public_id")
-                        if public_id:
-                            image_url = cloudinary_service.generate_signed_url(public_id)
-                    
-                    # Strategy 2: Fallback to old Public URL if exists
-                    if not image_url and document_obj:
-                        source_file = document_obj.get("source_file")
-                        if isinstance(source_file, dict):
-                            old_url = source_file.get("file_url")
-                            if old_url and old_url.startswith("http"):
-                                image_url = old_url
 
                 recent_logs.append({
                     "document_id": str(raw_doc_id),
@@ -262,26 +245,9 @@ class ExtractionLogsRepository(BaseRepository):
                 if isinstance(metadata, dict):
                     total_time = metadata.get("total_time", "N/A")
                 
-                # Fetch Cloudinary URL if available
+                # Fetch Cloudinary URL if available - SKIPPED for list performance  
+                # URL will be fetched lazily when user opens document details
                 image_url = None
-                if raw_doc_id:
-                    from src.repositories.file_storage_repository import file_storage_repo
-                    from src.utils.cloudinary_utils import cloudinary_service
-                    
-                    # Strategy 1: Look for new Private/Signed URL metadata
-                    file_metas = file_storage_repo.find_by_document(str(raw_doc_id))
-                    if file_metas:
-                        public_id = file_metas[0].get("cloudinary_public_id")
-                        if public_id:
-                            image_url = cloudinary_service.generate_signed_url(public_id)
-                    
-                    # Strategy 2: Fallback to old Public URL if exists in document record
-                    if not image_url and document_obj:
-                        source_file = document_obj.get("source_file")
-                        if isinstance(source_file, dict):
-                            old_url = source_file.get("file_url")
-                            if old_url and old_url.startswith("http"):
-                                image_url = old_url
 
                 logs.append({
                     "document_id": str(raw_doc_id) if raw_doc_id else None,
