@@ -23,7 +23,7 @@ class VietOCRONNXPredictor:
             data = json.load(f)
             self.i2c = data['i2c']
         
-        self.max_seq_length = 128
+        self.max_seq_length = 64
         self.sos_token = 1
         self.eos_token = 2
 
