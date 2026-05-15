@@ -73,7 +73,7 @@ class VietOCRONNXPredictor:
         for _ in range(self.max_seq_length):
             curr_len = len(translated_sentence)
             
-            # [FIX] Luôn tạo tgt có độ dài cố định 128 để tránh lỗi Broadcast (2 by 8)
+            # [FIX] Quay lại chuẩn (Seq, Batch) dựa trên Metadata của model
             tgt_fixed = np.zeros((self.max_seq_length, 1), dtype=np.int64)
             tgt_fixed[:curr_len, 0] = translated_sentence
             
@@ -81,24 +81,24 @@ class VietOCRONNXPredictor:
             
             decoder_inputs = {}
             if "tgt" in input_names:
-                decoder_inputs["tgt"] = tgt_fixed # Dùng bản cố định 128
+                decoder_inputs["tgt"] = np.ascontiguousarray(tgt_fixed)
             
             if "src" in input_names:
-                decoder_inputs["src"] = encoder_out
+                decoder_inputs["src"] = np.ascontiguousarray(encoder_out)
             elif "memory" in input_names:
-                decoder_inputs["memory"] = encoder_out
+                decoder_inputs["memory"] = np.ascontiguousarray(encoder_out)
                 
-            if "tgt_key_padding_mask" in input_names:
-                # Mask cũng phải cố định 128. False cho dữ liệu thật, True cho padding.
-                mask = np.ones((1, self.max_seq_length), dtype=bool)
-                mask[0, :curr_len] = False
-                decoder_inputs["tgt_key_padding_mask"] = mask
+            # Tạm thời KHÔNG truyền tgt_key_padding_mask để tránh lỗi broadcast 128^3
+            # if "tgt_key_padding_mask" in input_names:
+            #     mask = np.ones((1, self.max_seq_length), dtype=bool)
+            #     mask[0, :curr_len] = False
+            #     decoder_inputs["tgt_key_padding_mask"] = mask
 
-            # Fallback nếu không khớp tên (hiếm gặp)
+            # Fallback nếu không khớp tên
             if not decoder_inputs:
-                decoder_inputs[input_names[0]] = tgt_fixed
+                decoder_inputs[input_names[0]] = np.ascontiguousarray(tgt_fixed)
                 if len(input_names) > 1:
-                    decoder_inputs[input_names[1]] = encoder_out
+                    decoder_inputs[input_names[1]] = np.ascontiguousarray(encoder_out)
 
             outputs = self.decoder_session.run(None, decoder_inputs)
             # Ép kiểu về np.ndarray để tránh lỗi linting/type checking
