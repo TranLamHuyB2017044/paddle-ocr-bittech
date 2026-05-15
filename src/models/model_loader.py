@@ -13,6 +13,10 @@ from vietocr.tool.predictor import Predictor
 from vietocr.tool.config import Cfg
 from huggingface_hub import hf_hub_download
 
+# [FIX] Sửa lỗi 'PIL.Image' has no attribute 'ANTIALIAS' cho Pillow 10+
+if not hasattr(Image, 'ANTIALIAS'):
+    setattr(Image, 'ANTIALIAS', Image.Resampling.LANCZOS)
+
 class VietOCRHandwrittenPredictor:
     def __init__(self):
         Log.info("📖 Tải model VietOCR Handwritten từ Hugging Face...")
