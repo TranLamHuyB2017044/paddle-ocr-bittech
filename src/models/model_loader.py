@@ -13,6 +13,7 @@ class ModelLoader:
     _instance = None
     _ocr = None
     _rembg_session = None
+    _handwritten_predictor = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -55,6 +56,25 @@ class ModelLoader:
                 Log.error(f"❌ Failed to load Rembg Model: {e}")
         return self._rembg_session
 
+    def _load_handwritten(self):
+        """Load VietOCR Handwritten Fine-tuned model"""
+        if self._handwritten_predictor is None:
+            Log.info("📖 Loading Handwritten OCR model...")
+            try:
+                from vietocr.tool.predictor import Predictor
+                from vietocr.tool.config import Cfg
+                config = Cfg.load_config_from_name('vgg_transformer')
+                from huggingface_hub import hf_hub_download
+                model_path = hf_hub_download(repo_id="DungHugging/vietocr-handwritten-finetune", filename="transformerocr.pth")
+                config['weights'] = model_path
+                config['device'] = 'cpu'
+                self._handwritten_predictor = Predictor(config)
+                Log.info("✅ Handwritten OCR loaded successfully!")
+            except Exception as e:
+                Log.error(f"❌ Failed to load Handwritten OCR: {e}")
+                Log.error(traceback.format_exc())
+        return self._handwritten_predictor
+
     @property
     def ocr(self):
         """Get OCR instance (DeepDocOCR), loading if necessary"""
@@ -71,6 +91,13 @@ class ModelLoader:
     def rembg_session(self):
         """Get rembg session (DISABLED by default)"""
         return self._rembg_session
+
+    @property
+    def handwritten_predictor(self):
+        """Get handwritten OCR predictor instance, loading if necessary"""
+        if self._handwritten_predictor is None:
+            self._load_handwritten()
+        return self._handwritten_predictor
 
 
 # Global instance

@@ -99,7 +99,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
     finally:
         if 'file_path' in locals(): silent_cleanup_files(file_path)
 
-def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None):
+def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None, detect_handwriting=False):
     """
     Background task to process document detection.
     Ưu tiên tuyệt đối raw_text nếu có để đảm bảo tốc độ.
@@ -129,10 +129,10 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                                 upscale = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
                                 decoded = decode(upscale)
                                 
-                            # Chiến thuật 3: Thử cân bằng xám/độ tương phản (Thresholding)
-                            if not decoded:
-                                _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
-                                decoded = decode(thresh)
+                                # Chiến thuật 3: Thử cân bằng xám/độ tương phản (Thresholding)
+                                if not decoded:
+                                    _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+                                    decoded = decode(thresh)
 
                             if decoded:
                                 qr_text = decoded[0].data.decode('utf-8')
@@ -251,7 +251,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                 for img_p in all_images:
                     t = time.time()
                     # Sử dụng OCR V5 truyền thống (Mobile) cho tất cả các loại tài liệu theo yêu cầu
-                    res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p))
+                    res, _ = ocr_extract(img_p, img=preprocess_for_ocr(img_p), detect_handwriting=detect_handwriting)
                     ocr_results.append(res)
                     ocr_times.append(time.time() - t)
                 
@@ -289,8 +289,13 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
 
         # 5. Completion
         if result_response:
-            documents_repo.update_status(doc_id, DocStatus.READY, result=result_response.get("data"), debug=result_response.get("debug"))
-            publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": result_response.get("data"), "debug": result_response.get("debug")})
+            debug_info = result_response.get("debug")
+            if not isinstance(debug_info, dict):
+                debug_info = {}
+            if detect_handwriting:
+                debug_info["model"] = "vietocr-handwritten-finetune"
+            documents_repo.update_status(doc_id, DocStatus.READY, result=result_response.get("data"), debug=debug_info)
+            publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": result_response.get("data"), "debug": debug_info})
             pass # No caching needed
         else:
             raise Exception("Processing failed to return result")
@@ -314,7 +319,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
     finally:
         if 'file_paths' in locals() and file_paths: silent_cleanup_files(file_paths)
 
-def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None):
+def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None, detect_handwriting=False):
     """
     Hàm bổ sung: Xử lý trích xuất sử dụng PP-Structure V3.
     Dành riêng cho các loại tài liệu có cấu trúc phức tạp (Hóa đơn, Menu).
@@ -322,5 +327,5 @@ def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, prov
     Log.info(f"[Worker-Structure] 🏗️ Starting structure detection task: {doc_type}")
     # Gọi process_detection_task để tái sử dụng toàn bộ logic quản lý Document, Event và AI Processing.
     # Bên trong process_detection_task đã có logic switch sang ocr_structure_extract nếu doc_type là invoice/menu.
-    return process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=raw_text)
+    return process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=raw_text, detect_handwriting=detect_handwriting)
 

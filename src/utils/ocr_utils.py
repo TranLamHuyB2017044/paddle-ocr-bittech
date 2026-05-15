@@ -68,7 +68,7 @@ def preprocess_for_ocr(path_or_img):
 # Core OCR extract
 # ============================================================
 
-def ocr_extract(image_path, img=None, retry_mode=False):
+def ocr_extract(image_path, img=None, retry_mode=False, detect_handwriting=False):
     """
     Trích xuất text từ ảnh sử dụng DeepDoc + VietOCR.
     
@@ -76,50 +76,77 @@ def ocr_extract(image_path, img=None, retry_mode=False):
         image_path: str – đường dẫn ảnh (dùng khi img=None)
         img: numpy.ndarray – ảnh BGR đã load sẵn (ưu tiên dùng nếu có)
         retry_mode: bool – không dùng trong bản này (để tương thích API cũ)
+        detect_handwriting: bool – sử dụng model VietOCR finetuned cho chữ viết tay
     
     Returns:
         ocr_data: list[dict] – [{'text': str, 'box': list, 'score': float}, ...]
         texts: list[str] – danh sách text thuần tuý
     """
     start = time.time()
-    Log.info(f"[OCR] 🔍 Bắt đầu OCR (DeepDoc+VietOCR): {image_path}")
+    Log.info(f"[OCR] 🔍 Bắt đầu OCR (DeepDoc+VietOCR{' Handwritten' if detect_handwriting else ''}): {image_path}")
 
     # Chuẩn bị ảnh
     processed_img = img if img is not None else preprocess_for_ocr(image_path)
     if processed_img is None:
         return [], []
 
-    # Gọi OCR engine
-    # DeepDocOCR.__call__ trả về: list of (box_list, (text, score))
-    # box_list: [[x0,y0],[x1,y1],[x2,y2],[x3,y3]]
-    try:
-        raw_results = model_loader.ocr(processed_img)
-    except Exception as e:
-        Log.error(f"[OCR] ❌ OCR engine error: {e}")
-        return [], []
-
     ocr_data = []
     texts = []
 
-    if raw_results:
-        for item in raw_results:
-            # item = (box, (text, score)) theo format DeepDocOCR
-            if len(item) < 2:
-                continue
-            box = item[0]       # [[x0,y0],[x1,y1],[x2,y2],[x3,y3]]
-            text_info = item[1] # (text, score)
+    try:
+        if detect_handwriting:
+            from PIL import Image
+            import copy
             
-            if isinstance(text_info, (list, tuple)) and len(text_info) >= 2:
-                text = str(text_info[0]) if text_info[0] else ""
-                score = float(text_info[1])
-            elif isinstance(text_info, str):
-                text = text_info
-                score = 1.0
-            else:
-                continue
+            if model_loader.ocr is None:
+                raise Exception("OCR engine is not loaded")
+                
+            ocr_engine = model_loader.ocr.engine
+            dt_boxes, _elapse = ocr_engine.text_detector[0](processed_img)
             
-            texts.append(text)
-            ocr_data.append({"text": text, "box": box, "score": score})
+            if dt_boxes is not None:
+                dt_boxes = ocr_engine.sorted_boxes(dt_boxes)
+                predictor = model_loader.handwritten_predictor
+                if not predictor:
+                    raise Exception("Cannot load handwritten predictor")
+                    
+                for bno in range(len(dt_boxes)):
+                    tmp_box = copy.deepcopy(dt_boxes[bno])
+                    img_crop = ocr_engine.get_rotate_crop_image(processed_img, tmp_box)
+                    # predictor expects PIL Image RGB
+                    pil_img = Image.fromarray(cv2.cvtColor(img_crop, cv2.COLOR_BGR2RGB))
+                    text = predictor.predict(pil_img)
+                    
+                    texts.append(text)
+                    ocr_data.append({"text": text, "box": tmp_box.tolist(), "score": 1.0})
+        else:
+            if model_loader.ocr is None:
+                raise Exception("OCR engine is not loaded")
+                
+            raw_results = model_loader.ocr(processed_img)
+            if raw_results:
+                for item in raw_results:
+                    # item = (box, (text, score)) theo format DeepDocOCR
+                    if len(item) < 2:
+                        continue
+                    box = item[0]       # [[x0,y0],[x1,y1],[x2,y2],[x3,y3]]
+                    text_info = item[1] # (text, score)
+                    
+                    if isinstance(text_info, (list, tuple)) and len(text_info) >= 2:
+                        text = str(text_info[0]) if text_info[0] else ""
+                        score = float(text_info[1])
+                    elif isinstance(text_info, str):
+                        text = text_info
+                        score = 1.0
+                    else:
+                        continue
+                    
+                    texts.append(text)
+                    ocr_data.append({"text": text, "box": box, "score": score})
+
+    except Exception as e:
+        Log.error(f"[OCR] ❌ OCR engine error: {e}")
+        return [], []
 
     Log.info(f"[OCR] ✅ Hoàn tất. Lines: {len(ocr_data)}. Thời gian: {time.time() - start:.2f}s")
     return ocr_data, texts

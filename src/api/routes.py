@@ -272,9 +272,12 @@ def register_routes(app):
             if g.user.get('account_id'):
                 accounts_repo.increment_usage(g.user.get('account_id'))
 
+            detect_handwriting = request.form.get("detect_handwriting", "false").lower() == "true"
+
             rag_queue.enqueue(
                 process_detection_task,
                 args=(doc_id, user_id, doc_type, all_temp_files, "traditional"),
+                kwargs={"detect_handwriting": detect_handwriting},
                 job_timeout='5m'
             )
 
@@ -429,6 +432,7 @@ def register_routes(app):
 
             provider = request.form.get("provider", "openai")
             user_id = getattr(g, "user_id", None)
+            detect_handwriting = request.form.get("detect_handwriting", "false").lower() == "true"
 
             # Xây source_files metadata để lưu ownership
             source_files_meta = [
@@ -472,7 +476,7 @@ def register_routes(app):
             rag_queue.enqueue(
                 task_func,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
-                kwargs={"raw_text": raw_text},
+                kwargs={"raw_text": raw_text, "detect_handwriting": detect_handwriting},
                 job_timeout="5m"
             )
 
@@ -568,6 +572,7 @@ def register_routes(app):
             user_id = getattr(g, 'user_id', None)
             provider = request.form.get("provider", "openai")
             raw_text = request.form.get("raw_text")
+            detect_handwriting = request.form.get("detect_handwriting", "false").lower() == "true"
 
             if not all_temp_files and not raw_text:
                 return jsonify({"statusCode": 400, "message": "No images or raw_text provided"}), 400
@@ -613,7 +618,7 @@ def register_routes(app):
             rag_queue.enqueue(
                 task_func,
                 args=(doc_id, user_id, doc_type, all_temp_files, provider),
-                kwargs={"raw_text": raw_text},
+                kwargs={"raw_text": raw_text, "detect_handwriting": detect_handwriting},
                 job_timeout='5m'
             )
 
