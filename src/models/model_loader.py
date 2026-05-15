@@ -88,11 +88,11 @@ class VietOCRONNXPredictor:
             elif "memory" in input_names:
                 decoder_inputs["memory"] = np.ascontiguousarray(encoder_out)
                 
-            # Tạm thời KHÔNG truyền tgt_key_padding_mask để tránh lỗi broadcast 128^3
-            # if "tgt_key_padding_mask" in input_names:
-            #     mask = np.ones((1, self.max_seq_length), dtype=bool)
-            #     mask[0, :curr_len] = False
-            #     decoder_inputs["tgt_key_padding_mask"] = mask
+            if "tgt_key_padding_mask" in input_names:
+                # Tạo mask bool chuẩn (1, 128). False: hợp lệ, True: padding
+                mask = np.ones((1, self.max_seq_length), dtype=bool)
+                mask[0, :curr_len] = False
+                decoder_inputs["tgt_key_padding_mask"] = np.ascontiguousarray(mask)
 
             # Fallback nếu không khớp tên
             if not decoder_inputs:
