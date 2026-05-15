@@ -60,16 +60,27 @@ class VietOCRONNXPredictor:
             tgt = np.array([translated_sentence], dtype=np.int64).T
             
             input_names = [i.name for i in self.decoder_session.get_inputs()]
-            decoder_inputs = {input_names[0]: tgt}
             
-            if len(input_names) == 2:
-                # Transformer style: (tgt, memory)
-                decoder_inputs[input_names[1]] = encoder_out # type: ignore
-            elif len(input_names) == 3:
-                # Seq2Seq style: (tgt, hidden, encoder_out)
-                decoder_inputs[input_names[1]] = hidden # type: ignore
-                decoder_inputs[input_names[2]] = encoder_out # type: ignore
+            # Khởi tạo inputs dựa trên tên đầu vào thực tế của model
+            decoder_inputs = {}
+            if "tgt" in input_names:
+                decoder_inputs["tgt"] = tgt
             
+            if "src" in input_names:
+                decoder_inputs["src"] = encoder_out
+            elif "memory" in input_names:
+                decoder_inputs["memory"] = encoder_out
+                
+            # Xử lý mask nếu model yêu cầu (lỗi "expected: tensor(bool)" nằm ở đây)
+            if "tgt_key_padding_mask" in input_names:
+                decoder_inputs["tgt_key_padding_mask"] = np.zeros((1, len(translated_sentence)), dtype=bool)
+
+            # Trường hợp model cũ dùng index (fallback)
+            if not decoder_inputs:
+                decoder_inputs[input_names[0]] = tgt
+                if len(input_names) > 1:
+                    decoder_inputs[input_names[1]] = encoder_out
+
             outputs = self.decoder_session.run(None, decoder_inputs)
             output = outputs[0]
             
