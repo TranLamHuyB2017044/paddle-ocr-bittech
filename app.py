@@ -35,7 +35,6 @@ app.config['JSON_SORT_KEYS'] = False
 
 # ==================== LOAD MODELS ====================
 from src.utils.logger import Log
-
 # Models will be loaded on-demand by the worker, not the API server
 Log.info(f"📁 Upload folder: {config.UPLOAD_FOLDER}")
 Log.info("="*70)

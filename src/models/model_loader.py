@@ -61,6 +61,10 @@ class ModelLoader:
         if self._handwritten_predictor is None:
             Log.info("📖 Loading Handwritten OCR model...")
             try:
+                import PIL
+                if not hasattr(PIL.Image, 'ANTIALIAS'):
+                    PIL.Image.ANTIALIAS = getattr(PIL.Image, 'Resampling', PIL.Image).LANCZOS
+                    
                 from vietocr.tool.predictor import Predictor
                 from vietocr.tool.config import Cfg
                 config = Cfg.load_config_from_name('vgg_transformer')
