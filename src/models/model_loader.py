@@ -53,6 +53,20 @@ class VietOCRONNXPredictor:
         else:
             encoder_out = encoder_outputs[0]
             hidden = None
+
+        # [FIX] Pad hoặc Trim encoder_out về đúng độ dài 64 mà model Decoder yêu cầu
+        def pad_or_trim_src(features, target_len=64):
+            src_len = features.shape[0]
+            if src_len < target_len:
+                # Pad zeros phía sau: (64-18, 1, 256)
+                pad = np.zeros((target_len - src_len, features.shape[1], features.shape[2]), dtype=np.float32)
+                return np.concatenate([features, pad], axis=0)
+            elif src_len > target_len:
+                # Trim nếu dài hơn
+                return features[:target_len]
+            return features
+
+        encoder_out = pad_or_trim_src(encoder_out, target_len=64)
             
         translated_sentence = [self.sos_token]
         
