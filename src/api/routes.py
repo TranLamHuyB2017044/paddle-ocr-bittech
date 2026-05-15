@@ -192,9 +192,10 @@ def register_routes(app):
             
             page = request.args.get('page', 1, type=int)
             limit = request.args.get('limit', 10, type=int)
+            doc_type = request.args.get('document_type')
             
             from src.repositories.extraction_logs_repository import extraction_logs_repo
-            result = extraction_logs_repo.get_paginated_extractions(user_id, page=page, limit=limit)
+            result = extraction_logs_repo.get_paginated_extractions(user_id, page=page, limit=limit, doc_type=doc_type)
             
             return jsonify({
                 "statusCode": 200,

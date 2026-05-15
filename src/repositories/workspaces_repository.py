@@ -1,3 +1,4 @@
+from datetime import timezone
 from datetime import datetime
 from bson import ObjectId
 from src.database.base_repository import BaseRepository
@@ -14,8 +15,8 @@ class WorkspacesRepository(BaseRepository):
             "name": name,
             "user_id": uid,
             "description": description,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
         }
         return self.create(workspace)
 

@@ -143,15 +143,21 @@ class ExtractionLogsRepository(BaseRepository):
                 # Get filename from documents collection
                 filename = None
                 raw_doc_id = doc.get("document_id")
+                document_obj = None
+
                 if raw_doc_id:
                     doc_id_str = str(raw_doc_id)
                     if doc_id_str not in doc_cache:
                         try:
-                            document = documents_repo.find_by_id(doc_id_str)
-                            doc_cache[doc_id_str] = document.get("filename") if document else None
+                            document_obj = documents_repo.find_by_id(doc_id_str)
+                            doc_cache[doc_id_str] = document_obj
                         except Exception:
                             doc_cache[doc_id_str] = None
-                    filename = doc_cache[doc_id_str]
+                    else:
+                        document_obj = doc_cache[doc_id_str]
+                    
+                    if document_obj:
+                        filename = document_obj.get("filename") or (document_obj.get("source_file") or {}).get("file_name")
 
                 # Extract interesting metadata details
                 metadata = doc.get("metadata", {}) or {}
@@ -163,6 +169,27 @@ class ExtractionLogsRepository(BaseRepository):
                     provider = metadata.get("provider", "unknown")
                     total_time = metadata.get("total_time", "N/A")
                 
+                # Fetch Cloudinary URL if available
+                image_url = None
+                if raw_doc_id:
+                    from src.repositories.file_storage_repository import file_storage_repo
+                    from src.utils.cloudinary_utils import cloudinary_service
+                    
+                    # Strategy 1: Look for new Private/Signed URL metadata
+                    file_metas = file_storage_repo.find_by_document(str(raw_doc_id))
+                    if file_metas:
+                        public_id = file_metas[0].get("cloudinary_public_id")
+                        if public_id:
+                            image_url = cloudinary_service.generate_signed_url(public_id)
+                    
+                    # Strategy 2: Fallback to old Public URL if exists
+                    if not image_url and document_obj:
+                        source_file = document_obj.get("source_file")
+                        if isinstance(source_file, dict):
+                            old_url = source_file.get("file_url")
+                            if old_url and old_url.startswith("http"):
+                                image_url = old_url
+
                 recent_logs.append({
                     "document_id": str(raw_doc_id),
                     "document_type": doc.get("document_type"),
@@ -170,7 +197,8 @@ class ExtractionLogsRepository(BaseRepository):
                     "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
                     "total_time": total_time,
                     "detector_name": detector_name,
-                    "extraction_result": doc.get("extraction_result")
+                    "extraction_result": doc.get("extraction_result"),
+                    "image_url": image_url
                 })
             
             return recent_logs
@@ -178,13 +206,16 @@ class ExtractionLogsRepository(BaseRepository):
             print(f"Error getting recent extractions: {e}")
             return []
 
-    def get_paginated_extractions(self, user_id, page=1, limit=10):
+    def get_paginated_extractions(self, user_id, page=1, limit=10, doc_type=None):
         from src.repositories.documents_repository import documents_repo
         from src.repositories.users_repository import users_repo
         
         try:
             uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
             query = {"user_id": uid}
+            
+            if doc_type:
+                query["document_type"] = doc_type
             
             skip = (page - 1) * limit
             cursor = self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
@@ -209,21 +240,48 @@ class ExtractionLogsRepository(BaseRepository):
                     
                 filename = None
                 raw_doc_id = doc.get("document_id")
+                document_obj = None
+                
                 if raw_doc_id:
                     doc_id_str = str(raw_doc_id)
                     if doc_id_str not in doc_cache:
                         try:
-                            document = documents_repo.find_by_id(doc_id_str)
-                            doc_cache[doc_id_str] = document.get("filename") if document else None
+                            document_obj = documents_repo.find_by_id(doc_id_str)
+                            doc_cache[doc_id_str] = document_obj
                         except Exception:
                             doc_cache[doc_id_str] = None
-                    filename = doc_cache[doc_id_str]
+                    else:
+                        document_obj = doc_cache[doc_id_str]
+                    
+                    if document_obj:
+                        filename = document_obj.get("filename") or (document_obj.get("source_file") or {}).get("file_name")
 
                 metadata = doc.get("metadata", {}) or {}
                 total_time = "N/A"
                 if isinstance(metadata, dict):
                     total_time = metadata.get("total_time", "N/A")
                 
+                # Fetch Cloudinary URL if available
+                image_url = None
+                if raw_doc_id:
+                    from src.repositories.file_storage_repository import file_storage_repo
+                    from src.utils.cloudinary_utils import cloudinary_service
+                    
+                    # Strategy 1: Look for new Private/Signed URL metadata
+                    file_metas = file_storage_repo.find_by_document(str(raw_doc_id))
+                    if file_metas:
+                        public_id = file_metas[0].get("cloudinary_public_id")
+                        if public_id:
+                            image_url = cloudinary_service.generate_signed_url(public_id)
+                    
+                    # Strategy 2: Fallback to old Public URL if exists in document record
+                    if not image_url and document_obj:
+                        source_file = document_obj.get("source_file")
+                        if isinstance(source_file, dict):
+                            old_url = source_file.get("file_url")
+                            if old_url and old_url.startswith("http"):
+                                image_url = old_url
+
                 logs.append({
                     "document_id": str(raw_doc_id) if raw_doc_id else None,
                     "document_type": doc.get("document_type"),
@@ -231,7 +289,8 @@ class ExtractionLogsRepository(BaseRepository):
                     "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
                     "total_time": total_time,
                     "detector_name": detector_name,
-                    "extraction_result": doc.get("extraction_result")
+                    "extraction_result": doc.get("extraction_result"),
+                    "image_url": image_url
                 })
             
             return {
