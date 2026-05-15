@@ -16,8 +16,8 @@ def init_limiter(app):
         app=app,
         storage_uri=REDIS_URL,
         strategy="fixed-window",
-        default_limits=["200 per day", "50 per hour"],  # Default cho tất cả route không có limit riêng
-        enabled=True,  # Có thể tắt bằng env nếu cần
+        default_limits=["5000 per day", "1000 per hour", "100 per minute"], 
+        enabled=True, 
         storage_options={
             "socket_connect_timeout": 5,
             "socket_timeout": 5,
