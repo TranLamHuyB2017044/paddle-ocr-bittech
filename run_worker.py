@@ -10,11 +10,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 listen = ['rag_tasks']
 
 # Import tasks và pre-load models ngay khi worker khởi động
-print("📦 Pre-loading models (PaddleOCR, AI Models)...")
 from src.models.model_loader import model_loader
-# Accessing the property triggers the load once and stays in RAM
-_ = model_loader.ocr
-_ = model_loader.handwritten_predictor
+model_loader.preload_all_models()
 from src.tasks import document_tasks
 
 if __name__ == '__main__':
