@@ -13,7 +13,7 @@ class PostCleaner:
     
     # Local Cache to store common corrections and avoid DB calls on every request
     _corrections_cache = {}
-    _last_cache_update = 0
+    _last_cache_update = 0.0
     CACHE_TTL = 300  # 5 minutes
 
     @staticmethod
@@ -212,6 +212,28 @@ class PostCleaner:
             for f in price_fields:
                 if f in cleaned_data and cleaned_data[f]:
                     cleaned_data[f] = PostCleaner.normalize_price(cleaned_data[f])
+            
+            # Normalize and Fix common typos for Invoice titles
+            if "ten_hoa_don" in cleaned_data and cleaned_data["ten_hoa_don"]:
+                title = str(cleaned_data["ten_hoa_don"]).lower()
+                
+                # Dictionary of common typos and their corrections
+                corrections = {
+                    "hóa đơn bán lê": "Hóa đơn bán lẻ",
+                    "hoa don ban le": "Hóa đơn bán lẻ",
+                    "hđ bán lẻ": "Hóa đơn bán lẻ",
+                    "hđ gtgt": "Hóa đơn GTGT",
+                    "hóa đơn gtgt": "Hóa đơn GTGT",
+                    "hđ bán hàng": "Hóa đơn bán hàng",
+                    "phiếu tính tiền": "Phiếu thanh toán",
+                    "biên lai": "Biên lai",
+                    "phiếu thu": "Phiếu thu"
+                }
+                
+                for typo, fixed in corrections.items():
+                    if typo in title:
+                        cleaned_data["ten_hoa_don"] = fixed
+                        break
              
         # 5. Reorder Keys (Quan trọng để JSON đẹp và đúng thứ tự Schema)
         

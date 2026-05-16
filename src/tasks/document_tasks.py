@@ -283,7 +283,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                 Log.error(f"[Worker-Detect] OpenAI failed: {e}")
 
         # Chỉ dùng Traditional cho các loại giấy tờ khác nếu được yêu cầu hoặc AI lỗi
-        if result_response is None and doc_type != 'idCard':
+        if result_response is None:
             Log.info(f"[Worker-Detect] Fallback sang Traditional Processor cho {doc_type}")
             result_response = process_traditional(raw_front, raw_back, timer_info, doc_type, user_id, file_paths, document_id=doc_id)
 
