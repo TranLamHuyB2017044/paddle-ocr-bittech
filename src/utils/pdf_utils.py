@@ -80,7 +80,10 @@ def get_pdf_pages_as_images(pdf_path, temp_dir="uploads/temp"):
         Log.error("[PDF] ❌ PyMuPDF (fitz) is not installed.")
         return []
 
-    os.makedirs(temp_dir, exist_ok=True)
+    # Use absolute path to avoid permission issues when run from different contexts
+    from src.config import root_dir
+    abs_temp_dir = os.path.join(root_dir, temp_dir)
+    os.makedirs(abs_temp_dir, exist_ok=True)
     image_paths = []
     
     import uuid
@@ -93,7 +96,7 @@ def get_pdf_pages_as_images(pdf_path, temp_dir="uploads/temp"):
             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) 
             
             # Use a safe UUID filename to avoid Unicode path errors in fitz.save()
-            img_path = os.path.join(temp_dir, f"{safe_base_name}_p{page_num}.jpg")
+            img_path = os.path.join(abs_temp_dir, f"{safe_base_name}_p{page_num}.jpg")
             pix.save(img_path)
             image_paths.append(img_path)
             
