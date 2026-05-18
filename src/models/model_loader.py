@@ -63,7 +63,8 @@ class ModelLoader:
         """Tải trước toàn bộ các model nặng (thường dùng cho Worker)."""
         Log.info("📦 Bắt đầu tải trước toàn bộ AI Models...")
         self._load_ocr()
-        self._load_handwritten()
+        # Tạm thời loại bỏ preload handwriting model khi run app bằng docker
+        # self._load_handwritten()
         Log.info("✅ Hoàn tất tải trước toàn bộ AI Models!")
 
     def _load_ocr(self):
