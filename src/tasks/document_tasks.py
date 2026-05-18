@@ -14,7 +14,7 @@ from ..repositories.users_repository import users_repo
 from ..utils.smart_config import get_smart_config
 from ..utils.smart_spatial_extractor import SmartSpatialExtractor
 from ..utils.ocr_utils import filter_useless_lines
-from ..utils.text_cleaner import clean_text_lines
+
 from ..utils.background_tasks import run_background_upload_and_log
 from ..utils.post_cleaner import PostCleaner
 from ..api.processors.ai_processor import process_with_openai
@@ -73,7 +73,6 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                 for idx, img_p in enumerate(image_paths):
                     res, _ = ocr_extract(img_p)
                     if res:
-                        res = clean_text_lines(res)
                         page_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
                         structured_data.append({"text": page_text, "page_num": idx + 1})
                     if os.path.exists(img_p): os.remove(img_p)
@@ -82,7 +81,6 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
         elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
             ocr_result, _ = ocr_extract(file_path)
             if ocr_result:
-                ocr_result = clean_text_lines(ocr_result)
                 text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
                 structured_data = [{"text": text, "page_num": 1}]
         
