@@ -755,9 +755,18 @@ def system_connections_get():
         if not client_register_uuids:
             client_register_uuids = [""]
 
+        # Convert group_key to list of strings safely
+        group_key_input = data.get("group_key")
+        if isinstance(group_key_input, str):
+            group_key_list = [k.strip() for k in group_key_input.split(",") if k.strip()]
+        elif isinstance(group_key_input, list):
+            group_key_list = [str(k).strip() for k in group_key_input if str(k).strip()]
+        else:
+            group_key_list = []
+
         # 2. Call Service
         result = call_system_connections_get(
-            group_key=data.get("group_key"),
+            group_key=group_key_list,
             client_register=client_register_uuids
         )
         

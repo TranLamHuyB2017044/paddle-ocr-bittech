@@ -69,6 +69,7 @@ google-auth
 gspread
 google-auth-httplib2
 google-auth-oauthlib
+google-genai
 
 # ============================================================
 # Utilities & Monitoring

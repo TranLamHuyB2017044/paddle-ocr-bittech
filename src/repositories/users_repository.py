@@ -61,12 +61,12 @@ class UsersRepository(BaseRepository):
         # Actually I will rename this to avoid confusion and update middleware.
         pass
 
-    def increment_extraction_stats(self, user_id, doc_type: str):
+    def increment_extraction_stats(self, user_id, doc_type: str, cost: int = 1):
         """
         Increment extraction statistics for a user
-        - Increment total_extractions
+        - Increment total_extractions by `cost`
         - Update last_extraction_at
-        - Increment specific doc_type counter
+        - Increment specific doc_type counter by `cost`
         
         Supports both ObjectId (string/object) and integer user_id.
         """
@@ -89,8 +89,8 @@ class UsersRepository(BaseRepository):
                 query,
                 {
                     "$inc": {
-                        "stats.total_extractions": 1,
-                        f"stats.doc_type_stats.{doc_type}": 1
+                        "stats.total_extractions": cost,
+                        f"stats.doc_type_stats.{doc_type}": cost
                     },
                     "$set": {
                         "stats.last_extraction_at": datetime.now()

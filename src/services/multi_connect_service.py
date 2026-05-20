@@ -4,21 +4,36 @@ from src.config import AUTH_API_URL
 from src.utils.logger import Log
 
 
-def call_system_connections_get(group_key: str, client_register: list[str]):
+def call_system_connections_get(group_key: list[str], client_register: list[str]):
+    """
+    Gọi API lấy danh sách System Connections từ auth.bittechx.cloud.
+    
+    Tham số group_key nhận trực tiếp list[str] và truyền lên API dưới
+    cả hai trường 'group_key' và 'groupkey' để tương thích tối đa.
+    """
+    # Lọc và làm sạch khoảng trắng các key trong list
+    group_key_list = [k.strip() for k in group_key if isinstance(k, str) and k.strip()]
 
     Log.info(f"--- Calling API: {AUTH_API_URL}/api/system-connections/get ---")
-    Log.info(f"Payload: {json.dumps({'group_key': group_key, 'client_register': client_register}, indent=2, ensure_ascii=False)}")
+    Log.info(f"Payload group_key list: {group_key_list}")
 
     url = f"{AUTH_API_URL}/api/system-connections/get"
-    
+
+    # Gửi cả 'group_key' và 'groupkey' để đảm bảo tương thích với API đối tác
     payload = {
-        "group_key": group_key,
-        "client_register": client_register
+        "group_key": group_key_list,
+        "groupkey": group_key_list,
+        "client_register": client_register,
+    }
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
     }
 
     try:
-        response = requests.get(url, json=payload, timeout=10)
-        
+        response = requests.get(url, json=payload, headers=headers, timeout=10)
+
         try:
             Log.info(f"Response: {response.text}")
             data = response.json()
@@ -26,22 +41,22 @@ def call_system_connections_get(group_key: str, client_register: list[str]):
         except json.JSONDecodeError:
             Log.error(f"Invalid JSON response: {response.text}")
             return {
-                "success": False, 
-                "message": "Invalid JSON response", 
+                "success": False,
+                "message": "Invalid JSON response",
                 "raw_response": response.text,
-                "status_code": response.status_code
+                "status_code": response.status_code,
             }
-            
+
     except requests.exceptions.RequestException as e:
         error_detail = ""
-        if hasattr(e, 'response') and e.response is not None:
-             error_detail = e.response.text
-        
+        if hasattr(e, "response") and e.response is not None:
+            error_detail = e.response.text
+
         return {
-            "success": False, 
-            "message": "Request failed", 
+            "success": False,
+            "message": "Request failed",
             "error": str(e),
-            "detail": error_detail
+            "detail": error_detail,
         }
 
 

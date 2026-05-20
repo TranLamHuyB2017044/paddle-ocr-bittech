@@ -8,6 +8,62 @@ from src.repositories.users_repository import users_repo
 from src.extractors.openai_extractor import openai_extractor
 from src.utils.background_tasks import run_background_upload_and_log
 from src.utils.post_cleaner import PostCleaner
+from src.extractors.gemini_extractor import gemini_extractor
+from src.config import VISION_LLM_COST
+
+def process_with_vision_llm(file_paths, timer_info, doc_type, user_id=None, document_id=None):
+    """
+    Trích xuất bằng Vision LLM (Gemini ưu tiên, OpenAI fallback) trực tiếp từ hình ảnh.
+    Được sử dụng khi có cờ handwriting=True.
+    """
+    request_start = timer_info.get("start", time.time())
+    
+    Log.info(f"[API] 👁️ Dùng Vision LLM ({doc_type}) - Extraction directly from images")
+    
+    try:
+        extraction_result = gemini_extractor.extract_with_vision(file_paths, doc_type=doc_type)
+        
+        info = extraction_result.get("data", {})
+        metadata = extraction_result.get("metadata", {})
+
+        # --- FINAL CLEANUP (Normalization) ---
+        info = PostCleaner.clean(info, doc_type=doc_type)
+
+        total_time = time.time() - request_start
+        
+        # Inject metadata for logging repo
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata["total_time"] = f"{total_time:.2f}s"
+        metadata["provider"] = metadata.get("source", "vision_llm")
+
+        # Increment user stats with higher cost for Vision LLM
+        if user_id:
+            users_repo.increment_extraction_stats(user_id, doc_type, cost=VISION_LLM_COST)
+            
+        # Trigger Background Upload and Logging
+        run_background_upload_and_log(user_id, doc_type, file_paths, info, metadata=metadata, document_id=document_id)
+
+        import json
+        Log.info(f"[API] 🎁 FINAL OUTPUT ({doc_type} - Vision LLM):\n{json.dumps(info, ensure_ascii=False, indent=2)}")
+
+        return {
+            "statusCode": 200,
+            "message": "Success (Vision LLM)",
+            "data": info,
+            "debug": {
+                "total_time": f"{total_time:.2f}s",
+                "ocr_time": "0.00s", # Không dùng OCR truyền thống
+                "provider": metadata["provider"],
+                "doc_type": doc_type,
+                "metadata": metadata
+            }
+        }
+    except Exception as e:
+        Log.error(f"[API] ⚠️ API Vision LLM Error: {e}")
+        import traceback
+        Log.error(traceback.format_exc())
+        return None
 
 def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None, file_paths=None, document_id=None):
     """

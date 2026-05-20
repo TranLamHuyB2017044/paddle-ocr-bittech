@@ -176,6 +176,12 @@ DEFAULT_PLACE_OF_ISSUE = "CỤC TRƯỞNG CỤC CẢNH SÁT"
 
 # ========== AI API KEY CONFIG ==========
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GERMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash") # Model mặc định tối ưu: nhanh và chính xác nhất cho OCR/Vision RAG
+
+
+# Hệ số trừ quota khi sử dụng Vision LLM
+VISION_LLM_COST = 3
 
 # ========== REDIS CONFIG ==========
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

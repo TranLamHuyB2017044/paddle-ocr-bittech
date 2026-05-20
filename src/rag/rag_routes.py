@@ -247,8 +247,10 @@ def upload_to_workspace(workspace_id):
         if not is_allowed:
             return jsonify({"statusCode": 403, "message": f"Quota exceeded: {msg}"}), 403
             
-        # 2. Get files
+        # 2. Get files and flags
         files = request.files.getlist('files')
+        # Mặc định sử dụng vision_extract để tối ưu (ưu tiên Gemini API, tự động fallback sang OCR cơ bản khi quá giới hạn/lỗi)
+        vision_extract = True
         if not files:
             return jsonify({"statusCode": 400, "message": "No files uploaded"}), 400
             
@@ -313,6 +315,7 @@ def upload_to_workspace(workspace_id):
             rag_queue.enqueue(
                 process_document_task,
                 args=(doc_id, workspace_id, file_path, original_filename, g.user_id),
+                kwargs={"vision_extract": vision_extract},
                 job_timeout='10m' # Allow up to 10 mins for heavy OCR
             )
             

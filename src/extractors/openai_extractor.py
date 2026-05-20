@@ -85,37 +85,47 @@ class OpenAIExtractor:
             Log.error(f"[OPENAI] ❌ OpenAI Error: {e}")
             raise e
 
-    def extract_with_vision(self, image_path, doc_type):
-        """Vision-based extraction (Cảnh báo: Tốn kèm hơn Text-based)"""
+    def extract_with_vision(self, image_paths, doc_type):
+        """Vision-based extraction (hỗ trợ nhiều ảnh) - Phương án dự phòng cho Gemini"""
         if not self.client: 
             return {"data": {}, "metadata": {"error": "client_not_init"}}
 
-        try:
-            with open(image_path, "rb") as image_file:
-                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-        except Exception as e:
-            Log.error(f"[OPENAI-VLM] ❌ Image encoding error: {e}")
-            return {"data": {}, "metadata": {}}
+        # Đảm bảo image_paths luôn là list
+        if isinstance(image_paths, str):
+            image_paths = [image_paths]
 
+        content_messages = []
         prompt_template = self._get_prompt(doc_type)
-        response_schema = SCHEMA_MAP.get(doc_type)
+        if not prompt_template: 
+            return {"data": {}, "metadata": {"error": "prompt_not_found"}}
 
-        Log.info(f"[OPENAI-VLM] 👁️ Vision Extraction for {doc_type}...")
+        content_messages.append(
+            {"type": "text", "text": f"{prompt_template}\n\nHãy trích xuất dữ liệu từ các hình ảnh đính kèm."}
+        )
+
+        for p in image_paths:
+            try:
+                with open(p, "rb") as image_file:
+                    base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+                    content_messages.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                    })
+            except Exception as e:
+                Log.error(f"[OPENAI-VLM] ❌ Image encoding error for {p}: {e}")
+
+        if len(content_messages) == 1: # Chỉ có text, không load được ảnh nào
+            return {"data": {}, "metadata": {"error": "no_valid_images"}}
+
+        response_schema = SCHEMA_MAP.get(doc_type)
+        Log.info(f"[OPENAI-VLM] 👁️ Vision Extraction cho {doc_type} với {len(image_paths)} ảnh...")
+        
         try:
             completion = self.client.beta.chat.completions.parse(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": self._get_system_message(doc_type)},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"{prompt_template}\n\nHãy trích xuất dữ liệu từ hình ảnh đính kèm."},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                            },
-                        ],
-                    }
+                    {"role": "user", "content": content_messages}
                 ],
                 response_format=response_schema,
                 temperature=0,

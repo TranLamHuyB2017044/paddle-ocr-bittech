@@ -25,6 +25,25 @@ from ..config import DocStatus
 import threading
 import json
 
+def extract_text_with_vision_llm(image_path: str) -> str:
+    from src.extractors.gemini_extractor import gemini_extractor
+    import PIL.Image
+    
+    if not gemini_extractor.is_configured or not gemini_extractor.client:
+        raise Exception("Gemini is not configured")
+        
+    img = PIL.Image.open(image_path)
+    prompt = "Trích xuất chính xác và đầy đủ toàn bộ văn bản có trong hình ảnh này. Giữ nguyên định dạng đoạn văn bản. Trả về văn bản thuần túy, không định dạng markdown."
+    
+    response = gemini_extractor.client.models.generate_content(
+        model=gemini_extractor.model_name,
+        contents=[prompt, img]
+    )
+    text = response.text.strip()
+    if not text:
+        raise Exception("Empty response from Vision LLM")
+    return text
+
 def silent_cleanup_files(file_paths):
     """Cleanup files in a background thread to avoid blocking the main task completion log."""
     def cleanup():
@@ -43,7 +62,7 @@ def silent_cleanup_files(file_paths):
     thread = threading.Thread(target=cleanup, daemon=True)
     thread.start()
 
-def process_document_task(doc_id, workspace_id, file_path, original_filename, user_id):
+def process_document_task(doc_id, workspace_id, file_path, original_filename, user_id, vision_extract=False):
     """
     Background task for RAG indexing
     """
@@ -71,17 +90,45 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                 Log.info(f"[Worker] PDF '{original_filename}' has no text, switching to OCR")
                 image_paths = get_pdf_pages_as_images(file_path)
                 for idx, img_p in enumerate(image_paths):
-                    res, _ = ocr_extract(img_p)
-                    if res:
-                        page_text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
-                        structured_data.append({"text": page_text, "page_num": idx + 1})
+                    text = None
+                    if vision_extract:
+                        try:
+                            Log.info(f"[Worker] Using Vision LLM for RAG PDF page {idx+1}")
+                            text = extract_text_with_vision_llm(img_p)
+                            # Trừ quota cho Vision LLM
+                            from ..config import VISION_LLM_COST
+                            users_repo.increment_extraction_stats(user_id, "document", cost=VISION_LLM_COST)
+                        except Exception as e:
+                            Log.warning(f"[Worker] Vision LLM RAG failed for {img_p}: {e}. Fallback to traditional OCR.")
+                    
+                    if not text:
+                        res, _ = ocr_extract(img_p)
+                        if res:
+                            text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
+                            
+                    if text:
+                        structured_data.append({"text": text, "page_num": idx + 1})
                     if os.path.exists(img_p): os.remove(img_p)
             else:
                 structured_data = pages
         elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
-            ocr_result, _ = ocr_extract(file_path)
-            if ocr_result:
-                text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
+            text = None
+            if vision_extract:
+                try:
+                    Log.info(f"[Worker] Using Vision LLM for RAG image: {original_filename}")
+                    text = extract_text_with_vision_llm(file_path)
+                    # Trừ quota cho Vision LLM
+                    from ..config import VISION_LLM_COST
+                    users_repo.increment_extraction_stats(user_id, "document", cost=VISION_LLM_COST)
+                except Exception as e:
+                    Log.warning(f"[Worker] Vision LLM RAG failed for image: {e}. Fallback to traditional OCR.")
+            
+            if not text:
+                ocr_result, _ = ocr_extract(file_path)
+                if ocr_result:
+                    text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in ocr_result])
+            
+            if text:
                 structured_data = [{"text": text, "page_num": 1}]
         
         if structured_data:
@@ -97,7 +144,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
     finally:
         if 'file_path' in locals(): silent_cleanup_files(file_path)
 
-def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None, detect_handwriting=False):
+def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None, detect_handwriting=False, vision_extract=False):
     """
     Background task to process document detection.
     Ưu tiên tuyệt đối raw_text nếu có để đảm bảo tốc độ.
@@ -177,6 +224,79 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": manual_data, "debug": {"provider": "manual_kie"}})
             return
 
+        # 1.4. Optimize Cost: Check if PDF or Word doc has native text. If yes, disable Vision LLM to save costs.
+        if (detect_handwriting or vision_extract) and not raw_text and file_paths:
+            def check_is_pdf_fast(path_file):
+                if str(path_file).lower().endswith('.pdf'): return True
+                try:
+                    with open(path_file, 'rb') as f: return f.read(4) == b'%PDF'
+                except: return False
+                
+            def check_is_word_fast(path_file):
+                return str(path_file).lower().endswith(('.docx', '.doc'))
+
+            has_native_text = False
+            for p in file_paths:
+                if check_is_pdf_fast(p):
+                    try:
+                        pages = extract_text_from_pdf(p)
+                        if any(page.get('text', '').strip() for page in pages):
+                            has_native_text = True
+                            break
+                    except:
+                        pass
+                elif check_is_word_fast(p):
+                    try:
+                        text = extract_text_from_word(p)
+                        if text and text.strip():
+                            has_native_text = True
+                            break
+                    except:
+                        pass
+                        
+            if has_native_text:
+                Log.info(f"[Worker-Detect] 💰 PDF/Word document has native selectable text. Disabling Vision LLM to optimize costs.")
+                detect_handwriting = False
+                vision_extract = False
+
+        # 1.5. Vision LLM Fast Path for Handwriting or Vision Extract Flag
+        if (detect_handwriting or vision_extract) and not raw_text and file_paths:
+            Log.info(f"[Worker-Detect] 📝 Vision LLM flag is True. Bypassing traditional OCR, using Vision LLM directly...")
+            from ..api.processors.ai_processor import process_with_vision_llm
+            
+            # Tách và chuyển đổi PDF sang ảnh nếu cần thiết trước khi gửi cho Vision LLM
+            vision_paths = []
+            for p in list(file_paths):
+                if p.lower().endswith('.pdf'):
+                    Log.info(f"[Worker-Detect] 📄 Expanding PDF to images for Vision LLM: {p}")
+                    try:
+                        pdf_imgs = get_pdf_pages_as_images(p)
+                        if pdf_imgs:
+                            vision_paths.extend(pdf_imgs)
+                            # Lưu vào file_paths chính để tự động xóa khi kết thúc task
+                            file_paths.extend(pdf_imgs)
+                    except Exception as pdf_err:
+                        Log.error(f"[Worker-Detect] ❌ Failed to convert PDF {p} to images for Vision: {pdf_err}")
+                elif p.lower().endswith(('.docx', '.doc')):
+                    Log.warning(f"[Worker-Detect] ⚠️ Word document {p} cannot be processed by Vision LLM directly. Skipping image conversion.")
+                else:
+                    vision_paths.append(p)
+
+            if not vision_paths:
+                raise Exception("Không tìm thấy tệp ảnh hoặc PDF hợp lệ để xử lý bằng Vision LLM")
+            
+            # Khởi tạo timer info đơn giản cho Vision LLM
+            timer_info = {"start": request_start, "ocr_front": 0, "ocr_back": 0}
+            result_response = process_with_vision_llm(vision_paths, timer_info, doc_type, user_id, document_id=doc_id)
+            
+            if result_response:
+                debug_info = result_response.get("debug", {})
+                documents_repo.update_status(doc_id, DocStatus.READY, result=result_response.get("data"), debug=debug_info)
+                publish_event(user_id, "detection_status", {"document_id": doc_id, "status": DocStatus.READY, "type": doc_type, "result": result_response.get("data"), "debug": debug_info})
+                return
+            else:
+                raise Exception("Vision LLM Processing failed to return result")
+
         # 2. Source Stage (Sequential XOR: raw_text OR OCR)
 
         raw_front, raw_back = [], []
@@ -193,7 +313,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
         elif len(file_paths) > 0:
             Log.info(f"[Worker-Detect] 🔍 No raw_text provided. Starting OCR stage...")
             
-            # 🖼️ Expand PDF to Images if needed
+            # 🖼️ Expand PDF to Images or Extract Native PDF/Word Text if needed
             all_images = []
             input_paths = list(file_paths) # Safe copy
             
@@ -205,7 +325,10 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                 except:
                     return False
 
-            native_pdf_text = []
+            def check_is_word(path_file):
+                return path_file.lower().endswith(('.docx', '.doc'))
+
+            native_doc_text = []
 
             for p in input_paths:
                 if check_is_pdf(p):
@@ -217,28 +340,36 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                         Log.info(f"[Worker-Detect] 📄 PDF '{p}' has native text, extracting directly...")
                         for page in pages:
                             if page.get('text'):
-                                native_pdf_text.append(page['text'])
+                                native_doc_text.append(page['text'])
                     else:
                         Log.info(f"[Worker-Detect] 📄 Expanding PDF to images: {p}")
                         pdf_imgs = get_pdf_pages_as_images(p)
                         all_images.extend(pdf_imgs)
                         # Add new temp images to file_paths so they get cleaned up in finally block
                         file_paths.extend(pdf_imgs)
+                elif check_is_word(p):
+                    Log.info(f"[Worker-Detect] 📄 Word document '{p}' detected, extracting text directly...")
+                    try:
+                        w_text = extract_text_from_word(p)
+                        if w_text and w_text.strip():
+                            native_doc_text.append(w_text)
+                    except Exception as w_err:
+                        Log.error(f"[Worker-Detect] ❌ Failed to extract text from Word document {p}: {w_err}")
                 else:
                     all_images.append(p)
 
-            # If we successfully extracted native PDF text and there are no other pure images
-            if native_pdf_text and not all_images:
-                Log.info(f"[Worker-Detect] 📝 Using native PDF text source (Skipping OCR)")
-                raw_text_combined = "\n".join(native_pdf_text)
+            # If we successfully extracted native PDF/Word text and there are no other pure images
+            if native_doc_text and not all_images:
+                Log.info(f"[Worker-Detect] 📝 Using native PDF/Word text source (Skipping OCR)")
+                raw_text_combined = "\n".join(native_doc_text)
                 for line in raw_text_combined.split('\n'):
                     if line.strip(): 
                         raw_front.append({"text": line.strip(), "box": [[0,0],[0,0],[0,0],[0,0]], "score": 1.0})
                 ocr_front_time, ocr_back_time = 0.0, 0.0
                 # Bypassing OCR flag
                 all_images = []
-            elif not all_images and not native_pdf_text:
-                raise Exception("No valid images found for OCR (PDF might be empty or invalid)")
+            elif not all_images and not native_doc_text:
+                raise Exception("No valid documents or images found for OCR/Extraction")
 
             # OCR for all collected images
             if all_images:
@@ -317,7 +448,7 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
     finally:
         if 'file_paths' in locals() and file_paths: silent_cleanup_files(file_paths)
 
-def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None, detect_handwriting=False):
+def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=None, detect_handwriting=False, vision_extract=False):
     """
     Hàm bổ sung: Xử lý trích xuất sử dụng PP-Structure V3.
     Dành riêng cho các loại tài liệu có cấu trúc phức tạp (Hóa đơn, Menu).
@@ -325,5 +456,5 @@ def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, prov
     Log.info(f"[Worker-Structure] 🏗️ Starting structure detection task: {doc_type}")
     # Gọi process_detection_task để tái sử dụng toàn bộ logic quản lý Document, Event và AI Processing.
     # Bên trong process_detection_task đã có logic switch sang ocr_structure_extract nếu doc_type là invoice/menu.
-    return process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=raw_text, detect_handwriting=detect_handwriting)
+    return process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=raw_text, detect_handwriting=detect_handwriting, vision_extract=vision_extract)
 
