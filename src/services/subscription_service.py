@@ -6,12 +6,12 @@ from src.utils.logger import Log
 
 class SubscriptionService:
     @staticmethod
-    def check_quota(user):
+    def check_quota(user, cost=1):
         """
         Core logic for quota verification:
         - Admin: Always True
         - Business Plan: Always True
-        - Others: used_requests < max_requests
+        - Others: used_requests + cost <= max_requests
         """
         if user.get('role') == 0:
             return True, "Admin access granted"
@@ -37,8 +37,8 @@ class SubscriptionService:
         max_requests = plan_cfg.get('max_requests_per_month', 0)
         used_requests = account.get('used_requests', 0)
 
-        if used_requests >= max_requests:
-            return False, f"Quota exceeded for plan {plan_key} ({used_requests}/{max_requests})"
+        if used_requests + cost > max_requests:
+            return False, f"Quota exceeded for plan {plan_key} ({used_requests + cost}/{max_requests})"
 
         return True, "Within quota"
 

@@ -250,8 +250,12 @@ def register_routes(app):
                 source_files=source_files_meta
             )
 
+            detect_handwriting = request.form.get("detect_handwriting", "false").lower() == "true"
+            vision_extract = request.form.get("vision_extract", "false").lower() == "true"
+            cost = 3 if vision_extract else 1
+
             # Check quota
-            is_allowed, msg = subscription_service.check_quota(g.user)
+            is_allowed, msg = subscription_service.check_quota(g.user, cost=cost)
             if not is_allowed:
                 return jsonify({"statusCode": 403, "message": msg}), 403
 
@@ -270,10 +274,7 @@ def register_routes(app):
 
             # Increment usage
             if g.user.get('account_id'):
-                accounts_repo.increment_usage(g.user.get('account_id'))
-
-            detect_handwriting = request.form.get("detect_handwriting", "false").lower() == "true"
-            vision_extract = request.form.get("vision_extract", "false").lower() == "true"
+                accounts_repo.increment_usage(g.user.get('account_id'), amount=cost)
 
             rag_queue.enqueue(
                 process_detection_task,
@@ -457,14 +458,16 @@ def register_routes(app):
                 source_files=source_files_meta
             )
 
+            cost = 3 if vision_extract else 1
+
             # Check quota
-            is_allowed, msg = subscription_service.check_quota(g.user)
+            is_allowed, msg = subscription_service.check_quota(g.user, cost=cost)
             if not is_allowed:
                 return jsonify({"statusCode": 403, "message": msg}), 403
 
             # Increment usage 
             if g.user.get('account_id'):
-                accounts_repo.increment_usage(g.user.get('account_id'))
+                accounts_repo.increment_usage(g.user.get('account_id'), amount=cost)
 
             # ===== 3. Đăng ký lắng nghe TRƯỚC khi gửi task =====
             pubsub = redis_conn.pubsub()
@@ -596,8 +599,10 @@ def register_routes(app):
                 source_files=source_files_meta
             )
 
+            cost = 3 if vision_extract else 1
+
             # Check quota
-            is_allowed, msg = subscription_service.check_quota(g.user)
+            is_allowed, msg = subscription_service.check_quota(g.user, cost=cost)
             if not is_allowed:
                 return jsonify({"statusCode": 403, "message": msg}), 403
 
@@ -613,7 +618,7 @@ def register_routes(app):
 
             # Increment usage 
             if g.user.get('account_id'):
-                accounts_repo.increment_usage(g.user.get('account_id'))
+                accounts_repo.increment_usage(g.user.get('account_id'), amount=cost)
 
             # Choose task based on type
             task_func = process_structure_detection_task if doc_type in ['invoice', 'menu'] else process_detection_task
