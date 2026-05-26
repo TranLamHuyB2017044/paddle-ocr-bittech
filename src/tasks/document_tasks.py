@@ -458,3 +458,35 @@ def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, prov
     # Bên trong process_detection_task đã có logic switch sang ocr_structure_extract nếu doc_type là invoice/menu.
     return process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=raw_text, detect_handwriting=detect_handwriting, vision_extract=vision_extract)
 
+
+def process_tts_task(tts_id, text, voice_sample_path=None, voice_name=None):
+    """
+    Background task to process text-to-speech generation on the worker.
+    """
+    from src.services.tts_service import tts_service
+    from src.utils.redis_client import redis_conn
+    import json
+    
+    try:
+        Log.info(f"[Worker-TTS] Starting TTS generation for task {tts_id}")
+        output_wav_path = tts_service.synthesize(
+            text=text,
+            voice_sample_path=voice_sample_path,
+            voice_name=voice_name
+        )
+        
+        # Publish success result
+        result = {
+            "status": "success",
+            "output_path": output_wav_path
+        }
+        redis_conn.publish(f"tts_channel_{tts_id}", json.dumps(result))
+        Log.info(f"[Worker-TTS] Completed TTS generation for task {tts_id}")
+    except Exception as e:
+        Log.error(f"[Worker-TTS] Failed TTS generation for task {tts_id}: {e}")
+        result = {
+            "status": "failed",
+            "error": str(e)
+        }
+        redis_conn.publish(f"tts_channel_{tts_id}", json.dumps(result))
+

@@ -1,6 +1,6 @@
 """
 Model Loader
-Load và quản lý DeepDoc + VietOCR models (không còn PaddleOCR)
+Load và quản lý DeepDoc + VietOCR + VieNeu-TTS models
 """
 import os
 import traceback
@@ -49,6 +49,7 @@ class ModelLoader:
     _ocr = None
     _rembg_session = None
     _handwritten_predictor = None
+    _tts = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -63,6 +64,7 @@ class ModelLoader:
         """Tải trước toàn bộ các model nặng (thường dùng cho Worker)."""
         Log.info("📦 Bắt đầu tải trước toàn bộ AI Models...")
         self._load_ocr()
+        self._load_tts()
         # Tạm thời loại bỏ preload handwriting model khi run app bằng docker
         # self._load_handwritten()
         Log.info("✅ Hoàn tất tải trước toàn bộ AI Models!")
@@ -110,6 +112,19 @@ class ModelLoader:
                 Log.error(traceback.format_exc())
         return self._handwritten_predictor
 
+    def _load_tts(self):
+        """Load VieNeu-TTS model cho chức năng Text-to-Speech & Voice Cloning"""
+        if self._tts is None:
+            Log.info("🗣️ Loading VieNeu-TTS model...")
+            try:
+                from vieneu import Vieneu
+                self._tts = Vieneu()
+                Log.info("✅ VieNeu-TTS loaded successfully!")
+            except Exception as e:
+                Log.error(f"❌ Failed to load VieNeu-TTS: {e}")
+                Log.error(traceback.format_exc())
+        return self._tts
+
     @property
     def ocr(self):
         """Get OCR instance (DeepDocOCR), loading if necessary"""
@@ -133,6 +148,13 @@ class ModelLoader:
         if self._handwritten_predictor is None:
             self._load_handwritten()
         return self._handwritten_predictor
+
+    @property
+    def tts(self):
+        """Get VieNeu-TTS instance (đã được preload sẵn khi khởi động)"""
+        if self._tts is None:
+            self._load_tts()
+        return self._tts
 
 
 # Global instance

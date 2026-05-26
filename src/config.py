@@ -18,6 +18,8 @@ load_dotenv(os.path.join(root_dir, '.env'))
 
 # ========== UPLOAD CONFIG ==========
 UPLOAD_FOLDER = "uploads"
+BASE_URL = os.getenv("BASE_URL", "http://192.168.1.241:9000")
+TTS_FILE_RETENTION_HOURS = int(os.getenv("TTS_FILE_RETENTION_HOURS", "24"))
 
 # Định dạng file tài liệu cho OCR / RAG
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc'}
