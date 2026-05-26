@@ -52,19 +52,60 @@ def register_routes(app):
         return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
 
     @app.route('/uploads/<path:filename>')
-    @require_auth
     def serve_uploaded_file(filename):
         """
-        Serve file từ uploads/ với kiểm soát quyền RBAC:
-          - Owner (role=2):   xem file của mình.
-          - Manager (role=1): xem file trong cùng account_id.
-          - Admin (role=0):   phải dùng /api/files/<doc_id>/admin-view (break-glass).
+        Serve file từ uploads/:
+          - File trong tts/: truy cập công khai
+          - File khác: kiểm soát quyền RBAC
         """
+        # Nếu là file TTS, cho phép truy cập công khai
+        if filename.startswith('tts/'):
+            return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+        
+        # Đối với các file khác, vẫn áp dụng kiểm tra quyền
+        from src.utils.auth_middleware import require_auth
         from src.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
         from src.repositories.audit_log_repository import audit_log_repo, AuditEvent
-
+        
+        # Kiểm tra auth thủ công vì decorator không áp dụng cho route này
+        api_key = request.headers.get("x-api-key")
+        if not api_key:
+            return jsonify({"statusCode": 401, "message": "Authentication required"}), 401
+        
+        # Thực hiện kiểm tra auth bằng logic từ require_auth
+        from src.utils.security import decode_access_token
+        from src.repositories.users_repository import users_repo
+        from src.utils.security import hash_token
+        from flask import g
+        
+        user = None
+        if "." in api_key:
+            try:
+                clean_key = api_key
+                if api_key.startswith("ak_"):
+                    clean_key = api_key[3:]
+                access_key, plain_secret = clean_key.split(".", 1)
+                
+                user = users_repo.find_by_api_key_access(access_key)
+                if not user:
+                    user = users_repo.find_by_api_key_access("ak_" + access_key)
+                
+                if user and user.get("api_key"):
+                    stored_hash = user["api_key"]["hashed_secret"]
+                    input_hash = hash_token(plain_secret)
+                    if input_hash == stored_hash:
+                        g.user_id = str(user["_id"])
+                        g.user = user
+                    else:
+                        user = None
+            except:
+                user = None
+        
+        if not user:
+            return jsonify({"statusCode": 401, "message": "Invalid API Key"}), 401
+        
         actor_role = g.user.get('role', 2)
-
+        
         # Admin: tự động từ chối qua route này — yêu cầu dùng break-glass endpoint
         if actor_role == ROLE_ADMIN:
             storage_path_norm = f"uploads/{filename}"
@@ -84,24 +125,24 @@ def register_routes(app):
                 "statusCode": 403,
                 "message": "Admin không thể xem file trực tiếp. Hãy dùng /api/files/<doc_id>/admin-view và cung cấp lý do."
             }), 403
-
+        
         # Lookup document ownership
         storage_path = f"{app.config['UPLOAD_FOLDER']}/{filename}"
         doc = documents_repo.find_by_storage_path(storage_path)
         if not doc:
             storage_path_norm = f"uploads/{filename}"
             doc = documents_repo.find_by_storage_path(storage_path_norm)
-
+        
         if not doc:
             return jsonify({"statusCode": 404, "message": "File không tìm thấy hoặc không thuộc tài liệu nào."}), 404
-
+        
         # Gắn account_id từ user nếu doc chưa có (backward compat)
         if not doc.get("account_id") and g.user.get("account_id"):
             doc["account_id"] = g.user.get("account_id")
-
+        
         access = check_file_access(g.user, doc)
         ctx = get_request_context()
-
+        
         if not access.allowed:
             from src.repositories.audit_log_repository import audit_log_repo, AuditEvent
             audit_log_repo.log_event(
@@ -114,7 +155,7 @@ def register_routes(app):
                 **ctx,
             )
             return jsonify({"statusCode": 403, "message": access.reason}), 403
-
+        
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
     @app.route("/api/stats", methods=["GET"])
