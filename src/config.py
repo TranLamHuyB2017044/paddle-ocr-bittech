@@ -18,6 +18,8 @@ load_dotenv(os.path.join(root_dir, '.env'))
 
 # ========== UPLOAD CONFIG ==========
 UPLOAD_FOLDER = "uploads"
+BASE_URL = os.getenv("BASE_URL", "http://192.168.1.241:9000")
+TTS_FILE_RETENTION_HOURS = int(os.getenv("TTS_FILE_RETENTION_HOURS", "24"))
 
 # Định dạng file tài liệu cho OCR / RAG
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc'}
@@ -259,6 +261,14 @@ PLANS_CONFIG = {
 }
 
 AUTH_API_URL = os.getenv("AUTH_SERVICE_URL", "")
+
+# ========== EXTERNAL FILES API CONFIG ==========
+FILES_API_URL = os.getenv("FILES_API_URL", "https://files.bittechx.cloud")
+FILES_API_UPLOAD_ENDPOINT = os.getenv("FILES_API_UPLOAD_ENDPOINT", "/api/files/upload")
+FILES_API_SYSTEM_ID = os.getenv("FILES_API_SYSTEM_ID", "5efc2c21-b02e-4c8f-965b-1e01d7384a51")
+FILES_API_USER_ID = os.getenv("FILES_API_USER_ID", "51202")
+FILES_API_ALIAS = os.getenv("FILES_API_ALIAS", "home")
+FILES_API_KEY = os.getenv("FILES_API_KEY", "client_ecad0526a48d4595a59fba330896feb3")
 
 
 CCCD_PROVINCE_CODE_MAP = {

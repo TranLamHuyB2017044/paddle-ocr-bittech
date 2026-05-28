@@ -458,3 +458,89 @@ def process_structure_detection_task(doc_id, user_id, doc_type, file_paths, prov
     # Bên trong process_detection_task đã có logic switch sang ocr_structure_extract nếu doc_type là invoice/menu.
     return process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_text=raw_text, detect_handwriting=detect_handwriting, vision_extract=vision_extract)
 
+
+def process_tts_task(tts_id, text, voice_sample_path=None, voice_name=None):
+    """
+    Background task to process text-to-speech generation on the worker.
+    """
+    from src.services.tts_service import tts_service
+    from src.utils.redis_client import redis_conn
+    from src.config import FILES_API_URL, FILES_API_UPLOAD_ENDPOINT, FILES_API_SYSTEM_ID, FILES_API_USER_ID, FILES_API_ALIAS, FILES_API_KEY
+    from src.utils.logger import Log
+    import json
+    import requests
+    import os
+    import traceback
+    
+    output_wav_path = None
+    try:
+        Log.info(f"[Worker-TTS] Bắt đầu tạo TTS cho tác vụ {tts_id}")
+        output_wav_path = tts_service.synthesize(
+            text=text,
+            voice_sample_path=voice_sample_path,
+            voice_name=voice_name
+        )
+        
+        # Upload file to external API
+        Log.info(f"[Worker-TTS] Đang tải file lên API bên ngoài: {output_wav_path}")
+        upload_url = f"{FILES_API_URL}{FILES_API_UPLOAD_ENDPOINT}"
+        
+        with open(output_wav_path, 'rb') as f:
+            files = {
+                'files': (os.path.basename(output_wav_path), f, 'audio/wav')
+            }
+            data = {
+                'system_id': FILES_API_SYSTEM_ID,
+                'user_id': FILES_API_USER_ID,
+                'alias': FILES_API_ALIAS,
+                "file_system": False
+            }
+            headers = {
+                'x-api-key': FILES_API_KEY
+            }
+            
+            Log.info(f"[Worker-TTS] Gửi yêu cầu đến: {upload_url}")
+            Log.info(f"[Worker-TTS] Headers: {headers}")
+            
+            response = requests.post(upload_url, files=files, data=data, headers=headers, timeout=30)
+            
+            Log.info(f"[Worker-TTS] Phản hồi từ API bên ngoài - Status Code: {response.status_code}")
+            Log.info(f"[Worker-TTS] Phản hồi nội dung: {response.text}")
+            
+            response.raise_for_status()
+            upload_response = response.json()
+        
+        # Publish success result with upload response
+        result = {
+            "status": "success",
+            "output_path": output_wav_path,
+            "upload_response": upload_response
+        }
+        redis_conn.publish(f"tts_channel_{tts_id}", json.dumps(result))
+        Log.info(f"[Worker-TTS] Completed TTS generation and upload for task {tts_id}")
+    except requests.exceptions.RequestException as e:
+        Log.error(f"[Worker-TTS] Lỗi kết nối API bên ngoài cho tác vụ {tts_id}: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            Log.error(f"[Worker-TTS] Nội dung phản hồi lỗi: {e.response.text}")
+        result = {
+            "status": "failed",
+            "error": str(e)
+        }
+        redis_conn.publish(f"tts_channel_{tts_id}", json.dumps(result))
+    except Exception as e:
+        Log.error(f"[Worker-TTS] Failed TTS generation for task {tts_id}: {e}")
+        Log.error(f"[Worker-TTS] Stack trace: {traceback.format_exc()}")
+        result = {
+            "status": "failed",
+            "error": str(e)
+        }
+        redis_conn.publish(f"tts_channel_{tts_id}", json.dumps(result))
+    finally:
+        # Cleanup temp file
+        if output_wav_path and os.path.exists(output_wav_path):
+            try:
+                os.remove(output_wav_path)
+                Log.info(f"[Worker-TTS] Đã xóa file tạm: {output_wav_path}")
+            except Exception as e:
+                Log.warning(f"[Worker-TTS] Không thể xóa file tạm {output_wav_path}: {e}")
+

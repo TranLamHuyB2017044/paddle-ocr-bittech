@@ -52,6 +52,7 @@ from src.api.subscription_routes import subscription_bp
 from src.api.email_routes import email_bp
 from src.api.photo_routes import photo_bp
 from src.api.file_routes import file_bp
+from src.api.tts_routes import tts_bp
 
 app.register_blueprint(sheet_bp)
 app.register_blueprint(auth_bp)
@@ -61,6 +62,15 @@ app.register_blueprint(subscription_bp)
 app.register_blueprint(email_bp)
 app.register_blueprint(photo_bp)
 app.register_blueprint(file_bp)
+app.register_blueprint(tts_bp)
+
+# Apply rate limits to TTS endpoints after limiter is initialized
+from src.utils.rate_limit import get_limiter
+limiter = get_limiter()
+if limiter:
+    from src.api.tts_routes import get_preset_voices, generate_speech
+    limiter.limit("10 per minute")(get_preset_voices)
+    limiter.limit("10 per minute")(generate_speech)
 
 # ==================== RUN APP ====================
 if __name__ == "__main__":
