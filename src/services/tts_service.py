@@ -5,9 +5,9 @@ Sử dụng VieNeu-TTS model đã được preload sẵn từ ModelLoader
 """
 import os
 import uuid
+import tempfile
 from src.utils.logger import Log
 from src.models.model_loader import model_loader
-import src.config as config
 class TTSService:
     """Service xử lý Text-to-Speech, lấy model từ ModelLoader (đã preload)."""
     _instance = None
@@ -16,9 +16,7 @@ class TTSService:
             cls._instance = super(TTSService, cls).__new__(cls)
         return cls._instance
     def __init__(self):
-        # Đảm bảo thư mục uploads/tts tồn tại
-        self.tts_dir = os.path.join(config.UPLOAD_FOLDER, 'tts')
-        os.makedirs(self.tts_dir, exist_ok=True)
+        pass
     def synthesize(self, text, voice_sample_path=None, voice_name=None):
 
         try:
@@ -46,9 +44,10 @@ class TTSService:
                 audio = tts.infer(text=text, voice=voice)
             else:
                 audio = tts.infer(text=text)
-            # Tạo tên file ngẫu nhiên và duy nhất
+            # Tạo file tạm trong thư mục temp của hệ thống
+            temp_dir = tempfile.gettempdir()
             filename = f"tts_{uuid.uuid4().hex[:8]}.wav"
-            output_path = os.path.join(self.tts_dir, filename)
+            output_path = os.path.join(temp_dir, filename)
             Log.info(f"💾 Đang lưu file âm thanh WAV gốc vào: {output_path}")
             tts.save(audio, output_path)
             return output_path

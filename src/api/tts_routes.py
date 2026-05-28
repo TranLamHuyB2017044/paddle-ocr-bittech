@@ -94,16 +94,8 @@ def generate_speech():
             if message:
                 try:
                     payload = json.loads(message["data"])
-                    if payload.get("status") == "success":
-                        final_result = {
-                            "status": "success",
-                            "output_path": payload.get("output_path")
-                        }
-                    else:
-                        final_result = {
-                            "status": "failed",
-                            "error": payload.get("error", "Unknown error")
-                        }
+                    Log.info(f"[API-TTS] Nhận payload từ Worker: {json.dumps(payload, ensure_ascii=False)}")
+                    final_result = payload.copy()
                     break
                 except Exception as ex:
                     Log.error(f"[API-TTS] Lỗi phân giải kết quả từ Redis: {ex}")
@@ -118,25 +110,8 @@ def generate_speech():
         if final_result["status"] == "failed":
             return jsonify({"statusCode": 500, "message": final_result["error"]}), 500
 
-        output_wav_path = final_result["output_path"]
-
-        # 4. Trả về dữ liệu phản hồi
-        # Tính đường dẫn tương đối (relative path) so với uploads/ để tạo URL tải file
-        from src.config import UPLOAD_FOLDER
-        norm_upload = os.path.normpath(UPLOAD_FOLDER)
-        norm_wav = os.path.normpath(output_wav_path)
-        rel_path = os.path.relpath(norm_wav, norm_upload).replace("\\", "/")
-        
-        download_url = f"{BASE_URL}/uploads/{rel_path}"
-        
-        return jsonify({
-            "statusCode": 200,
-            "message": "Tổng hợp giọng nói thành công",
-            "data": {
-                "url": download_url,
-                "format": "wav"
-            }
-        }), 200
+        # 4. Trả về dữ liệu phản hồi từ API upload file
+        return jsonify(final_result["upload_response"]), final_result["upload_response"].get("statusCode", 200)
 
     except Exception as e:
         Log.error(f"[TTS API] Lỗi xử lý API: {e}")
