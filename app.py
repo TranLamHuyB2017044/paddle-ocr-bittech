@@ -26,9 +26,6 @@ from src.database import mongo
 os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
 
-# ==================== INITIALIZE RATE LIMITER ====================
-limiter = init_limiter(app)
-
 # Ensure JSON response keys are NOT sorted (preserve order)
 if hasattr(app, 'json'):
     app.json.sort_keys = False # type: ignore
@@ -63,14 +60,6 @@ app.register_blueprint(email_bp)
 app.register_blueprint(photo_bp)
 app.register_blueprint(file_bp)
 app.register_blueprint(tts_bp)
-
-# Apply rate limits to TTS endpoints after limiter is initialized
-from src.utils.rate_limit import get_limiter
-limiter = get_limiter()
-if limiter:
-    from src.api.tts_routes import get_preset_voices, generate_speech
-    limiter.limit("10 per minute")(get_preset_voices)
-    limiter.limit("10 per minute")(generate_speech)
 
 # ==================== RUN APP ====================
 if __name__ == "__main__":

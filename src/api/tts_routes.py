@@ -1,15 +1,29 @@
 import os
 from flask import Blueprint, request, jsonify
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
 from src.services.tts_service import tts_service
+from src.utils.rate_limit import limiter
 from src.config import BASE_URL
 
 tts_bp = Blueprint("tts", __name__)
 
+
+@tts_bp.errorhandler(429)
+def _tts_rate_limit_handler(e):
+    """Trả về JSON 429 thống nhất với format lỗi của dự án."""
+    Log.warning(f"[TTS Rate Limit] IP {get_remote_address()} bị chặn: {e.description}")
+    return jsonify({
+        "statusCode": 429,
+        "message": "Quá nhiều yêu cầu. Vui lòng thử lại sau."
+    }), 429
+
+
 @tts_bp.route("/api/tts/voices", methods=["GET"])
 @require_auth
+@limiter.limit("30 per minute")
 def get_preset_voices():
     """
     API endpoint lấy danh sách giọng đọc mẫu (preset voices) của VieNeu-TTS.
@@ -23,12 +37,14 @@ def get_preset_voices():
             "data": data
         }), 200
     except Exception as e:
-        Log.error(f"[TTS API] Lỗi lấy danh sách preset voices: {e}")
+        Log.error(f"[TTS API] Lấy danh sách preset voices: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
 @tts_bp.route("/api/tts", methods=["POST"])
 @require_auth
+@limiter.limit("5 per minute")
+@limiter.limit("20 per hour")
 def generate_speech():
     """
     API endpoint chuyển đổi văn bản thành giọng nói sử dụng VieNeu-TTS.
@@ -82,7 +98,7 @@ def generate_speech():
         )
 
         # Chờ kết quả từ Worker
-        wait_timeout = 120  
+        wait_timeout = 180  
         start_wait = time.time()
         final_result = None
 
