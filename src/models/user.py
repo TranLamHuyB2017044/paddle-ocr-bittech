@@ -1,9 +1,18 @@
 from pydantic import BaseModel, EmailStr, Field, BeforeValidator
-from typing import Optional, Literal, Annotated
+from typing import Optional, Literal, Annotated, Any
 from datetime import datetime
 
 # Helper to handle ObjectId as string
 PyObjectId = Annotated[str, BeforeValidator(str)]
+
+# Helper to handle group_key (string or list)
+def validate_group_key(v: Any) -> Any:
+    """Automatically convert string to list for backward compatibility"""
+    if isinstance(v, str):
+        return [v]
+    return v
+
+GroupKey = Annotated[Optional[list[str]], BeforeValidator(validate_group_key)]
 
 class DocTypeStats(BaseModel):
     """Statistics for each document type"""
@@ -48,7 +57,7 @@ class User(BaseModel):
     deviceId: Optional[str] = Field(default=None)
     role: Literal[0, 1, 2] = Field(default=2, description="0: admin, 1: manager, 2: user")
     account_id: Optional[PyObjectId] = Field(default=None)
-    group_key: Optional[list[str]] = Field(default=None)
+    group_key: GroupKey = Field(default=None)
 
 
     class Config:

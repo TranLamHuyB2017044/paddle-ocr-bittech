@@ -79,7 +79,14 @@ class AuthService:
              raise ValueError("Sai tài khoản hoặc mật khẩu")
         
         # 3. Check Device Lock - Will raise ValueError if failed
-        if not is_dev:
+        skip_device_check = False
+        if user.account_id:
+            from src.repositories.accounts_repository import accounts_repo
+            account = accounts_repo.find_by_id(user.account_id)
+            if account and account.get("plan") == 4:
+                skip_device_check = True
+        
+        if not is_dev and not skip_device_check:
             users_repo.check_device_id(str(user.id), device_id)
 
         # 4. Create Session & Tokens
@@ -136,7 +143,15 @@ class AuthService:
                  users_repo.update(str(user.id), update_data)
 
         # 2. Check Device Lock - Will raise ValueError if failed
-        users_repo.check_device_id(str(user.id), device_id)
+        skip_device_check = False
+        if user.account_id:
+            from src.repositories.accounts_repository import accounts_repo
+            account = accounts_repo.find_by_id(user.account_id)
+            if account and account.get("plan") == 4:
+                skip_device_check = True
+        
+        if not skip_device_check:
+            users_repo.check_device_id(str(user.id), device_id)
 
         # 3. Return Tokens
         return self._create_login_response(user, user_agent, ip, device_id)

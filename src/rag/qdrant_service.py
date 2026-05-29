@@ -100,6 +100,29 @@ class QdrantService:
             )
         )
 
+    def delete_by_document(self, workspace_id: str, document_name: str):
+        """
+        Delete all vector points belonging to a specific document within a workspace.
+        Dùng cho: xóa document, reindex, replace file.
+        """
+        return self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="workspace_id",
+                            match=models.MatchValue(value=workspace_id),
+                        ),
+                        models.FieldCondition(
+                            key="document_name",
+                            match=models.MatchValue(value=document_name),
+                        ),
+                    ]
+                )
+            )
+        )
+
     def get_document_count(self, workspace_id):
         """
         Count unique documents in a workspace.
@@ -121,7 +144,10 @@ class QdrantService:
                 with_payload=["document_name"],
                 with_vectors=False
             )
-            unique_docs = {p.payload["document_name"] for p in points if "document_name" in p.payload}
+            unique_docs = set()
+            for p in points:
+                if p.payload and "document_name" in p.payload:
+                    unique_docs.add(p.payload["document_name"])
             return len(unique_docs)
         except Exception as e:
             Log.error(f"[Qdrant] Error counting documents: {e}")
@@ -167,6 +193,10 @@ class QdrantServiceProxy:
         
     def delete_by_workspace(self, *args, **kwargs):
         if self.instance: return self.instance.delete_by_workspace(*args, **kwargs)
+        raise Exception("Qdrant not initialized")
+
+    def delete_by_document(self, *args, **kwargs):
+        if self.instance: return self.instance.delete_by_document(*args, **kwargs)
         raise Exception("Qdrant not initialized")
 
     def scroll(self, *args, **kwargs):

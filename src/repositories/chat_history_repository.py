@@ -8,8 +8,8 @@ class ChatHistoryRepository(BaseRepository):
 
     def save_message(self, workspace_id, user_id, question, answer, sources=None, provider=None):
         message = {
-            "workspace_id": ObjectId(workspace_id) if isinstance(workspace_id, str) else workspace_id,
-            "user_id": ObjectId(user_id) if isinstance(user_id, str) else user_id,
+            "workspace_id": ObjectId(workspace_id) if isinstance(workspace_id, str) and ObjectId.is_valid(workspace_id) else workspace_id,
+            "user_id": ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id,
             "question": question,
             "answer": answer,
             "sources": sources or [],

@@ -132,11 +132,21 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                 structured_data = [{"text": text, "page_num": 1}]
         
         if structured_data:
+            # Lưu toàn bộ nội dung văn bản thô vào MongoDB để hỗ trợ reindex sau này
+            # mà không cần file gốc
+            combined_raw_text = "\n\n".join(
+                item["text"] for item in structured_data if item.get("text", "").strip()
+            )
             total_chunks = rag_service.index_text(structured_data, workspace_id, original_filename)
-            documents_repo.update_status(doc_id, DocStatus.READY, total_chunks=total_chunks)
+            documents_repo.update_status(
+                doc_id, DocStatus.READY,
+                total_chunks=total_chunks,
+                raw_text=combined_raw_text
+            )
             publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.READY})
         else:
             raise Exception("No text could be extracted")
+
     except Exception as e:
         Log.error(f"[Worker] Failed: {e}")
         documents_repo.update_status(doc_id, DocStatus.FAILED, error_message=str(e))

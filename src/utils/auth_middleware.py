@@ -2,6 +2,7 @@ from functools import wraps
 from flask import request, jsonify, g
 from src.utils.security import decode_access_token
 from src.repositories.users_repository import users_repo
+from src.repositories.accounts_repository import accounts_repo
 from src.utils.security import hash_token
 from src.utils.logger import Log
 
@@ -39,19 +40,28 @@ def require_auth(f):
                             g.user_id = str(user["_id"])
                             g.user = user
                             
-                            # Device ID Logic: First time login assignment or mismatch check
-                            header_device_id = request.headers.get('x-device-id') or request.headers.get('X-Device-ID')
-                                
-                            if not user.get('deviceId'):
-                                if header_device_id:
-                                    users_repo.update(g.user_id, {"deviceId": header_device_id})
-                                    user['deviceId'] = header_device_id
-                            else:
-                                # If deviceId exists, we MUST verify match (Security)
-                                if header_device_id and user.get('deviceId') != header_device_id:
-                                    Log.warning(f"[Auth] ⛔ Device mismatch for user {user.get('username')}: {header_device_id} != {user.get('deviceId')}")
-                                    return jsonify({"statusCode": 401, "message": "Thiết bị không hợp lệ cho tài khoản này. Vui lòng đăng nhập lại."}), 401
-                                
+                            # Check if user has an account and get plan
+                            skip_device_check = False
+                            if user.get("account_id"):
+                                account = accounts_repo.find_by_id(user.get("account_id"))
+                                if account and account.get("plan") == 4:
+                                    # Plan 4 (Chatbot): skip device ID check
+                                    skip_device_check = True
+                            
+                            if not skip_device_check:
+                                # Device ID Logic: First time login assignment or mismatch check
+                                header_device_id = request.headers.get('x-device-id') or request.headers.get('X-Device-ID')
+                                    
+                                if not user.get('deviceId'):
+                                    if header_device_id:
+                                        users_repo.update(g.user_id, {"deviceId": header_device_id})
+                                        user['deviceId'] = header_device_id
+                                else:
+                                    # If deviceId exists, we MUST verify match (Security)
+                                    if header_device_id and user.get('deviceId') != header_device_id:
+                                        Log.warning(f"[Auth] ⛔ Device mismatch for user {user.get('username')}: {header_device_id} != {user.get('deviceId')}")
+                                        return jsonify({"statusCode": 401, "message": "Thiết bị không hợp lệ cho tài khoản này. Vui lòng đăng nhập lại."}), 401
+                            
                             return f(*args, **kwargs)
                         else:
                             # Log invalid secret

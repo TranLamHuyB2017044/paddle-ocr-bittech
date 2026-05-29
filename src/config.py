@@ -220,7 +220,7 @@ EMAIL_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 EMAIL_TO = os.getenv("EMAIL_TO", "")
 
 # ========== SAAS PLANS CONFIG ==========
-# 0: free, 1: basic, 2: pro, 3: business
+# 0: free, 1: basic, 2: pro, 3: business, 4: chatbot
 PLANS_CONFIG = {
     0: {
         'name': 'Free',
@@ -257,6 +257,15 @@ PLANS_CONFIG = {
         'price': -1, # Liên hệ
         'is_unlimited': True,
         'features': ['Không giới hạn', 'Không giới hạn người dùng', 'Priority support', 'Tùy biến riêng']
+    },
+    4: {
+        'name': 'Chatbot',
+        'description': 'Gói dành riêng cho chatbot, giới hạn 5.000 lượt/tháng',
+        'max_requests_per_month': 5000,
+        'max_users': 1,
+        'price': 0,
+        'is_unlimited': False,
+        'features': ['5.000 lượt/tháng', '1 tài khoản', 'Dành riêng cho chatbot']
     }
 }
 
