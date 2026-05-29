@@ -500,12 +500,20 @@ def process_tts_task(tts_id, text, voice_sample_path=None, voice_name=None):
             }
             
             Log.info(f"[Worker-TTS] Gửi yêu cầu đến: {upload_url}")
-            Log.info(f"[Worker-TTS] Headers: {headers}")
+            # SECURITY: Không log headers chứa API key ra stdout
+            _safe_headers = {k: (v[:4] + "****" if "key" in k.lower() or "token" in k.lower() or "auth" in k.lower() else v) for k, v in headers.items()}
+            Log.debug(f"[Worker-TTS] Headers (masked): {_safe_headers}")
             
             response = requests.post(upload_url, files=files, data=data, headers=headers, timeout=30)
             
             Log.info(f"[Worker-TTS] Phản hồi từ API bên ngoài - Status Code: {response.status_code}")
-            Log.info(f"[Worker-TTS] Phản hồi nội dung: {response.text}")
+            # Chỉ log summary, không log full response body (tránh lộ dữ liệu nội bộ)
+            try:
+                _resp_json = response.json()
+                _summary = _resp_json.get("data", {}).get("summary", {})
+                Log.info(f"[Worker-TTS] Upload summary: {_summary}")
+            except Exception:
+                Log.info(f"[Worker-TTS] Upload hoàn tất (không parse được JSON)")
             
             response.raise_for_status()
             upload_response = response.json()

@@ -35,11 +35,13 @@ def call_system_connections_get(group_key: list[str], client_register: list[str]
         response = requests.get(url, json=payload, headers=headers, timeout=10)
 
         try:
-            Log.info(f"Response: {response.text}")
             data = response.json()
+            # SECURITY: Chỉ log status_code, không log full response body
+            Log.info(f"--- [system-connections/get] Response Status: {response.status_code} ---")
+            Log.debug(f"--- [system-connections/get] Body: {response.text} ---")
             return data
         except json.JSONDecodeError:
-            Log.error(f"Invalid JSON response: {response.text}")
+            Log.error(f"Invalid JSON response (status={response.status_code})")
             return {
                 "success": False,
                 "message": "Invalid JSON response",
@@ -227,11 +229,13 @@ def call_auth_token(system_id: str, api_key: str, user_id: int):
                     Log.info(f"--- [Auth Cache] Token updated successfully for {system_id} ---")
                 return result
             else:
-                Log.error(f"--- [Auth Error] API returned failure: {result} ---")
+                # SECURITY: Không log full result (có thể chứa token/api_key)
+                Log.error(f"--- [Auth Error] API returned failure (status={response.status_code}) ---")
                 return result
 
         except json.JSONDecodeError:
-            Log.error(f"--- [Auth Error] Invalid JSON from API (Status {response.status_code}): {response.text} ---")
+            # SECURITY: Không log response body raw
+            Log.error(f"--- [Auth Error] Invalid JSON from API (Status {response.status_code}) ---")
             return {
                 "success": False,
                 "message": "Invalid JSON response from external API",
@@ -321,7 +325,8 @@ def upload_document(endpoint: str, system_id: str, api_key: str, user_id: int, p
             token_data = auth_result.get("data", {})
             access_token = token_data.get("access_token")
         else:
-            Log.error(f"--- [Upload Error] Could not obtain token for {system_id}: {auth_result} ---")
+            # SECURITY: Không log auth_result (có thể chứa access_token)
+            Log.error(f"--- [Upload Error] Could not obtain token for system_id={system_id} ---")
             return {
                 "success": False,
                 "message": "Failed to authenticate before upload",
@@ -349,7 +354,9 @@ def upload_document(endpoint: str, system_id: str, api_key: str, user_id: int, p
     }
     
     Log.info(f"--- [Upload] Sending document to: {upload_url} ---")
-    Log.debug(f"Payload: {json.dumps(request_data, indent=2, ensure_ascii=False)}")
+    # SECURITY: Mask api_key trong payload trước khi log
+    _safe_payload = {**request_data, "authentication": {**request_data.get("authentication", {}), "api_key": "****"}}
+    Log.debug(f"Payload (masked): {json.dumps(_safe_payload, indent=2, ensure_ascii=False)}")
     
     try:
         response = requests.post(upload_url, json=request_data, headers=headers, timeout=30)
@@ -358,7 +365,10 @@ def upload_document(endpoint: str, system_id: str, api_key: str, user_id: int, p
         
         try:
             result = response.json()
-            Log.info(f"--- [Upload] Body: {json.dumps(result, indent=2, ensure_ascii=False)} ---")
+            # SECURITY: Chỉ log status, không log full response body
+            _is_ok = result.get("success") or result.get("status") == "success"
+            Log.info(f"--- [Upload] Response Status: {response.status_code} | success={_is_ok} ---")
+            Log.debug(f"--- [Upload] Body: {json.dumps(result, indent=2, ensure_ascii=False)} ---")
             return result
         except json.JSONDecodeError:
             Log.error(f"--- [Upload] Raw Body (Text): {response.text} ---")
