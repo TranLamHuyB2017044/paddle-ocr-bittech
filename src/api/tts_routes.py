@@ -6,7 +6,6 @@ from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
 from src.services.tts_service import tts_service
 from src.utils.rate_limit import limiter
-from src.config import BASE_URL
 
 tts_bp = Blueprint("tts", __name__)
 
