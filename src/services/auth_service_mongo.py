@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 from src.models.user import User
 from src.models.auth_session import AuthSession
 from src.repositories.users_repository import users_repo
@@ -7,10 +8,11 @@ from src.utils.security import (
     hash_password, verify_password, 
     create_access_token, create_refresh_token, hash_token
 )
+from src.utils.logger import Log
 from src.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 class AuthService:
-    def register(self, username, email, password, fullname=None, phone=None, role=2, account_id=None, plan=0):
+    def register(self, username, email, password, fullname=None, phone=None, role: Literal[0, 4] = 4, account_id=None, plan=0):
         if users_repo.find_by_username(username):
             raise ValueError("Username already exists")
         if users_repo.find_by_email(email):
@@ -26,7 +28,7 @@ class AuthService:
             account_data = {
                 "plan": plan, # Use provided plan or default to 0 (free)
                 "used_requests": 0,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             }
             account_id = accounts_repo.create(account_data)
             is_new_account = True
@@ -80,7 +82,10 @@ class AuthService:
         
         # 3. Check Device Lock - Will raise ValueError if failed
         skip_device_check = False
-        if user.account_id:
+        # Skip device check for Admin (role 0)
+        if user.role == 0:
+            skip_device_check = True
+        elif user.account_id:
             from src.repositories.accounts_repository import accounts_repo
             account = accounts_repo.find_by_id(user.account_id)
             if account and account.get("plan") == 4:
@@ -110,7 +115,7 @@ class AuthService:
                 access_key=access_key,
                 hashed_secret=hashed_secret,
                 plain_secret=plain_secret,
-                created_at=datetime.now()
+                created_at=datetime.now(timezone.utc)
             )
 
             user = User(
@@ -144,7 +149,10 @@ class AuthService:
 
         # 2. Check Device Lock - Will raise ValueError if failed
         skip_device_check = False
-        if user.account_id:
+        # Skip device check for Admin (role 0)
+        if user.role == 0:
+            skip_device_check = True
+        elif user.account_id:
             from src.repositories.accounts_repository import accounts_repo
             account = accounts_repo.find_by_id(user.account_id)
             if account and account.get("plan") == 4:
@@ -195,7 +203,7 @@ class AuthService:
                     "access_key": access_key,
                     "hashed_secret": hashed_secret,
                     "plain_secret": plain_secret, # Saving Plaintext!
-                    "created_at": datetime.now()
+                    "created_at": datetime.now(timezone.utc)
                 }
             })
             full_key_response = full_key

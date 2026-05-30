@@ -109,7 +109,7 @@ class UsersRepository(BaseRepository):
             return False
 
 
-    def check_device_id(self, user_id: str, device_id: str) -> bool:
+    def check_device_id(self, user_id: str, device_id: str | None) -> bool:
         """
         Kiểm tra thiết bị của user.
         - Nếu user chưa có deviceId: lưu device_id hiện tại và trả về True (cho phép).

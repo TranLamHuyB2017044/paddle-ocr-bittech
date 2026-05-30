@@ -13,7 +13,8 @@ from src.utils.rate_limit import init_limiter
 
 
 # ==================== FLASK APP SETUP ====================
-app = Flask(__name__)
+# Serve static files from 'public' folder
+app = Flask(__name__, static_folder='public', static_url_path='')
 CORS(app)
 
 # Khởi tạo Rate Limiter (dùng chung Redis hiện tại)
