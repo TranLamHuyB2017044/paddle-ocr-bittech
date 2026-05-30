@@ -8,6 +8,31 @@ from src.config import PLANS_CONFIG
 
 public_chat_bp = Blueprint('public_chat_bp', __name__)
 
+@public_chat_bp.route('/api/public/chatbot/<chatbot_id>', methods=['GET'])
+def get_public_chatbot_details(chatbot_id):
+    try:
+        public_token = request.headers.get('x-public-token')
+        if not public_token:
+            return jsonify({"statusCode": 401, "message": "Missing x-public-token header"}), 401
+        
+        chatbot = chatbot_repo.find_by_public_token(public_token)
+        if not chatbot or str(chatbot["_id"]) != chatbot_id:
+            return jsonify({"statusCode": 403, "message": "Invalid chatbot or token"}), 403
+        
+        from datetime import datetime
+        formatted = {
+            "_id": str(chatbot["_id"]),
+            "name": chatbot["name"],
+            "description": chatbot.get("description"),
+            "avatar_url": chatbot.get("avatar_url"),
+            "color": chatbot.get("color", 0),
+            "greeting": chatbot.get("greeting")
+        }
+        return jsonify({"statusCode": 200, "data": formatted})
+    except Exception as e:
+        Log.error(f"[Public Chatbot Details] Error: {e}")
+        return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
+
 @public_chat_bp.route('/api/public/chatbot/<chatbot_id>/chat', methods=['POST'])
 def public_chat_with_chatbot(chatbot_id):
     try:

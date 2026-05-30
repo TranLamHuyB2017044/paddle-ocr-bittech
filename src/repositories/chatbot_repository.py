@@ -13,7 +13,7 @@ class ChatbotRepository(BaseRepository):
         """Generate a secure public token for chatbot embed"""
         return f"cb_{secrets.token_urlsafe(32)}"
     
-    def create_chatbot(self, name: str, account_id: str, workspace_id: str = None, description: str = None, avatar_url: str = None) -> str:
+    def create_chatbot(self, name: str, account_id: str, workspace_id: str = None, description: str = None, avatar_url: str = None, color: int = 0, greeting: str = None) -> str:
         """Create a new chatbot and return its string ID"""
         # If workspace_id is provided, check if it's already used by another chatbot
         if workspace_id:
@@ -25,6 +25,8 @@ class ChatbotRepository(BaseRepository):
             "name": name,
             "description": description,
             "avatar_url": avatar_url,
+            "color": color,
+            "greeting": greeting,
             "workspace_id": ObjectId(workspace_id) if workspace_id else None,
             "public_token": self.generate_public_token(),
             "account_id": ObjectId(account_id),

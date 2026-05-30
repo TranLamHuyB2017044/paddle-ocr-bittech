@@ -5,7 +5,7 @@ from src.repositories.workspaces_repository import workspaces_repo
 from src.repositories.documents_repository import documents_repo
 from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
-from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus, BASE_URL
+from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus, BASE_URL, CHATBOT_EMBED_CDN_URL
 from src.services.subscription_service import subscription_service
 from datetime import datetime
 from bson import ObjectId
@@ -25,6 +25,9 @@ def format_chatbot(bot):
         bot["created_at"] = bot["created_at"].isoformat()
     if isinstance(bot.get("updated_at"), datetime):
         bot["updated_at"] = bot["updated_at"].isoformat()
+    # Make sure color and greeting are included
+    bot["color"] = bot.get("color", 0)
+    bot["greeting"] = bot.get("greeting", None)
     return bot
 
 @chatbot_bp.route('/api/chatbot', methods=['POST'])
@@ -37,6 +40,8 @@ def create_chatbot():
     - name (bắt buộc): Tên chatbot
     - description (tùy chọn): Mô tả chatbot
     - avatar_url (tùy chọn): URL avatar
+    - color (tùy chọn, mặc định: 0): Màu chatbot (enum int: 0=Default, 1=Blue, 2=Green, 3=Purple, 4=Pink)
+    - greeting (tùy chọn): Lời chào của chatbot
     - workspace_name (tùy chọn, mặc định: Workspace for {name}): Tên workspace mới
     - files (tùy chọn): Danh sách file upload
     """
@@ -45,6 +50,8 @@ def create_chatbot():
         name = request.form.get("name")
         description = request.form.get("description")
         avatar_url = request.form.get("avatar_url")
+        color = int(request.form.get("color", 0))
+        greeting = request.form.get("greeting")
         workspace_name = request.form.get("workspace_name", f"Workspace for {name}")
         
         if not name:
@@ -145,13 +152,16 @@ def create_chatbot():
             account_id=account_id,
             workspace_id=workspace_id_str,
             description=description,
-            avatar_url=avatar_url
+            avatar_url=avatar_url,
+            color=color,
+            greeting=greeting
         )
         
         # Generate embed code
         chatbot_data = chatbot_repo.find_by_id(chatbot_id)
         public_token = chatbot_data["public_token"]
-        embed_code = f'<script src="{BASE_URL}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
+        embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
+        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
         
         return jsonify({
             "statusCode": 201,
@@ -194,7 +204,8 @@ def get_chatbot(chatbot_id):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
         
         public_token = chatbot["public_token"]
-        embed_code = f'<script src="{BASE_URL}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
+        embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
+        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
         
         formatted_bot = format_chatbot(chatbot)
         formatted_bot["embed_code"] = embed_code
@@ -226,6 +237,10 @@ def update_chatbot(chatbot_id):
             update_data["description"] = data["description"]
         if "avatar_url" in data:
             update_data["avatar_url"] = data["avatar_url"]
+        if "color" in data:
+            update_data["color"] = data["color"]
+        if "greeting" in data:
+            update_data["greeting"] = data["greeting"]
         
         # Update workspace_id with 1-1 check
         if "workspace_id" in data:

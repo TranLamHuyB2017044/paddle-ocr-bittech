@@ -104,22 +104,99 @@
         addEventListeners();
     }
 
+    // Map color enum to hex colors
+    function getColorFromEnum(colorEnum) {
+        const colorMap = {
+            0: '#4f46e5', // Default Indigo
+            1: '#3b82f6', // Blue
+            2: '#10b981', // Green
+            3: '#8b5cf6', // Purple
+            4: '#ec4899'  // Pink
+        };
+        return colorMap[colorEnum] || colorMap[0];
+    }
+
     async function fetchChatbotDetails() {
         if (!CONFIG.chatbotId || !CONFIG.publicToken) return;
         try {
-            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/chat`, {
-                method: 'POST',
+            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}`, {
+                method: 'GET',
                 headers: {
-                    'Content-Type': 'application/json',
                     'x-public-token': CONFIG.publicToken
-                },
-                body: JSON.stringify({ message: "PING_SYSTEM_INIT_CHECK" })
+                }
             });
-            // We don't display the result of this check unless we want to load metadata
-            // Actually, we can fetch info or customize from a public GET endpoint.
-            // For now, standard overrides work fine.
+            
+            if (response.ok) {
+                const resData = await response.json();
+                if (resData.statusCode === 200 && resData.data) {
+                    const botData = resData.data;
+                    
+                    // Update CONFIG with bot data
+                    if (botData.name) CONFIG.botName = botData.name;
+                    if (botData.avatar_url) CONFIG.avatarUrl = botData.avatar_url;
+                    if (botData.color !== undefined) {
+                        CONFIG.themeColor = getColorFromEnum(botData.color);
+                    }
+                    
+                    // Update the greeting message
+                    const messagesDiv = document.getElementById('chatbot-messages');
+                    const greetingMessage = botData.greeting || 'Xin chào! Tôi có thể giúp gì cho bạn hôm nay?';
+                    
+                    // Replace the default greeting if it exists
+                    const botMessages = messagesDiv.querySelectorAll('.cb-message-wrapper.bot');
+                    if (botMessages.length > 0) {
+                        const firstBotMessage = botMessages[0].querySelector('.cb-message');
+                        if (firstBotMessage) {
+                            firstBotMessage.textContent = greetingMessage;
+                        }
+                    }
+                    
+                    // Update header title
+                    const headerTitle = document.querySelector('.cb-header-title');
+                    if (headerTitle) {
+                        headerTitle.textContent = CONFIG.botName;
+                    }
+                    
+                    // Update avatar if provided
+                    if (botData.avatar_url) {
+                        const headerAvatar = document.querySelector('.cb-header-avatar');
+                        if (headerAvatar) {
+                            headerAvatar.src = botData.avatar_url;
+                        }
+                    }
+                    
+                    // Re-apply styles with new theme color
+                    reapplyStyles();
+                }
+            }
         } catch (e) {
             console.error('[Chatbot Embed] Init error:', e);
+        }
+    }
+    
+    function reapplyStyles() {
+        // Update all dynamic style elements that use CONFIG.themeColor
+        const trigger = document.getElementById('chatbot-trigger-bubble');
+        const header = document.querySelector('.cb-header');
+        const userMessages = document.querySelectorAll('.user .cb-message');
+        const sendBtn = document.getElementById('chatbot-send-btn');
+        const poweredByLink = document.querySelector('.cb-powered-by a');
+        const input = document.getElementById('chatbot-input');
+        
+        if (trigger) {
+            trigger.style.background = `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`;
+        }
+        if (header) {
+            header.style.background = `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`;
+        }
+        userMessages.forEach(msg => {
+            msg.style.background = CONFIG.themeColor;
+        });
+        if (sendBtn) {
+            sendBtn.style.background = CONFIG.themeColor;
+        }
+        if (poweredByLink) {
+            poweredByLink.style.color = CONFIG.themeColor;
         }
     }
 

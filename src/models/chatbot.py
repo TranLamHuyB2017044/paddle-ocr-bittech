@@ -9,6 +9,8 @@ class Chatbot(BaseModel):
     name: str
     description: Optional[str] = None
     avatar_url: Optional[str] = None
+    color: int = 0  # ChatbotColor.DEFAULT
+    greeting: Optional[str] = None
     workspace_id: Optional[PyObjectId] = None
     public_token: str
     account_id: PyObjectId

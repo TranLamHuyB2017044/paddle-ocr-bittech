@@ -19,6 +19,7 @@ load_dotenv(os.path.join(root_dir, '.env'))
 # ========== UPLOAD CONFIG ==========
 UPLOAD_FOLDER = "uploads"
 BASE_URL = os.getenv("BASE_URL", "http://192.168.1.241:9000")
+CHATBOT_EMBED_CDN_URL = os.getenv("CHATBOT_EMBED_CDN_URL", None)
 TTS_FILE_RETENTION_HOURS = int(os.getenv("TTS_FILE_RETENTION_HOURS", "24"))
 
 # Định dạng file tài liệu cho OCR / RAG
@@ -37,6 +38,14 @@ class DocStatus:
     PROCESSING = "PROCESSING"
     READY = "READY"
     FAILED = "FAILED"
+
+# ========== CHATBOT COLOR ==========
+class ChatbotColor:
+    DEFAULT = 0
+    BLUE = 1
+    GREEN = 2
+    PURPLE = 3
+    PINK = 4
 
 # ========== MODEL CONFIG ==========
 # AI model path (transformers)
