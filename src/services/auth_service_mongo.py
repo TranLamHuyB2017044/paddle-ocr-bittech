@@ -83,7 +83,7 @@ class AuthService:
         # 3. Check Device Lock - Will raise ValueError if failed
         skip_device_check = False
         # Skip device check for Admin (role 0)
-        if user.role == 0:
+        if user.role == 0 and user.role == 4:
             skip_device_check = True
         elif user.account_id:
             from src.repositories.accounts_repository import accounts_repo
