@@ -40,12 +40,17 @@ def require_auth(f):
                             g.user_id = str(user["_id"])
                             g.user = user
                             
-                            # Check if user has an account and get plan
+                            # Check if we need to skip device check
                             skip_device_check = False
+                            
+                            # Skip for chatbot routes
+                            if request.path.startswith('/api/chatbot'):
+                                skip_device_check = True
+                            
+                            # Skip for plan 4 (Chatbot plan)
                             if user.get("account_id"):
                                 account = accounts_repo.find_by_id(user.get("account_id"))
                                 if account and account.get("plan") == 4:
-                                    # Plan 4 (Chatbot): skip device ID check
                                     skip_device_check = True
                             
                             if not skip_device_check:
