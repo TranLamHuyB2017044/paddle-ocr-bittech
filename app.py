@@ -66,6 +66,18 @@ app.register_blueprint(tts_bp)
 app.register_blueprint(public_chat_bp)
 app.register_blueprint(chatbot_bp)
 
+# Explicit route to serve files from public folder (registered after all other routes)
+@app.route('/<path:filename>', methods=['GET'])
+def serve_public_file(filename):
+    from flask import send_from_directory
+    import os
+    # Check if file exists in public folder
+    file_path = os.path.join('public', filename)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return send_from_directory('public', filename)
+    # Otherwise, let Flask handle it (show 404 or other routes)
+    return "Not found", 404
+
 # ==================== RUN APP ====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

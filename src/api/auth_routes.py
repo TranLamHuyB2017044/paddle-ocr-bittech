@@ -312,6 +312,40 @@ def admin_get_accounts():
         })
     return protected_get_accounts()
 
+
+@auth_bp.route('/api/admin/users', methods=['GET'])
+@require_auth
+def admin_get_users():
+    """List all users, optionally filtered by role. Admin only."""
+    from src.utils.auth_middleware import require_role
+    @require_role(0)
+    def protected_get_users():
+        # Get role from query parameter
+        role_param = request.args.get('role')
+        
+        # Build query
+        query = {}
+        if role_param is not None:
+            try:
+                role = int(role_param)
+                query["role"] = role
+            except ValueError:
+                pass  # If role is not a valid integer, ignore filter
+        
+        # Paginated or limited list of users
+        users = list(users_repo.collection.find(query).limit(100))
+        for user in users:
+            user['_id'] = str(user['_id'])
+            user.pop("password", None)  # Remove sensitive password field
+            if user.get("account_id"):
+                user["account_id"] = str(user["account_id"])
+            
+        return jsonify({
+            "statusCode": 200,
+            "data": users
+        })
+    return protected_get_users()
+
 @auth_bp.route('/api/auth/login', methods=['POST'])
 @limiter.limit("10 per minute")
 def login():
