@@ -422,6 +422,7 @@ def get_me():
     """Example of a protected route"""
     try:
         from src.repositories.users_repository import users_repo
+        from src.repositories.chatbot_repository import chatbot_repo
         user = users_repo.find_by_id(g.user_id)
         if not user:
              return jsonify({"statusCode": 404, "message": "User not found"}), 404
@@ -429,6 +430,24 @@ def get_me():
         # Remove Sensitive Data
         user.pop("password", None)
         user["_id"] = str(user["_id"])
+        
+        # Get chatbots for the account
+        chatbots = []
+        account_id = user.get("account_id")
+        if account_id:
+            chatbots = chatbot_repo.find_by_account_id(str(account_id))
+            chatbots = [
+                {
+                    "id": str(chatbot["_id"]),
+                    "name": chatbot.get("name"),
+                    "description": chatbot.get("description"),
+                    "avatar_url": chatbot.get("avatar_url"),
+                    "public_token": chatbot.get("public_token")
+                }
+                for chatbot in chatbots
+            ]
+        
+        user["chatbots"] = chatbots
         
         return jsonify({
             "statusCode": 200,

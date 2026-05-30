@@ -4,6 +4,7 @@ from src.models.user import User
 from src.models.auth_session import AuthSession
 from src.repositories.users_repository import users_repo
 from src.repositories.auth_repository import auth_repo
+from src.repositories.chatbot_repository import chatbot_repo
 from src.utils.security import (
     hash_password, verify_password, 
     create_access_token, create_refresh_token, hash_token
@@ -214,6 +215,22 @@ class AuthService:
         if user.account_id:
             quota_data = subscription_service.get_quota_info(user.account_id)
 
+        # 5. Get Chatbots Info
+        chatbots = []
+        if user.account_id:
+            chatbots = chatbot_repo.find_by_account_id(str(user.account_id))
+            # Format chatbots to return _id as string
+            chatbots = [
+                {
+                    "id": str(chatbot["_id"]),
+                    "name": chatbot.get("name"),
+                    "description": chatbot.get("description"),
+                    "avatar_url": chatbot.get("avatar_url"),
+                    "public_token": chatbot.get("public_token")
+                }
+                for chatbot in chatbots
+            ]
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -227,7 +244,8 @@ class AuthService:
                 "account_id": str(user.account_id) if user.account_id else None,
                 "avatar_url": getattr(user, "avatar_url", None),
                 "group_key": getattr(user, "group_key", None),
-                "quota": quota_data
+                "quota": quota_data,
+                "chatbots": chatbots
             }
         }
 
