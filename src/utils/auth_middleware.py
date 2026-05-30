@@ -43,8 +43,16 @@ def require_auth(f):
                             # Check if we need to skip device check
                             skip_device_check = False
                             
+                            # Skip for admin (role 0)
+                            if user.get("role") == 0:
+                                skip_device_check = True
+                            
                             # Skip for chatbot routes
                             if request.path.startswith('/api/chatbot'):
+                                skip_device_check = True
+                            
+                            # Skip for rag routes
+                            if request.path.startswith('/api/rag'):
                                 skip_device_check = True
                             
                             # Skip for plan 4 (Chatbot plan)
