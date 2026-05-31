@@ -27,13 +27,31 @@
         avatarUrl: scriptTag?.getAttribute('data-avatar-url') || ''
     };
     
-    // Default avatar URL (chatbot_logo.jpeg) - use API base URL
-    const defaultAvatarUrl = CONFIG.apiBaseUrl + '/chatbot_logo.jpeg';
-    if (!CONFIG.avatarUrl) {
-        CONFIG.avatarUrl = defaultAvatarUrl;
+    console.log('Initial CONFIG:', CONFIG);
+    console.log('autoApiUrl:', autoApiUrl);
+    console.log('scriptTag.src:', scriptTag?.src);
+    
+    // Helper function to ensure URL is absolute
+    function ensureAbsoluteUrl(url, baseUrl) {
+        if (!url) return baseUrl + '/chatbot_logo.jpeg';
+        try {
+            new URL(url);
+            return url; // Already absolute
+        } catch (e) {
+            // Relative URL, prepend baseUrl
+            return baseUrl + (url.startsWith('/') ? '' : '/') + url;
+        }
     }
     
-    console.log('Chatbot config:', CONFIG);
+    // Default avatar URL (chatbot_logo.jpeg) - use API base URL
+    const defaultAvatarUrl = CONFIG.apiBaseUrl + '/chatbot_logo.jpeg';
+    console.log('defaultAvatarUrl:', defaultAvatarUrl);
+    
+    // Ensure avatar URL is absolute
+    CONFIG.avatarUrl = ensureAbsoluteUrl(CONFIG.avatarUrl, CONFIG.apiBaseUrl);
+    console.log('Fixed avatar URL:', CONFIG.avatarUrl);
+    
+    console.log('Final Chatbot config:', CONFIG);
 
     if (!CONFIG.chatbotId || !CONFIG.publicToken) {
         console.warn('[Chatbot Embed] Missing data-chatbot-id or data-public-token attributes.');
@@ -50,8 +68,10 @@
         container.className = `cb-pos-${CONFIG.position}`;
         
         // Always use avatar URL (default or custom)
+        console.log('Creating avatar with URL:', CONFIG.avatarUrl);
         const avatarHtml = `<img src="${CONFIG.avatarUrl}" class="cb-header-avatar" alt="Avatar" onerror="this.style.display='none'; this.parentElement.querySelector('.cb-header-avatar-fallback').style.display='flex';">
                             <div class="cb-header-avatar-fallback" style="display:none; width: 42px; height: 42px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); align-items: center; justify-content: center; font-size: 22px; border: 2px solid rgba(255, 255, 255, 0.4);">🤖</div>`;
+        console.log('Avatar HTML:', avatarHtml);
 
         container.innerHTML = `
             <!-- Chat Trigger Bubble -->
