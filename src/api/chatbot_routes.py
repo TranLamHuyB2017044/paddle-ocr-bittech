@@ -336,8 +336,13 @@ def get_chatbot_analytics(chatbot_id):
         
         workspace_id = str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None
         
-        # Get quota info
-        account = g.user
+        # Get quota info - from account, not from user!
+        from src.repositories.accounts_repository import accounts_repo
+        account_id = g.user.get("account_id")
+        account = accounts_repo.find_by_id(account_id) if account_id else None
+        if not account:
+            return jsonify({"statusCode": 404, "message": "Account not found"}), 404
+        
         plan_key = account.get("plan", 0)
         plan_config = PLANS_CONFIG.get(plan_key, {})
         max_requests = plan_config.get("max_requests_per_month", 0)

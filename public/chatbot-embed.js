@@ -281,6 +281,16 @@
                     sendMessage();
                 }
             });
+            suggestionBtn.addEventListener('mouseenter', () => {
+                suggestionBtn.style.background = CONFIG.themeColor;
+                suggestionBtn.style.color = 'white';
+                suggestionBtn.style.borderColor = CONFIG.themeColor;
+            });
+            suggestionBtn.addEventListener('mouseleave', () => {
+                suggestionBtn.style.background = '#f8fafc';
+                suggestionBtn.style.color = '#475569';
+                suggestionBtn.style.borderColor = '#e2e8f0';
+            });
             suggestionsList.appendChild(suggestionBtn);
         });
         
@@ -297,6 +307,7 @@
         const sendBtn = document.getElementById('chatbot-send-btn');
         const poweredByLink = document.querySelector('.cb-powered-by a');
         const input = document.getElementById('chatbot-input');
+        const suggestionBtns = document.querySelectorAll('.cb-suggestion-btn');
         
         if (trigger) {
             trigger.style.setProperty('background', `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`, 'important');
@@ -313,6 +324,18 @@
         if (poweredByLink) {
             poweredByLink.style.color = CONFIG.themeColor;
         }
+        suggestionBtns.forEach(btn => {
+            btn.addEventListener('mouseenter', () => {
+                btn.style.background = CONFIG.themeColor;
+                btn.style.color = 'white';
+                btn.style.borderColor = CONFIG.themeColor;
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.background = '#f8fafc';
+                btn.style.color = '#475569';
+                btn.style.borderColor = '#e2e8f0';
+            });
+        });
         
         // Update input focus styles by updating the style element
         const existingStyles = document.querySelector('#chatbot-dynamic-styles');
@@ -331,6 +354,11 @@
                 #chatbot-send-btn:hover {
                     background: ${darkenColor(CONFIG.themeColor, 10)};
                 }
+                .cb-suggestion-btn:hover {
+                    background: ${CONFIG.themeColor};
+                    color: white;
+                    border-color: ${CONFIG.themeColor};
+                }
             `;
         } else {
             const dynamicStyles = document.createElement('style');
@@ -348,6 +376,11 @@
                 }
                 #chatbot-send-btn:hover {
                     background: ${darkenColor(CONFIG.themeColor, 10)};
+                }
+                .cb-suggestion-btn:hover {
+                    background: ${CONFIG.themeColor};
+                    color: white;
+                    border-color: ${CONFIG.themeColor};
                 }
             `;
             document.head.appendChild(dynamicStyles);
@@ -846,10 +879,20 @@
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                 .replace(/\n/g, '<br>');
 
-            wrapper.innerHTML = `
-                <div class="cb-message">${formattedText}</div>
-                <div class="cb-message-time">${formatTime(new Date())}</div>
-            `;
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'cb-message';
+            messageDiv.innerHTML = formattedText;
+            
+            if (sender === 'user') {
+                messageDiv.style.background = CONFIG.themeColor;
+            }
+
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'cb-message-time';
+            timeDiv.textContent = formatTime(new Date());
+
+            wrapper.appendChild(messageDiv);
+            wrapper.appendChild(timeDiv);
             messagesDiv.appendChild(wrapper);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
