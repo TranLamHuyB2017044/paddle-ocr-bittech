@@ -128,3 +128,12 @@ class MessageAnalysis(BaseModel):
     intent: Optional[str] = Field(None, description="Ý định")
     confidence: float = Field(..., description="Độ tin cậy")
     metadata: MessageAnalysisMetadata = Field(..., description="Thông tin trích xuất")
+
+# --- Schemas for Chatbot ---
+class ChatbotUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, description="Tên chatbot")
+    description: Optional[str] = Field(None, description="Mô tả chatbot")
+    avatar_url: Optional[str] = Field(None, description="URL avatar chatbot")
+    color: Optional[int] = Field(None, ge=0, le=4, description="Màu chatbot (0-4)")
+    greeting: Optional[str] = Field(None, description="Lời chào chatbot")
+    workspace_id: Optional[str] = Field(None, description="ID workspace liên kết")

@@ -11,6 +11,9 @@ from datetime import datetime
 from bson import ObjectId
 from src.utils.redis_client import rag_queue
 from src.tasks.document_tasks import process_document_task
+from src.utils.rate_limit import limiter
+from src.models.schemas import ChatbotUpdateRequest
+from pydantic import ValidationError
 
 chatbot_bp = Blueprint('chatbot_bp', __name__)
 
@@ -32,6 +35,7 @@ def format_chatbot(bot):
 
 @chatbot_bp.route('/api/chatbot', methods=['POST'])
 @require_auth
+@limiter.limit("30 per minute")
 def create_chatbot():
     """
     Tạo chatbot mới + tạo workspace riêng + upload tài liệu cùng lúc
@@ -50,12 +54,16 @@ def create_chatbot():
         name = request.form.get("name")
         description = request.form.get("description")
         avatar_url = request.form.get("avatar_url")
-        color = int(request.form.get("color", 0))
+        color_str = request.form.get("color")
+        color = int(color_str) if color_str is not None else 0
         greeting = request.form.get("greeting")
-        workspace_name = request.form.get("workspace_name", f"Workspace for {name}")
+        workspace_name = request.form.get("workspace_name", f"Workspace for {name}" if name else None)
         
+        # Validate required fields and color
         if not name:
             return jsonify({"statusCode": 400, "message": "Chatbot name is required"}), 400
+        if not (0 <= color <= 4):
+            return jsonify({"statusCode": 400, "message": "Color must be between 0 and 4"}), 400
         
         account_id = g.user.get("account_id")
         if not account_id:
@@ -179,6 +187,7 @@ def create_chatbot():
 
 @chatbot_bp.route('/api/chatbot', methods=['GET'])
 @require_auth
+@limiter.limit("100 per minute")
 def list_chatbots():
     try:
         account_id = g.user.get("account_id")
@@ -217,6 +226,7 @@ def get_chatbot(chatbot_id):
 
 @chatbot_bp.route('/api/chatbot/<chatbot_id>', methods=['PUT'])
 @require_auth
+@limiter.limit("30 per minute")
 def update_chatbot(chatbot_id):
     try:
         # Verify ownership
@@ -227,24 +237,29 @@ def update_chatbot(chatbot_id):
         if str(chatbot["account_id"]) != str(g.user.get("account_id")):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
         
-        # Get update data
+        # Validate update data with Pydantic
         data = request.json or {}
-        update_data = {"updated_at": datetime.utcnow()}
+        try:
+            validated_data = ChatbotUpdateRequest(**data)
+        except ValidationError as e:
+            return jsonify({"statusCode": 400, "message": "Invalid input", "errors": e.errors()}), 400
         
-        if "name" in data:
-            update_data["name"] = data["name"]
-        if "description" in data:
-            update_data["description"] = data["description"]
-        if "avatar_url" in data:
-            update_data["avatar_url"] = data["avatar_url"]
-        if "color" in data:
-            update_data["color"] = data["color"]
-        if "greeting" in data:
-            update_data["greeting"] = data["greeting"]
+        # Build update data
+        update_data = {"updated_at": datetime.utcnow()}
+        if validated_data.name is not None:
+            update_data["name"] = validated_data.name
+        if validated_data.description is not None:
+            update_data["description"] = validated_data.description
+        if validated_data.avatar_url is not None:
+            update_data["avatar_url"] = validated_data.avatar_url
+        if validated_data.color is not None:
+            update_data["color"] = validated_data.color
+        if validated_data.greeting is not None:
+            update_data["greeting"] = validated_data.greeting
         
         # Update workspace_id with 1-1 check
-        if "workspace_id" in data:
-            new_workspace_id = data["workspace_id"]
+        if validated_data.workspace_id is not None:
+            new_workspace_id = validated_data.workspace_id
             if new_workspace_id:
                 # Check if this workspace is already used by another chatbot
                 existing_chatbot = chatbot_repo.find_one({
@@ -276,6 +291,7 @@ def update_chatbot(chatbot_id):
 
 @chatbot_bp.route('/api/chatbot/<chatbot_id>', methods=['DELETE'])
 @require_auth
+@limiter.limit("30 per minute")
 def delete_chatbot(chatbot_id):
     try:
         # Verify ownership

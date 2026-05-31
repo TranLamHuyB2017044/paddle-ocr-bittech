@@ -52,8 +52,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy môi trường venv đã build từ stage 1 (giúp image cuối rất nhẹ)
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy mã nguồn
+# Copy mã nguồn và public folder
 COPY src ./src
+COPY public ./public
 COPY app.py .
 COPY run_worker.py .
 

@@ -5,10 +5,12 @@ from src.services.subscription_service import subscription_service
 from src.repositories.chat_history_repository import chat_history_repo
 from src.utils.logger import Log
 from src.config import PLANS_CONFIG
+from src.utils.rate_limit import limiter
 
 public_chat_bp = Blueprint('public_chat_bp', __name__)
 
 @public_chat_bp.route('/api/public/chatbot/<chatbot_id>', methods=['GET'])
+@limiter.limit("100 per minute")
 def get_public_chatbot_details(chatbot_id):
     try:
         public_token = request.headers.get('x-public-token')
@@ -34,6 +36,7 @@ def get_public_chatbot_details(chatbot_id):
         return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
 
 @public_chat_bp.route('/api/public/chatbot/<chatbot_id>/chat', methods=['POST'])
+@limiter.limit("60 per minute")
 def public_chat_with_chatbot(chatbot_id):
     try:
         # 1. Validate public token
@@ -96,16 +99,29 @@ def public_chat_with_chatbot(chatbot_id):
         return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
 
 @public_chat_bp.route('/chatbot-embed.js', methods=['GET'])
+@limiter.limit("200 per minute")
 def get_embed_script():
     try:
         import os
         from flask import send_from_directory
-        # Find absolute path of project root
+        # Find absolute path of project root - works in both dev and Docker
         current_dir = os.path.dirname(os.path.abspath(__file__)) # src/api
         src_dir = os.path.dirname(current_dir) # src
-        root_dir = os.path.dirname(src_dir) # root
+        root_dir = os.path.dirname(src_dir) # root (where app.py is)
         public_dir = os.path.join(root_dir, 'public')
-        return send_from_directory(public_dir, 'chatbot-embed.js', mimetype='application/javascript')
+        file_path = os.path.join(public_dir, 'chatbot-embed.js')
+        
+        Log.info(f"[Embed Script] Looking for file at: {file_path}")
+        Log.info(f"[Embed Script] Public dir: {public_dir}")
+        Log.info(f"[Embed Script] Root dir: {root_dir}")
+        
+        if os.path.exists(file_path):
+            return send_from_directory(public_dir, 'chatbot-embed.js', mimetype='application/javascript')
+        else:
+            Log.error(f"[Embed Script] File not found at: {file_path}")
+            return "Script not found", 404
     except Exception as e:
         Log.error(f"[Embed Script] Error serving script: {e}")
+        import traceback
+        Log.error(traceback.format_exc())
         return "Script not found", 404
