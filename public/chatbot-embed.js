@@ -84,10 +84,8 @@
         
         // Always use avatar URL (default or custom) with cache-busting
         const avatarWithCacheBusting = addCacheBusting(CONFIG.avatarUrl);
-        console.log('Creating avatar with URL:', avatarWithCacheBusting);
         const avatarHtml = `<img src="${avatarWithCacheBusting}" class="cb-header-avatar" alt="Avatar" onerror="this.style.display='none'; this.parentElement.querySelector('.cb-header-avatar-fallback').style.display='flex';">
                             <div class="cb-header-avatar-fallback" style="display:none; width: 42px; height: 42px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); align-items: center; justify-content: center; font-size: 22px; border: 2px solid rgba(255, 255, 255, 0.4);">🤖</div>`;
-        console.log('Avatar HTML:', avatarHtml);
 
         container.innerHTML = `
             <!-- Chat Trigger Bubble -->
@@ -235,7 +233,7 @@
         const input = document.getElementById('chatbot-input');
         
         if (trigger) {
-            trigger.style.background = `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`;
+            trigger.style.background = `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)}) !important`;
         }
         if (header) {
             header.style.background = `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`;
@@ -261,6 +259,9 @@
                 #chatbot-send-btn:hover {
                     background: ${darkenColor(CONFIG.themeColor, 10)};
                 }
+                #chatbot-trigger-bubble:hover {
+                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
+                }
             `;
         } else {
             const dynamicStyles = document.createElement('style');
@@ -272,6 +273,9 @@
                 }
                 #chatbot-send-btn:hover {
                     background: ${darkenColor(CONFIG.themeColor, 10)};
+                }
+                #chatbot-trigger-bubble:hover {
+                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
                 }
             `;
             document.head.appendChild(dynamicStyles);
