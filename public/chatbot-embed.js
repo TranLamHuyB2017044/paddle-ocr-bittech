@@ -33,6 +33,9 @@
         sessionId: localStorage.getItem(STORAGE_KEY) || null
     };
     
+    let input, sendBtn, messagesDiv;
+    let isSending = false; // Prevent duplicate requests
+    
     // Helper function to ensure URL is absolute
     function ensureAbsoluteUrl(url, baseUrl) {
         if (!url) return baseUrl + '/chatbot_logo.jpeg';
@@ -136,6 +139,11 @@
         `;
         
         document.body.appendChild(container);
+        
+        // Initialize variables
+        input = document.getElementById('chatbot-input');
+        sendBtn = document.getElementById('chatbot-send-btn');
+        messagesDiv = document.getElementById('chatbot-messages');
         
         // Fetch Chatbot customization from DB to override values
         fetchChatbotDetails();
@@ -251,8 +259,16 @@
         }
     }
 
+    function escapeHTML(str) {
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+    
     function renderSuggestions() {
-        const messagesDiv = document.getElementById('chatbot-messages');
         if (!messagesDiv || CONFIG.suggestions.length === 0) return;
         
         // Check if suggestions already rendered
@@ -274,17 +290,18 @@
             suggestionBtn.className = 'cb-suggestion-btn';
             suggestionBtn.textContent = suggestion;
             suggestionBtn.addEventListener('click', () => {
-                // Fill input and send
-                const input = document.getElementById('chatbot-input');
-                if (input) {
+                // Fill input and send (only if not already sending)
+                if (input && !isSending) {
                     input.value = suggestion;
                     sendMessage();
                 }
             });
             suggestionBtn.addEventListener('mouseenter', () => {
-                suggestionBtn.style.background = CONFIG.themeColor;
-                suggestionBtn.style.color = 'white';
-                suggestionBtn.style.borderColor = CONFIG.themeColor;
+                if (!isSending) {
+                    suggestionBtn.style.background = CONFIG.themeColor;
+                    suggestionBtn.style.color = 'white';
+                    suggestionBtn.style.borderColor = CONFIG.themeColor;
+                }
             });
             suggestionBtn.addEventListener('mouseleave', () => {
                 suggestionBtn.style.background = '#f8fafc';
@@ -297,6 +314,121 @@
         suggestionsContainer.appendChild(suggestionsList);
         messagesDiv.appendChild(suggestionsContainer);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    
+    async function sendMessage() {
+        const message = input.value.trim();
+        if (!message || isSending) return; // Prevent sending empty or duplicate
+
+        isSending = true; // Lock sending
+
+        // Disable UI while sending
+        input.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.style.opacity = 0.6;
+        sendBtn.style.cursor = 'not-allowed';
+
+        // Clear input
+        input.value = '';
+
+        // Add user message to chat UI
+        appendMessage('user', message);
+
+        // Add typing indicator
+        const typingIndicator = appendTypingIndicator();
+
+        try {
+            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-public-token': CONFIG.publicToken
+                },
+                body: JSON.stringify({ 
+                    message: message,
+                    sessionId: CONFIG.sessionId
+                })
+            });
+            
+            // Remove typing indicator
+            typingIndicator.remove();
+
+            const resData = await response.json();
+            
+            if (response.ok && resData.statusCode === 200) {
+                // Store the session ID for subsequent messages and save to localStorage
+                if (resData.data.sessionId) {
+                    CONFIG.sessionId = resData.data.sessionId;
+                    localStorage.setItem(STORAGE_KEY, resData.data.sessionId);
+                }
+                appendMessage('bot', resData.data.answer);
+            } else {
+                // Handle specific errors
+                let errorMsg = resData.message || 'Xin lỗi, tôi đã gặp sự cố khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.';
+                
+                if (response.status === 429) { // Too Many Requests (rate limit)
+                    errorMsg = 'Bạn đã gửi quá nhiều tin nhắn! Vui lòng chờ một chút rồi thử lại nhé.';
+                } else if (response.status === 403 && 'quota' in resData.message?.toLowerCase()) {
+                    errorMsg = 'Tài khoản chủ shop đã hết lượt sử dụng! Vui lòng liên hệ chủ shop để biết thêm chi tiết.';
+                }
+                
+                appendMessage('bot', errorMsg);
+            }
+        } catch (error) {
+            console.error('Chat error:', error);
+            typingIndicator.remove();
+            appendMessage('bot', 'Xin lỗi, không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng của bạn.');
+        } finally {
+            // Re-enable UI
+            isSending = false;
+            input.disabled = false;
+            sendBtn.disabled = false;
+            sendBtn.style.opacity = 1;
+            sendBtn.style.cursor = 'pointer';
+            input.focus(); // Focus back on input
+        }
+    }
+
+    function appendMessage(sender, text) {
+        const wrapper = document.createElement('div');
+        wrapper.className = `cb-message-wrapper ${sender}`;
+        
+        // Format markdown-like elements (simple bold and line breaks)
+        let formattedText = escapeHTML(text)
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'cb-message';
+        messageDiv.innerHTML = formattedText;
+        
+        if (sender === 'user') {
+            messageDiv.style.background = CONFIG.themeColor;
+        }
+
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'cb-message-time';
+        timeDiv.textContent = formatTime(new Date());
+
+        wrapper.appendChild(messageDiv);
+        wrapper.appendChild(timeDiv);
+        messagesDiv.appendChild(wrapper);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function appendTypingIndicator() {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'cb-message-wrapper bot cb-typing-wrapper';
+        wrapper.innerHTML = `
+            <div class="cb-typing-indicator">
+                <span class="cb-typing-dot"></span>
+                <span class="cb-typing-dot"></span>
+                <span class="cb-typing-dot"></span>
+            </div>
+        `;
+        messagesDiv.appendChild(wrapper);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        return wrapper;
     }
     
     function reapplyStyles() {
@@ -619,19 +751,23 @@
                 color: #1e293b;
                 border-radius: 4px 16px 16px 16px;
                 border: 1px solid #f1f5f9;
+                text-align: left;
             }
             .user .cb-message {
                 background: ${CONFIG.themeColor};
                 color: white;
                 border-radius: 16px 16px 4px 16px;
+                text-align: right;
             }
             
             .cb-message-time {
                 font-size: 10px;
                 color: #94a3b8;
                 margin-top: 4px;
-                align-self: flex-end;
                 padding: 0 4px;
+            }
+            .bot .cb-message-time {
+                align-self: flex-start;
             }
             .user .cb-message-time {
                 align-self: flex-end;
@@ -801,9 +937,6 @@
         const trigger = document.getElementById('chatbot-trigger-bubble');
         const windowDiv = document.getElementById('chatbot-window');
         const closeBtn = document.getElementById('chatbot-close-btn');
-        const input = document.getElementById('chatbot-input');
-        const sendBtn = document.getElementById('chatbot-send-btn');
-        const messagesDiv = document.getElementById('chatbot-messages');
 
         let isChatOpen = false;
 
@@ -821,110 +954,11 @@
 
         trigger.addEventListener('click', toggleChat);
         closeBtn.addEventListener('click', toggleChat);
-
-        async function sendMessage() {
-            const message = input.value.trim();
-            if (!message) return;
-
-            // Clear input
-            input.value = '';
-
-            // Add user message to chat UI
-            appendMessage('user', message);
-
-            // Add typing indicator
-            const typingIndicator = appendTypingIndicator();
-
-            try {
-                const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/chat`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-public-token': CONFIG.publicToken
-                    },
-                    body: JSON.stringify({ 
-                        message: message,
-                        sessionId: CONFIG.sessionId
-                    })
-                });
-                
-                // Remove typing indicator
-                typingIndicator.remove();
-
-                const resData = await response.json();
-                
-                if (response.ok && resData.statusCode === 200) {
-                    // Store the session ID for subsequent messages and save to localStorage
-                    if (resData.data.sessionId) {
-                        CONFIG.sessionId = resData.data.sessionId;
-                        localStorage.setItem(STORAGE_KEY, resData.data.sessionId);
-                    }
-                    appendMessage('bot', resData.data.answer);
-                } else {
-                    appendMessage('bot', resData.message || 'Xin lỗi, tôi đã gặp sự cố khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.');
-                }
-            } catch (error) {
-                console.error('Chat error:', error);
-                typingIndicator.remove();
-                appendMessage('bot', 'Xin lỗi, không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng của bạn.');
-            }
-        }
-
-        function appendMessage(sender, text) {
-            const wrapper = document.createElement('div');
-            wrapper.className = `cb-message-wrapper ${sender}`;
-            
-            // Format markdown-like elements (simple bold and line breaks)
-            let formattedText = escapeHTML(text)
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\n/g, '<br>');
-
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'cb-message';
-            messageDiv.innerHTML = formattedText;
-            
-            if (sender === 'user') {
-                messageDiv.style.background = CONFIG.themeColor;
-            }
-
-            const timeDiv = document.createElement('div');
-            timeDiv.className = 'cb-message-time';
-            timeDiv.textContent = formatTime(new Date());
-
-            wrapper.appendChild(messageDiv);
-            wrapper.appendChild(timeDiv);
-            messagesDiv.appendChild(wrapper);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        function appendTypingIndicator() {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'cb-message-wrapper bot cb-typing-wrapper';
-            wrapper.innerHTML = `
-                <div class="cb-typing-indicator">
-                    <span class="cb-typing-dot"></span>
-                    <span class="cb-typing-dot"></span>
-                    <span class="cb-typing-dot"></span>
-                </div>
-            `;
-            messagesDiv.appendChild(wrapper);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            return wrapper;
-        }
-
+        
         sendBtn.addEventListener('click', sendMessage);
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
-    }
-
-    function escapeHTML(str) {
-        return str
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
     }
 
     // Helper functions for dynamic theme colors

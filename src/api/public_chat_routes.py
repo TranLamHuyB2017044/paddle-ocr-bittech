@@ -60,7 +60,7 @@ def get_public_chatbot_details(chatbot_id):
         return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
 
 @public_chat_bp.route('/api/public/chatbot/<chatbot_id>/chat', methods=['POST'])
-@limiter.limit("60 per minute")
+@limiter.limit("20 per minute")
 def public_chat_with_chatbot(chatbot_id):
     global waiting_for_contact, customer_contact_info
     
@@ -192,7 +192,7 @@ def public_chat_with_chatbot(chatbot_id):
             customer_info=customer_contact_info.get(session_id, {})
         )
         
-        return jsonify({"statusCode": 200, "data": {**result, "session_id": session_id}})
+        return jsonify({"statusCode": 200, "data": {**result, "sessionId": session_id}})
         
     except Exception as e:
         Log.error(f"[Public Chat] Error: {e}")
