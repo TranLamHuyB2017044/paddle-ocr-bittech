@@ -17,9 +17,6 @@
         }
     }
 
-    // Default avatar URL (chatbot_logo.jpeg)
-    const defaultAvatarUrl = (autoApiUrl || window.location.origin) + '/chatbot_logo.jpeg';
-    
     const CONFIG = {
         chatbotId: scriptTag?.getAttribute('data-chatbot-id') || '',
         publicToken: scriptTag?.getAttribute('data-public-token') || '',
@@ -27,8 +24,14 @@
         position: scriptTag?.getAttribute('data-position') || 'bottom-right',
         themeColor: scriptTag?.getAttribute('data-theme-color') || '#4f46e5', // Sleek Indigo
         botName: scriptTag?.getAttribute('data-bot-name') || 'AI Assistant',
-        avatarUrl: scriptTag?.getAttribute('data-avatar-url') || defaultAvatarUrl
+        avatarUrl: scriptTag?.getAttribute('data-avatar-url') || ''
     };
+    
+    // Default avatar URL (chatbot_logo.jpeg) - use API base URL
+    const defaultAvatarUrl = CONFIG.apiBaseUrl + '/chatbot_logo.jpeg';
+    if (!CONFIG.avatarUrl) {
+        CONFIG.avatarUrl = defaultAvatarUrl;
+    }
     
     console.log('Chatbot config:', CONFIG);
 
