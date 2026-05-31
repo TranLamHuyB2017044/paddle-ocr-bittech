@@ -42,6 +42,21 @@
             return baseUrl + (url.startsWith('/') ? '' : '/') + url;
         }
     }
+
+    // Helper function to add cache-busting parameter to URL
+    function addCacheBusting(url) {
+        if (!url) return url;
+        const timestamp = Date.now();
+        try {
+            const urlObj = new URL(url);
+            urlObj.searchParams.set('t', timestamp.toString());
+            return urlObj.toString();
+        } catch (e) {
+            // If it's not a valid URL, just append the parameter
+            const separator = url.includes('?') ? '&' : '?';
+            return url + separator + 't=' + timestamp;
+        }
+    }
     
     // Default avatar URL (chatbot_logo.jpeg) - use API base URL
     const defaultAvatarUrl = CONFIG.apiBaseUrl + '/chatbot_logo.jpeg';
@@ -67,9 +82,10 @@
         container.id = 'chatbot-bubble-container';
         container.className = `cb-pos-${CONFIG.position}`;
         
-        // Always use avatar URL (default or custom)
-        console.log('Creating avatar with URL:', CONFIG.avatarUrl);
-        const avatarHtml = `<img src="${CONFIG.avatarUrl}" class="cb-header-avatar" alt="Avatar" onerror="this.style.display='none'; this.parentElement.querySelector('.cb-header-avatar-fallback').style.display='flex';">
+        // Always use avatar URL (default or custom) with cache-busting
+        const avatarWithCacheBusting = addCacheBusting(CONFIG.avatarUrl);
+        console.log('Creating avatar with URL:', avatarWithCacheBusting);
+        const avatarHtml = `<img src="${avatarWithCacheBusting}" class="cb-header-avatar" alt="Avatar" onerror="this.style.display='none'; this.parentElement.querySelector('.cb-header-avatar-fallback').style.display='flex';">
                             <div class="cb-header-avatar-fallback" style="display:none; width: 42px; height: 42px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); align-items: center; justify-content: center; font-size: 22px; border: 2px solid rgba(255, 255, 255, 0.4);">🤖</div>`;
         console.log('Avatar HTML:', avatarHtml);
 
@@ -185,10 +201,10 @@
                         headerTitle.textContent = CONFIG.botName;
                     }
                     
-                    // Update avatar (use default if needed)
+                    // Update avatar (use default if needed) with cache-busting
                     const headerAvatar = document.querySelector('.cb-header-avatar');
                     if (headerAvatar) {
-                        headerAvatar.src = CONFIG.avatarUrl;
+                        headerAvatar.src = addCacheBusting(CONFIG.avatarUrl);
                         // Show fallback if image fails to load
                         headerAvatar.onerror = function() {
                             this.style.display = 'none';
