@@ -177,7 +177,8 @@
                     // Update CONFIG with bot data
                     if (botData.name) CONFIG.botName = botData.name;
                     // Use default avatar if botData.avatar_url is empty, null, or undefined
-                    CONFIG.avatarUrl = botData.avatar_url || defaultAvatarUrl;
+                    // Ensure the avatar URL is absolute (using API base URL)
+                    CONFIG.avatarUrl = botData.avatar_url ? ensureAbsoluteUrl(botData.avatar_url, CONFIG.apiBaseUrl) : defaultAvatarUrl;
                     if (botData.color !== undefined) {
                         CONFIG.themeColor = getColorFromEnum(botData.color);
                     }
