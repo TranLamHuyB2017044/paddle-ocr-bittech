@@ -13,7 +13,7 @@ from src.utils.logger import Log
 from src.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 class AuthService:
-    def register(self, username, email, password, fullname=None, phone=None, role: Literal[0, 4] = 4, account_id=None, plan=0):
+    def register(self, username, email, password, fullname=None, phone=None, role: Literal[0, 4] = 4, account_id=None, plan=None):
         if users_repo.find_by_username(username):
             raise ValueError("Username already exists")
         if users_repo.find_by_email(email):
@@ -24,10 +24,17 @@ class AuthService:
         # 1. Handle Account creation (Every new self-registered user gets an account)
         from src.repositories.accounts_repository import accounts_repo
         
+        # Set default plan based on role if plan is not provided
+        if plan is None:
+            if role == 4:
+                plan = 4  # Chatbot role gets Chatbot plan (5000 requests)
+            else:
+                plan = 0  # Default to Free plan for other roles
+        
         is_new_account = False
         if not account_id:
             account_data = {
-                "plan": plan, # Use provided plan or default to 0 (free)
+                "plan": plan, # Use provided plan or role-based default
                 "used_requests": 0,
                 "created_at": datetime.now(timezone.utc)
             }

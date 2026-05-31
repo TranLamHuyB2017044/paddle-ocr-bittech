@@ -140,7 +140,7 @@ def register():
         
         role = data.get('role', 2)
         account_id = data.get('account_id')
-        plan = data.get('plan', 0) 
+        plan = data.get('plan')  # Changed from default 0 to None, let auth_service decide based on role
 
         api_key = request.headers.get("x-api-key")
         if api_key:
@@ -180,11 +180,11 @@ def register():
                                 # Force permissions for Manager
                                 role = 2
                                 account_id = creator.get('account_id')
-                                plan = 0 # Managers cannot set plans for sub-users (they share account)
+                                plan = None # Managers cannot set plans for sub-users (they share account)
 
                             
                             if creator_role != 0:
-                                plan = 0
+                                plan = None
                                 if creator_role == 1:
                                     role = 2  
                                 else:
@@ -193,7 +193,7 @@ def register():
             except Exception as e:
                 Log.error(f"[Auth] Permission check during register failed: {e}")
         else:
-            plan = 0
+            plan = None
             role = 2
 
         if not email or not password or not username:
