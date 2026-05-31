@@ -18,7 +18,7 @@
     }
 
     // Default avatar URL (chatbot_logo.jpeg)
-    const defaultAvatarUrl = `${autoApiUrl}/chatbot_logo.jpeg`;
+    const defaultAvatarUrl = (autoApiUrl || window.location.origin) + '/chatbot_logo.jpeg';
     
     const CONFIG = {
         chatbotId: scriptTag?.getAttribute('data-chatbot-id') || '',
@@ -29,6 +29,8 @@
         botName: scriptTag?.getAttribute('data-bot-name') || 'AI Assistant',
         avatarUrl: scriptTag?.getAttribute('data-avatar-url') || defaultAvatarUrl
     };
+    
+    console.log('Chatbot config:', CONFIG);
 
     if (!CONFIG.chatbotId || !CONFIG.publicToken) {
         console.warn('[Chatbot Embed] Missing data-chatbot-id or data-public-token attributes.');
@@ -625,9 +627,11 @@
             isChatOpen = !isChatOpen;
             if (isChatOpen) {
                 windowDiv.style.display = 'flex';
+                trigger.style.display = 'none';
                 input.focus();
             } else {
                 windowDiv.style.display = 'none';
+                trigger.style.display = 'flex';
             }
         }
 
