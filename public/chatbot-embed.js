@@ -27,10 +27,6 @@
         avatarUrl: scriptTag?.getAttribute('data-avatar-url') || ''
     };
     
-    console.log('Initial CONFIG:', CONFIG);
-    console.log('autoApiUrl:', autoApiUrl);
-    console.log('scriptTag.src:', scriptTag?.src);
-    
     // Helper function to ensure URL is absolute
     function ensureAbsoluteUrl(url, baseUrl) {
         if (!url) return baseUrl + '/chatbot_logo.jpeg';
@@ -60,13 +56,10 @@
     
     // Default avatar URL (chatbot_logo.jpeg) - use API base URL
     const defaultAvatarUrl = CONFIG.apiBaseUrl + '/chatbot_logo.jpeg';
-    console.log('defaultAvatarUrl:', defaultAvatarUrl);
     
     // Ensure avatar URL is absolute
     CONFIG.avatarUrl = ensureAbsoluteUrl(CONFIG.avatarUrl, CONFIG.apiBaseUrl);
-    console.log('Fixed avatar URL:', CONFIG.avatarUrl);
     
-    console.log('Final Chatbot config:', CONFIG);
 
     if (!CONFIG.chatbotId || !CONFIG.publicToken) {
         console.warn('[Chatbot Embed] Missing data-chatbot-id or data-public-token attributes.');
@@ -233,7 +226,7 @@
         const input = document.getElementById('chatbot-input');
         
         if (trigger) {
-            trigger.style.background = `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)}) !important`;
+            trigger.style.setProperty('background', `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`, 'important');
         }
         if (header) {
             header.style.background = `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`;
@@ -252,30 +245,36 @@
         const existingStyles = document.querySelector('#chatbot-dynamic-styles');
         if (existingStyles) {
             existingStyles.textContent = `
+                #chatbot-trigger-bubble {
+                    background: linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)}) !important;
+                }
+                #chatbot-trigger-bubble:hover {
+                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
+                }
                 #chatbot-input:focus {
                     border-color: ${CONFIG.themeColor};
                     box-shadow: 0 0 0 3px ${rgbaColor(CONFIG.themeColor, 0.15)};
                 }
                 #chatbot-send-btn:hover {
                     background: ${darkenColor(CONFIG.themeColor, 10)};
-                }
-                #chatbot-trigger-bubble:hover {
-                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
                 }
             `;
         } else {
             const dynamicStyles = document.createElement('style');
             dynamicStyles.id = 'chatbot-dynamic-styles';
             dynamicStyles.textContent = `
+                #chatbot-trigger-bubble {
+                    background: linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)}) !important;
+                }
+                #chatbot-trigger-bubble:hover {
+                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
+                }
                 #chatbot-input:focus {
                     border-color: ${CONFIG.themeColor};
                     box-shadow: 0 0 0 3px ${rgbaColor(CONFIG.themeColor, 0.15)};
                 }
                 #chatbot-send-btn:hover {
                     background: ${darkenColor(CONFIG.themeColor, 10)};
-                }
-                #chatbot-trigger-bubble:hover {
-                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
                 }
             `;
             document.head.appendChild(dynamicStyles);
