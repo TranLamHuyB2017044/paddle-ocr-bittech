@@ -17,6 +17,9 @@
         }
     }
 
+    // Default avatar URL (chatbot_logo.jpeg)
+    const defaultAvatarUrl = `${autoApiUrl}/chatbot_logo.jpeg`;
+    
     const CONFIG = {
         chatbotId: scriptTag?.getAttribute('data-chatbot-id') || '',
         publicToken: scriptTag?.getAttribute('data-public-token') || '',
@@ -24,7 +27,7 @@
         position: scriptTag?.getAttribute('data-position') || 'bottom-right',
         themeColor: scriptTag?.getAttribute('data-theme-color') || '#4f46e5', // Sleek Indigo
         botName: scriptTag?.getAttribute('data-bot-name') || 'AI Assistant',
-        avatarUrl: scriptTag?.getAttribute('data-avatar-url') || ''
+        avatarUrl: scriptTag?.getAttribute('data-avatar-url') || defaultAvatarUrl
     };
 
     if (!CONFIG.chatbotId || !CONFIG.publicToken) {
@@ -41,15 +44,14 @@
         container.id = 'chatbot-bubble-container';
         container.className = `cb-pos-${CONFIG.position}`;
         
-        const avatarHtml = CONFIG.avatarUrl 
-            ? `<img src="${CONFIG.avatarUrl}" class="cb-header-avatar" alt="Avatar">`
-            : `<div class="cb-header-avatar-default">🤖</div>`;
+        // Always use avatar URL (default or custom)
+        const avatarHtml = `<img src="${CONFIG.avatarUrl}" class="cb-header-avatar" alt="Avatar" onerror="this.style.display='none'; this.parentElement.querySelector('.cb-header-avatar-fallback').style.display='flex';">
+                            <div class="cb-header-avatar-fallback" style="display:none; width: 42px; height: 42px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); align-items: center; justify-content: center; font-size: 22px; border: 2px solid rgba(255, 255, 255, 0.4);">🤖</div>`;
 
         container.innerHTML = `
             <!-- Chat Trigger Bubble -->
             <button id="chatbot-trigger-bubble" aria-label="Open Chat">
-                <span class="cb-trigger-icon-open">💬</span>
-                <span class="cb-trigger-icon-close">×</span>
+                💬
             </button>
             
             <!-- Chat Window -->
@@ -90,7 +92,7 @@
                 
                 <!-- Powered By -->
                 <div class="cb-powered-by">
-                    Powered by <a href="https://bittech.vn" target="_blank" rel="noopener noreferrer">Bittech RAG</a>
+                    Powered by <a href="https://docx.bittechx.vn/" target="_blank" rel="noopener noreferrer">Bittech RAG</a>
                 </div>
             </div>
         `;
@@ -133,7 +135,8 @@
                     
                     // Update CONFIG with bot data
                     if (botData.name) CONFIG.botName = botData.name;
-                    if (botData.avatar_url) CONFIG.avatarUrl = botData.avatar_url;
+                    // Use default avatar if botData.avatar_url is empty, null, or undefined
+                    CONFIG.avatarUrl = botData.avatar_url || defaultAvatarUrl;
                     if (botData.color !== undefined) {
                         CONFIG.themeColor = getColorFromEnum(botData.color);
                     }
@@ -157,12 +160,18 @@
                         headerTitle.textContent = CONFIG.botName;
                     }
                     
-                    // Update avatar if provided
-                    if (botData.avatar_url) {
-                        const headerAvatar = document.querySelector('.cb-header-avatar');
-                        if (headerAvatar) {
-                            headerAvatar.src = botData.avatar_url;
-                        }
+                    // Update avatar (use default if needed)
+                    const headerAvatar = document.querySelector('.cb-header-avatar');
+                    if (headerAvatar) {
+                        headerAvatar.src = CONFIG.avatarUrl;
+                        // Show fallback if image fails to load
+                        headerAvatar.onerror = function() {
+                            this.style.display = 'none';
+                            const fallback = this.parentElement.querySelector('.cb-header-avatar-fallback');
+                            if (fallback) {
+                                fallback.style.display = 'flex';
+                            }
+                        };
                     }
                     
                     // Re-apply styles with new theme color
@@ -197,6 +206,33 @@
         }
         if (poweredByLink) {
             poweredByLink.style.color = CONFIG.themeColor;
+        }
+        
+        // Update input focus styles by updating the style element
+        const existingStyles = document.querySelector('#chatbot-dynamic-styles');
+        if (existingStyles) {
+            existingStyles.textContent = `
+                #chatbot-input:focus {
+                    border-color: ${CONFIG.themeColor};
+                    box-shadow: 0 0 0 3px ${rgbaColor(CONFIG.themeColor, 0.15)};
+                }
+                #chatbot-send-btn:hover {
+                    background: ${darkenColor(CONFIG.themeColor, 10)};
+                }
+            `;
+        } else {
+            const dynamicStyles = document.createElement('style');
+            dynamicStyles.id = 'chatbot-dynamic-styles';
+            dynamicStyles.textContent = `
+                #chatbot-input:focus {
+                    border-color: ${CONFIG.themeColor};
+                    box-shadow: 0 0 0 3px ${rgbaColor(CONFIG.themeColor, 0.15)};
+                }
+                #chatbot-send-btn:hover {
+                    background: ${darkenColor(CONFIG.themeColor, 10)};
+                }
+            `;
+            document.head.appendChild(dynamicStyles);
         }
     }
 
@@ -241,6 +277,7 @@
                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 outline: none;
                 position: relative;
+                font-size: 28px;
             }
             #chatbot-trigger-bubble:hover {
                 transform: scale(1.05) translateY(-2px);
@@ -249,16 +286,7 @@
             #chatbot-trigger-bubble:active {
                 transform: scale(0.95);
             }
-            .cb-trigger-icon-open {
-                font-size: 26px;
-                transition: transform 0.3s ease;
-            }
-            .cb-trigger-icon-close {
-                font-size: 32px;
-                position: absolute;
-                display: none;
-                transition: transform 0.3s ease;
-            }
+
             
             /* Chat Window Container */
             #chatbot-window {
@@ -585,8 +613,6 @@
     // Add event listeners
     function addEventListeners() {
         const trigger = document.getElementById('chatbot-trigger-bubble');
-        const iconOpen = trigger.querySelector('.cb-trigger-icon-open');
-        const iconClose = trigger.querySelector('.cb-trigger-icon-close');
         const windowDiv = document.getElementById('chatbot-window');
         const closeBtn = document.getElementById('chatbot-close-btn');
         const input = document.getElementById('chatbot-input');
@@ -599,21 +625,9 @@
             isChatOpen = !isChatOpen;
             if (isChatOpen) {
                 windowDiv.style.display = 'flex';
-                iconOpen.style.transform = 'scale(0) rotate(90deg)';
-                setTimeout(() => {
-                    iconOpen.style.display = 'none';
-                    iconClose.style.display = 'block';
-                    iconClose.style.transform = 'scale(1) rotate(0deg)';
-                }, 150);
                 input.focus();
             } else {
                 windowDiv.style.display = 'none';
-                iconClose.style.transform = 'scale(0) rotate(-90deg)';
-                setTimeout(() => {
-                    iconClose.style.display = 'none';
-                    iconOpen.style.display = 'block';
-                    iconOpen.style.transform = 'scale(1) rotate(0deg)';
-                }, 150);
             }
         }
 
