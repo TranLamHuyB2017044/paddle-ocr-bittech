@@ -17,6 +17,9 @@
         }
     }
 
+    // Create a unique localStorage key based on chatbotId
+    const STORAGE_KEY = `chatbot_session_${scriptTag?.getAttribute('data-chatbot-id') || ''}`;
+    
     const CONFIG = {
         chatbotId: scriptTag?.getAttribute('data-chatbot-id') || '',
         publicToken: scriptTag?.getAttribute('data-public-token') || '',
@@ -24,7 +27,10 @@
         position: scriptTag?.getAttribute('data-position') || 'bottom-right',
         themeColor: scriptTag?.getAttribute('data-theme-color') || '#4f46e5', // Sleek Indigo
         botName: scriptTag?.getAttribute('data-bot-name') || 'AI Assistant',
-        avatarUrl: scriptTag?.getAttribute('data-avatar-url') || ''
+        avatarUrl: scriptTag?.getAttribute('data-avatar-url') || '',
+        workspaceId: null,
+        suggestions: [],
+        sessionId: localStorage.getItem(STORAGE_KEY) || null
     };
     
     // Helper function to ensure URL is absolute
@@ -173,6 +179,9 @@
                     if (botData.color !== undefined) {
                         CONFIG.themeColor = getColorFromEnum(botData.color);
                     }
+                    if (botData.workspace_id) {
+                        CONFIG.workspaceId = botData.workspace_id;
+                    }
                     
                     // Update the greeting message
                     const messagesDiv = document.getElementById('chatbot-messages');
@@ -209,11 +218,75 @@
                     
                     // Re-apply styles with new theme color
                     reapplyStyles();
+                    
+                    // Fetch suggestions
+                    fetchSuggestions();
                 }
             }
         } catch (e) {
             console.error('[Chatbot Embed] Init error:', e);
         }
+    }
+
+    async function fetchSuggestions() {
+        if (!CONFIG.chatbotId || !CONFIG.publicToken) return;
+        try {
+            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/suggest`, {
+                method: 'GET',
+                headers: {
+                    'x-public-token': CONFIG.publicToken
+                }
+            });
+            
+            if (response.ok) {
+                const resData = await response.json();
+                if (resData.statusCode === 200 && resData.data && resData.data.suggestions) {
+                    CONFIG.suggestions = resData.data.suggestions;
+                    // Render suggestions
+                    renderSuggestions();
+                }
+            }
+        } catch (e) {
+            console.error('[Chatbot Embed] Fetch suggestions error:', e);
+        }
+    }
+
+    function renderSuggestions() {
+        const messagesDiv = document.getElementById('chatbot-messages');
+        if (!messagesDiv || CONFIG.suggestions.length === 0) return;
+        
+        // Check if suggestions already rendered
+        if (document.querySelector('.cb-suggestions-container')) return;
+        
+        const suggestionsContainer = document.createElement('div');
+        suggestionsContainer.className = 'cb-suggestions-container';
+        
+        const suggestionsTitle = document.createElement('div');
+        suggestionsTitle.className = 'cb-suggestions-title';
+        suggestionsTitle.textContent = 'Câu hỏi gợi ý:';
+        suggestionsContainer.appendChild(suggestionsTitle);
+        
+        const suggestionsList = document.createElement('div');
+        suggestionsList.className = 'cb-suggestions-list';
+        
+        CONFIG.suggestions.forEach(suggestion => {
+            const suggestionBtn = document.createElement('button');
+            suggestionBtn.className = 'cb-suggestion-btn';
+            suggestionBtn.textContent = suggestion;
+            suggestionBtn.addEventListener('click', () => {
+                // Fill input and send
+                const input = document.getElementById('chatbot-input');
+                if (input) {
+                    input.value = suggestion;
+                    sendMessage();
+                }
+            });
+            suggestionsList.appendChild(suggestionBtn);
+        });
+        
+        suggestionsContainer.appendChild(suggestionsList);
+        messagesDiv.appendChild(suggestionsContainer);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
     
     function reapplyStyles() {
@@ -640,6 +713,41 @@
                 font-weight: 500;
             }
             
+            /* Suggestions styles */
+            .cb-suggestions-container {
+                padding: 12px 20px;
+                background: white;
+                border-top: 1px solid #f1f5f9;
+            }
+            .cb-suggestions-title {
+                font-size: 12px;
+                color: #64748b;
+                margin-bottom: 8px;
+                font-weight: 500;
+            }
+            .cb-suggestions-list {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .cb-suggestion-btn {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 13px;
+                color: #475569;
+                text-align: left;
+                cursor: pointer;
+                transition: all 0.2s;
+                width: 100%;
+            }
+            .cb-suggestion-btn:hover {
+                background: ${CONFIG.themeColor};
+                color: white;
+                border-color: ${CONFIG.themeColor};
+            }
+
             /* Responsive adjustments */
             @media (max-width: 480px) {
                 #chatbot-window {
@@ -701,7 +809,10 @@
                         'Content-Type': 'application/json',
                         'x-public-token': CONFIG.publicToken
                     },
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify({ 
+                        message: message,
+                        sessionId: CONFIG.sessionId
+                    })
                 });
                 
                 // Remove typing indicator
@@ -710,7 +821,12 @@
                 const resData = await response.json();
                 
                 if (response.ok && resData.statusCode === 200) {
-                    appendMessage('bot', resData.data.answer, resData.data.sources);
+                    // Store the session ID for subsequent messages and save to localStorage
+                    if (resData.data.sessionId) {
+                        CONFIG.sessionId = resData.data.sessionId;
+                        localStorage.setItem(STORAGE_KEY, resData.data.sessionId);
+                    }
+                    appendMessage('bot', resData.data.answer);
                 } else {
                     appendMessage('bot', resData.message || 'Xin lỗi, tôi đã gặp sự cố khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.');
                 }
@@ -721,7 +837,7 @@
             }
         }
 
-        function appendMessage(sender, text, sources = []) {
+        function appendMessage(sender, text) {
             const wrapper = document.createElement('div');
             wrapper.className = `cb-message-wrapper ${sender}`;
             
@@ -729,18 +845,9 @@
             let formattedText = escapeHTML(text)
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                 .replace(/\n/g, '<br>');
-                
-            let sourcesHtml = '';
-            if (sources && sources.length > 0) {
-                sourcesHtml = '<div class="cb-sources-container"><strong>Trích nguồn:</strong><br>';
-                sources.forEach(src => {
-                    sourcesHtml += `<span class="cb-source-tag" title="${src.document_name}">📄 ${src.document_name} (Trang ${src.page_num})</span>`;
-                });
-                sourcesHtml += '</div>';
-            }
 
             wrapper.innerHTML = `
-                <div class="cb-message">${formattedText}${sourcesHtml}</div>
+                <div class="cb-message">${formattedText}</div>
                 <div class="cb-message-time">${formatTime(new Date())}</div>
             `;
             messagesDiv.appendChild(wrapper);

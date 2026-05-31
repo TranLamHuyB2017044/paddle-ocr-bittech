@@ -137,3 +137,5 @@ class ChatbotUpdateRequest(BaseModel):
     color: Optional[int] = Field(None, ge=0, le=4, description="Màu chatbot (0-4)")
     greeting: Optional[str] = Field(None, description="Lời chào chatbot")
     workspace_id: Optional[str] = Field(None, description="ID workspace liên kết")
+    telegram_bot_token: Optional[str] = Field(None, description="Token của Telegram Bot")
+    telegram_chat_id: Optional[str] = Field(None, description="Chat ID của Telegram để nhận thông báo")

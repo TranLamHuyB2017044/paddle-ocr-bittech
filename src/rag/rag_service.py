@@ -205,4 +205,58 @@ class RagService:
         suggestions = [s.strip('- ').strip() for s in suggestion_text.split('\n') if s.strip()]
         return suggestions[:5]
 
+    def chat_store(self, question: str, workspace_id: str, provider: str = "auto", 
+                   telegram_bot_token: str = None, telegram_chat_id: str = None, 
+                   chatbot_name: str = "Chatbot") -> Dict:
+        """
+        Chat for store: no source citations, optimized for customer support.
+        Sends Telegram notification if no information is found.
+        """
+        # 1. Embed question
+        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{question}' in Workspace '{workspace_id}'")
+        question_vector = embedding_service.embed_text([question])[0]
+        
+        # 2. Search Qdrant
+        results = qdrant_service.search(question_vector, workspace_id, limit=5)
+        Log.info(f"[RAG Store Chat] 🔎 Found {len(results)} relevant context chunks")
+        
+        context_parts = []
+        for i, res in enumerate(results):
+            txt = res.payload["text"]
+            context_parts.append(txt)
+        
+        context = "\n\n".join(context_parts)
+        
+        # 3. Augment & Generate - NO SOURCE CITATIONS
+        system_instruction = (
+            "Bạn là một trợ lý chatbot hỗ trợ khách hàng chuyên nghiệp. "
+            "Hãy trả lời câu hỏi của khách hàng dựa trên nội dung tài liệu được cung cấp. "
+            "Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó và sẽ liên hệ lại với nhân viên hỗ trợ. "
+            "Giữ văn phong thân thiện, lịch sự và ngắn gọn."
+        )
+        
+        prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI CỦA KHÁCH HÀNG: {question}"
+        
+        answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
+        
+        Log.info(f"[RAG Store Chat] ✅ Answer generated using provider: {used_provider}")
+        
+        # 4. Check if we need to send Telegram notification
+        # Detect if the answer indicates no information is available
+        no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết", "sẽ liên hệ", "liên hệ lại"]
+        is_no_info = any(keyword.lower() in answer.lower() for keyword in no_info_keywords)
+        
+        if is_no_info and telegram_bot_token and telegram_chat_id:
+            try:
+                from src.services.telegram_service import send_telegram_message, format_customer_question_notification
+                notification_message = format_customer_question_notification(question, chatbot_name)
+                send_telegram_message(telegram_bot_token, telegram_chat_id, notification_message)
+            except Exception as e:
+                Log.error(f"[RAG Store Chat] Lỗi khi gửi thông báo Telegram: {str(e)}")
+        
+        return {
+            "answer": answer,
+            "provider": used_provider
+        }
+
 rag_service = RagService()

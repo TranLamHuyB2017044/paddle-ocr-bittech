@@ -3,9 +3,10 @@ import os
 from src.repositories.chatbot_repository import chatbot_repo
 from src.repositories.workspaces_repository import workspaces_repo
 from src.repositories.documents_repository import documents_repo
+from src.repositories.chat_history_repository import chat_history_repo
 from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
-from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus, BASE_URL, CHATBOT_EMBED_CDN_URL
+from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus, BASE_URL, CHATBOT_EMBED_CDN_URL, PLANS_CONFIG
 from src.services.subscription_service import subscription_service
 from datetime import datetime
 from bson import ObjectId
@@ -28,9 +29,11 @@ def format_chatbot(bot):
         bot["created_at"] = bot["created_at"].isoformat()
     if isinstance(bot.get("updated_at"), datetime):
         bot["updated_at"] = bot["updated_at"].isoformat()
-    # Make sure color and greeting are included
+    # Make sure color, greeting and Telegram fields are included
     bot["color"] = bot.get("color", 0)
     bot["greeting"] = bot.get("greeting", None)
+    bot["telegram_bot_token"] = bot.get("telegram_bot_token", None)
+    bot["telegram_chat_id"] = bot.get("telegram_chat_id", None)
     return bot
 
 @chatbot_bp.route('/api/chatbot', methods=['POST'])
@@ -57,6 +60,8 @@ def create_chatbot():
         color_str = request.form.get("color")
         color = int(color_str) if color_str is not None else 0
         greeting = request.form.get("greeting")
+        telegram_bot_token = request.form.get("telegram_bot_token")
+        telegram_chat_id = request.form.get("telegram_chat_id")
         workspace_name = request.form.get("workspace_name", f"Workspace for {name}" if name else None)
         
         # Validate required fields and color
@@ -162,7 +167,9 @@ def create_chatbot():
             description=description,
             avatar_url=avatar_url,
             color=color,
-            greeting=greeting
+            greeting=greeting,
+            telegram_bot_token=telegram_bot_token,
+            telegram_chat_id=telegram_chat_id
         )
         
         # Generate embed code
@@ -256,6 +263,10 @@ def update_chatbot(chatbot_id):
             update_data["color"] = validated_data.color
         if validated_data.greeting is not None:
             update_data["greeting"] = validated_data.greeting
+        if validated_data.telegram_bot_token is not None:
+            update_data["telegram_bot_token"] = validated_data.telegram_bot_token
+        if validated_data.telegram_chat_id is not None:
+            update_data["telegram_chat_id"] = validated_data.telegram_chat_id
         
         # Update workspace_id with 1-1 check
         if validated_data.workspace_id is not None:
@@ -308,4 +319,95 @@ def delete_chatbot(chatbot_id):
         return jsonify({"statusCode": 200, "message": "Chatbot deleted successfully"})
     except Exception as e:
         Log.error(f"[Chatbot] Delete error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@chatbot_bp.route('/api/chatbot/<chatbot_id>/analytics', methods=['GET'])
+@require_auth
+@limiter.limit("100 per minute")
+def get_chatbot_analytics(chatbot_id):
+    try:
+        # Verify ownership
+        chatbot = chatbot_repo.find_by_id(chatbot_id)
+        if not chatbot:
+            return jsonify({"statusCode": 404, "message": "Chatbot not found"}), 404
+        
+        if str(chatbot["account_id"]) != str(g.user.get("account_id")):
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+        
+        workspace_id = str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None
+        
+        # Get quota info
+        account = g.user
+        plan_key = account.get("plan", 0)
+        plan_config = PLANS_CONFIG.get(plan_key, {})
+        max_requests = plan_config.get("max_requests_per_month", 0)
+        used_requests = account.get("used_requests", 0)
+        
+        # Get analytics
+        analytics = {
+            "quota": {
+                "used": used_requests,
+                "max": max_requests,
+                "is_unlimited": plan_config.get("is_unlimited", False),
+                "remaining": max_requests - used_requests if not plan_config.get("is_unlimited", False) else "Unlimited"
+            },
+            "message_counts": {
+                "today": chat_history_repo.get_message_count_by_period(workspace_id, "day") if workspace_id else 0,
+                "week": chat_history_repo.get_message_count_by_period(workspace_id, "week") if workspace_id else 0,
+                "month": chat_history_repo.get_message_count_by_period(workspace_id, "month") if workspace_id else 0
+            },
+            "latest_message": chat_history_repo.get_latest_message(workspace_id) if workspace_id else None,
+            "top_keywords": {
+                "today": chat_history_repo.get_top_keywords(workspace_id, "day") if workspace_id else [],
+                "week": chat_history_repo.get_top_keywords(workspace_id, "week") if workspace_id else [],
+                "month": chat_history_repo.get_top_keywords(workspace_id, "month") if workspace_id else []
+            }
+        }
+        
+        return jsonify({"statusCode": 200, "data": analytics})
+    except Exception as e:
+        Log.error(f"[Chatbot Analytics] Error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@chatbot_bp.route('/api/chatbot/<chatbot_id>/sessions', methods=['GET'])
+@require_auth
+@limiter.limit("100 per minute")
+def get_chatbot_sessions(chatbot_id):
+    try:
+        # Verify ownership
+        chatbot = chatbot_repo.find_by_id(chatbot_id)
+        if not chatbot:
+            return jsonify({"statusCode": 404, "message": "Chatbot not found"}), 404
+        
+        if str(chatbot["account_id"]) != str(g.user.get("account_id")):
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+        
+        workspace_id = str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None
+        
+        if not workspace_id:
+            return jsonify({"statusCode": 200, "data": []})
+        
+        sessions = chat_history_repo.get_all_sessions(workspace_id, limit=50)
+        return jsonify({"statusCode": 200, "data": sessions})
+    except Exception as e:
+        Log.error(f"[Chatbot Sessions] Error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+@chatbot_bp.route('/api/chatbot/<chatbot_id>/sessions/<session_id>', methods=['GET'])
+@require_auth
+@limiter.limit("100 per minute")
+def get_chatbot_session_history(chatbot_id, session_id):
+    try:
+        # Verify ownership
+        chatbot = chatbot_repo.find_by_id(chatbot_id)
+        if not chatbot:
+            return jsonify({"statusCode": 404, "message": "Chatbot not found"}), 404
+        
+        if str(chatbot["account_id"]) != str(g.user.get("account_id")):
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+        
+        history = chat_history_repo.get_session_history(session_id, limit=100)
+        return jsonify({"statusCode": 200, "data": history})
+    except Exception as e:
+        Log.error(f"[Chatbot Session History] Error: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
