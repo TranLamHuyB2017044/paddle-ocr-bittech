@@ -99,6 +99,48 @@ class ChatbotRepository(BaseRepository):
             query["is_active"] = True
         return self.collection.count_documents(query)
 
+    def get_all_chatbots(self, page=1, limit=20, search=None, active=None):
+        """Get all chatbots with pagination and search"""
+        query = {}
+        
+        if search:
+            search_regex = {"$regex": search, "$options": "i"}
+            query["$or"] = [
+                {"name": search_regex},
+                {"description": search_regex}
+            ]
+        
+        if active is not None:
+            query["is_active"] = active
+        
+        skip = (page - 1) * limit
+        chatbots = list(self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit))
+        
+        for chatbot in chatbots:
+            chatbot["id"] = str(chatbot["_id"])
+            del chatbot["_id"]
+            chatbot["account_id"] = str(chatbot["account_id"])
+            if chatbot.get("workspace_id"):
+                chatbot["workspace_id"] = str(chatbot["workspace_id"])
+        
+        return chatbots
+
+    def count_all_chatbots(self, search=None, active=None):
+        """Count all chatbots"""
+        query = {}
+        
+        if search:
+            search_regex = {"$regex": search, "$options": "i"}
+            query["$or"] = [
+                {"name": search_regex},
+                {"description": search_regex}
+            ]
+        
+        if active is not None:
+            query["is_active"] = active
+        
+        return self.collection.count_documents(query)
+
     def toggle_chatbot_active(self, chatbot_id):
         """Toggle chatbot active status"""
         from bson import ObjectId

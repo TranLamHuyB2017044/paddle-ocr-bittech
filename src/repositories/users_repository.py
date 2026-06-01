@@ -180,6 +180,10 @@ class UsersRepository(BaseRepository):
                 user["account_id"] = str(user["account_id"])
             if user.get("password"):
                 del user["password"]
+            if user.get("api_key"):
+                del user["api_key"]
+            if user.get("deviceId"):
+                del user["deviceId"]
         
         return users
 
@@ -214,6 +218,10 @@ class UsersRepository(BaseRepository):
             user["account_id"] = str(user["account_id"])
         if user.get("password"):
             del user["password"]
+        if user.get("api_key"):
+            del user["api_key"]
+        if user.get("deviceId"):
+            del user["deviceId"]
         
         return user
 

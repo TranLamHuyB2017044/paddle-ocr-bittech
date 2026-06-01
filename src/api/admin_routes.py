@@ -200,6 +200,74 @@ def register_admin_routes(app):
             Log.error(f"[Admin API] Error getting user chatbots: {e}")
             return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
     
+    @app.route("/api/admin/chatbots", methods=["GET"])
+    @require_auth
+    def get_all_chatbots():
+        """Get all chatbots for admin management"""
+        try:
+            if g.user.get("role") != 0:
+                return jsonify({"statusCode": 403, "message": "Access denied. Admin only."}), 403
+            
+            # Parse query params
+            page = request.args.get("page", 1, type=int)
+            limit = request.args.get("limit", 20, type=int)
+            search = request.args.get("search", None)
+            active_str = request.args.get("active", None)
+            active = None
+            if active_str is not None:
+                active = active_str.lower() == "true"
+            
+            # Get chatbots
+            chatbots = chatbot_repo.get_all_chatbots(
+                page=page,
+                limit=limit,
+                search=search,
+                active=active
+            )
+            total = chatbot_repo.count_all_chatbots(search=search, active=active)
+            total_pages = ceil(total / limit) if limit > 0 else 0
+            
+            # Enrich chatbots with user info, message count and latest message
+            for chatbot in chatbots:
+                # Get user info
+                if chatbot.get("account_id"):
+                    user = users_repo.find_one({"account_id": chatbot["account_id"]})
+                    if user:
+                        chatbot["user"] = {
+                            "id": str(user["_id"]),
+                            "fullname": user.get("fullname", ""),
+                            "email": user.get("email", "")
+                        }
+                    else:
+                        chatbot["user"] = {}
+                else:
+                    chatbot["user"] = {}
+                
+                # Get message count and latest message
+                if chatbot.get("workspace_id"):
+                    chatbot["message_count"] = chat_history_repo.count_messages_by_chatbot(chatbot["workspace_id"])
+                    chatbot["latest_message_at"] = chat_history_repo.get_latest_message_by_chatbot(chatbot["workspace_id"])
+                else:
+                    chatbot["message_count"] = 0
+                    chatbot["latest_message_at"] = None
+            
+            return jsonify({
+                "statusCode": 200,
+                "message": "Success",
+                "data": {
+                    "chatbots": chatbots,
+                    "pagination": {
+                        "page": page,
+                        "limit": limit,
+                        "total": total,
+                        "total_pages": total_pages
+                    }
+                }
+            }), 200
+        except Exception as e:
+            Log.error(f"[Admin API] Error getting all chatbots: {e}")
+            return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
+    
     @app.route("/api/admin/chatbots/<chatbot_id>", methods=["GET"])
     @require_auth
     def get_chatbot_detail(chatbot_id):
