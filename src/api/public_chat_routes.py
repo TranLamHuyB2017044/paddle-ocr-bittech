@@ -102,8 +102,10 @@ def public_chat_with_chatbot(chatbot_id):
         
         result = {"answer": "", "provider": "echo"}
         
+        is_contact_info_reply = False
         # 6. Check if we're waiting for contact info
         if session_id in waiting_for_contact and waiting_for_contact[session_id]:
+            is_contact_info_reply = True
             # Extract contact info
             info = extract_contact_info(message)
             customer_contact_info[session_id] = info
@@ -177,8 +179,9 @@ def public_chat_with_chatbot(chatbot_id):
             else:
                 result["answer"] = f"Cảm ơn bạn đã hỏi: {message}"
         
-        # 8. Increment quota
-        accounts_repo.increment_usage(chatbot["account_id"])
+        # 8. Increment quota only if it's not a contact info reply
+        if not is_contact_info_reply:
+            accounts_repo.increment_usage(chatbot["account_id"])
         
         # 9. Save chat history
         chat_history_repo.save_message(

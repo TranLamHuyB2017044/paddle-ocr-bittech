@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from bson import ObjectId
 from src.database.base_repository import BaseRepository
+from typing import Optional
 import secrets
 
 class ChatbotRepository(BaseRepository):
@@ -13,7 +14,7 @@ class ChatbotRepository(BaseRepository):
         """Generate a secure public token for chatbot embed"""
         return f"cb_{secrets.token_urlsafe(32)}"
     
-    def create_chatbot(self, name: str, account_id: str, workspace_id: str = None, description: str = None, avatar_url: str = None, color: int = 0, greeting: str = None, telegram_bot_token: str = None, telegram_chat_id: str = None) -> str:
+    def create_chatbot(self, name: str, account_id: str, workspace_id: Optional[str] = None, description: Optional[str] = None, avatar_url: Optional[str] = None, color: int = 0, greeting: Optional[str] = None, telegram_bot_token: Optional[str] = None, telegram_chat_id: Optional[str] = None) -> str:
         """Create a new chatbot and return its string ID"""
         # If workspace_id is provided, check if it's already used by another chatbot
         if workspace_id:
@@ -45,5 +46,92 @@ class ChatbotRepository(BaseRepository):
     def find_by_account_id(self, account_id: str):
         """Find all chatbots for an account"""
         return list(self.find_all({"account_id": ObjectId(account_id), "is_active": True}))
+
+    def get_chatbots_by_user(self, account_id, page=1, limit=20):
+        """Get chatbots by account ID with pagination"""
+        skip = (page - 1) * limit
+        chatbots = list(self.collection.find({"account_id": ObjectId(account_id)}).sort("created_at", -1).skip(skip).limit(limit))
+        
+        for chatbot in chatbots:
+            chatbot["id"] = str(chatbot["_id"])
+            del chatbot["_id"]
+            chatbot["account_id"] = str(chatbot["account_id"])
+            if chatbot.get("workspace_id"):
+                chatbot["workspace_id"] = str(chatbot["workspace_id"])
+        
+        return chatbots
+
+    def count_chatbots_by_user(self, account_id):
+        """Count chatbots by account ID"""
+        return self.collection.count_documents({"account_id": ObjectId(account_id)})
+
+    def get_chatbot_with_details(self, chatbot_id):
+        """Get chatbot with detailed information"""
+        chatbot = self.find_by_id(chatbot_id)
+        if not chatbot:
+            return None
+        
+        chatbot["id"] = str(chatbot["_id"])
+        del chatbot["_id"]
+        chatbot["account_id"] = str(chatbot["account_id"])
+        if chatbot.get("workspace_id"):
+            chatbot["workspace_id"] = str(chatbot["workspace_id"])
+        
+        return chatbot
+
+    def get_latest_active_chatbots(self, limit=10):
+        """Get latest active chatbots"""
+        chatbots = list(self.collection.find({"is_active": True}).sort("updated_at", -1).limit(limit))
+        
+        for chatbot in chatbots:
+            chatbot["id"] = str(chatbot["_id"])
+            del chatbot["_id"]
+            chatbot["account_id"] = str(chatbot["account_id"])
+            if chatbot.get("workspace_id"):
+                chatbot["workspace_id"] = str(chatbot["workspace_id"])
+        
+        return chatbots
+
+    def get_total_chatbots(self, active_only=False):
+        """Get total chatbots count"""
+        query = {}
+        if active_only:
+            query["is_active"] = True
+        return self.collection.count_documents(query)
+
+    def toggle_chatbot_active(self, chatbot_id):
+        """Toggle chatbot active status"""
+        from bson import ObjectId
+        from datetime import datetime, timezone
+        
+        chatbot = self.find_by_id(chatbot_id)
+        if not chatbot:
+            return None
+        
+        new_active = not chatbot.get("is_active", True)
+        
+        # Update in DB
+        self.collection.update_one(
+            {"_id": ObjectId(chatbot_id)},
+            {
+                "$set": {
+                    "is_active": new_active,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        # Return updated chatbot
+        updated = self.find_by_id(chatbot_id)
+        if not updated:
+            return None
+            
+        updated["id"] = str(updated["_id"])
+        del updated["_id"]
+        updated["account_id"] = str(updated["account_id"])
+        if updated.get("workspace_id"):
+            updated["workspace_id"] = str(updated["workspace_id"])
+        
+        return updated
 
 chatbot_repo = ChatbotRepository()

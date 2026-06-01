@@ -270,7 +270,7 @@ PLANS_CONFIG = {
     4: {
         'name': 'Chatbot',
         'description': 'Gói dành riêng cho chatbot, giới hạn 5.000 lượt/tháng',
-        'max_requests_per_month': 5000,
+        'max_requests_per_month': 6000,
         'max_users': 1,
         'price': 0,
         'is_unlimited': False,

@@ -152,6 +152,82 @@ class UsersRepository(BaseRepository):
             
         return True
 
+    def get_users_by_role(self, role, page=1, limit=20, search=None, active=None):
+        """Get users by role with pagination and search"""
+        from bson import ObjectId
+        query = {"role": role}
+        
+        if search:
+            search_regex = {"$regex": search, "$options": "i"}
+            query["$or"] = [
+                {"username": search_regex},
+                {"email": search_regex},
+                {"fullname": search_regex},
+                {"phone": search_regex}
+            ]
+        
+        if active is not None:
+            query["active"] = active
+        
+        skip = (page - 1) * limit
+        users = list(self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit))
+        
+        # Convert ObjectId to string
+        for user in users:
+            user["id"] = str(user["_id"])
+            del user["_id"]
+            if user.get("account_id"):
+                user["account_id"] = str(user["account_id"])
+            if user.get("password"):
+                del user["password"]
+        
+        return users
+
+    def count_users_by_role(self, role, search=None, active=None):
+        """Count users by role"""
+        query = {"role": role}
+        
+        if search:
+            search_regex = {"$regex": search, "$options": "i"}
+            query["$or"] = [
+                {"username": search_regex},
+                {"email": search_regex},
+                {"fullname": search_regex},
+                {"phone": search_regex}
+            ]
+        
+        if active is not None:
+            query["active"] = active
+        
+        return self.collection.count_documents(query)
+
+    def get_user_with_details(self, user_id):
+        """Get user with detailed information"""
+        from bson import ObjectId
+        user = self.find_by_id(user_id)
+        if not user:
+            return None
+        
+        user["id"] = str(user["_id"])
+        del user["_id"]
+        if user.get("account_id"):
+            user["account_id"] = str(user["account_id"])
+        if user.get("password"):
+            del user["password"]
+        
+        return user
+
+    def toggle_user_active(self, user_id):
+        """Toggle user active status"""
+        from bson import ObjectId
+        user = self.find_by_id(user_id)
+        if not user:
+            return None
+        
+        new_active = not user.get("active", True)
+        self.update(user_id, {"active": new_active})
+        return {"id": str(user["_id"]), "active": new_active}
+
 
 # Global instance
 users_repo = UsersRepository()

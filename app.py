@@ -8,6 +8,7 @@ import os
 
 import src.config as config
 from src.api.routes import register_routes
+from src.api.admin_routes import register_admin_routes
 from src.utils.rate_limit import init_limiter
 # Model loader is no longer explicitly imported here to prevent unnecessary loading
 
@@ -41,6 +42,7 @@ Log.info("="*70)
 
 # ==================== REGISTER ROUTES ====================
 register_routes(app)
+register_admin_routes(app)
 
 from src.api.sheet_routes import sheet_bp
 from src.api.auth_routes import auth_bp
