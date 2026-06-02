@@ -11,6 +11,7 @@ from src.product_recognition.utils.image_utils import download_image
 from src.product_recognition.utils.qdrant_service import product_qdrant_service
 from src.config import FILES_API_URL, FILES_API_UPLOAD_ENDPOINT, FILES_API_SYSTEM_ID, FILES_API_USER_ID, FILES_API_ALIAS, FILES_API_KEY
 from src.utils.logger import Log
+from src.utils.auth_middleware import require_auth
 
 product_bp = Blueprint("product_bp", __name__)
 
@@ -70,6 +71,7 @@ def upload_to_files_api(img, filename: str = "product.jpg"):
 # HEALTH CHECK & WARMUP
 # ==========================
 @product_bp.route('/health', methods=['GET'])
+@require_auth
 def health_check():
     """Health check endpoint for monitoring"""
     return jsonify({
@@ -79,6 +81,7 @@ def health_check():
 
 
 @product_bp.route('/warmup', methods=['GET'])
+@require_auth
 def warmup():
     """Warmup endpoint to preload model and avoid cold start"""
     try:
@@ -108,6 +111,7 @@ def warmup():
 # API Train Product
 # ==========================
 @product_bp.route("/product/train", methods=["POST"])
+@require_auth
 def train_product():
     try:
         # 1. Lấy data từ JSON hoặc Form (cho id, name, price)
@@ -254,6 +258,7 @@ def train_product():
 # API Detect Product
 # ==========================
 @product_bp.route('/product/detect', methods=['POST'])
+@require_auth
 def detect_product():
     start_total = time.time()
     
@@ -330,6 +335,7 @@ def detect_product():
 # API Update Embedding (Batch)
 # ==========================
 @product_bp.route("/product/update_embedding", methods=["POST"])
+@require_auth
 def update_embedding():
     product_id = request.form.get("product_id")
     files = request.files.getlist("image_files")
