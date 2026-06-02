@@ -19,9 +19,9 @@ last_question_before_contact = {}  # {session_id: original_question}
 def extract_contact_info(text):
     """Extract name and phone number using strict format: Tôi tên là [tên] - sđt [số điện thoại]"""
     info = {}
-    # Strict regex pattern: Tôi tên là [name] - sđt [phone]
+    # Strict regex pattern: Tôi tên là [name] - sđt [phone] OR sdt
     # Phone supports: 0912345678, +84912345678, with spaces/dots/dashes
-    pattern = r'tôi tên là\s+(.+?)\s*-\s*sđt\s*((?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])[-.\s]?[0-9]{3}[-.\s]?[0-9]{4})'
+    pattern = r'tôi tên là\s+(.+?)\s*-\s*(?:sđt|sdt)\s*((?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])[-.\s]?[0-9]{3}[-.\s]?[0-9]{4})'
     
     match = re.search(pattern, text, flags=re.IGNORECASE)
     
@@ -108,10 +108,12 @@ def public_chat_with_chatbot(chatbot_id):
         if not message:
             return jsonify({"statusCode": 400, "message": "Message is required"}), 400
         
+        Log.info(f"[Public Chat] Received message: '{message}' with session_id: '{session_id}'")
+        
         result = {"answer": "", "provider": "echo"}
         
         is_contact_info_reply = False
-        # 6. Check if we're waiting for contact info
+        # 6. Check if we're waiting for contact info FIRST!
         Log.info(f"[Public Chat] Checking session {session_id} - waiting_for_contact: {session_id in waiting_for_contact}")
         if session_id in waiting_for_contact and waiting_for_contact[session_id]:
             # Extract contact info
@@ -183,38 +185,43 @@ def public_chat_with_chatbot(chatbot_id):
         
         else:
             # 7. Normal chat flow
-            # First check if user is asking to contact staff directly
-            contact_request_keywords = ["liên hệ nhân viên", "hãy liên hệ", "nhân viên hỗ trợ", "liên hệ với nhân viên", "gọi nhân viên"]
-            is_contact_request = any(keyword.lower() in message.lower() for keyword in contact_request_keywords)
-            
-            if chatbot.get("workspace_id") and not is_contact_request:
-                from src.rag.rag_service import rag_service
-                result = rag_service.chat_store(
-                    question=message,
-                    workspace_id=str(chatbot["workspace_id"]),
-                    telegram_bot_token=None,  # Disable auto-notify, let public route handle it
-                    telegram_chat_id=None,
-                    chatbot_name=chatbot.get("name", "Chatbot")
-                )
-                
-                # Check if we need to ask for contact info
-                no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
-                is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
-                
-                if is_no_info:
-                    # Ask for contact info with clear format guide
-                    result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
-                    waiting_for_contact[session_id] = True
-                    # Save the original question
-                    last_question_before_contact[session_id] = message
+            # First check hard-coded answer for "bạn là ai"
+            question_lower = message.lower().strip()
+            if any(q in question_lower for q in ["bạn là ai", "bạn là ai?", "bạn là ai ?"]):
+                result["answer"] = "Tôi là chatbot chăm sóc khách hàng!"
             else:
-                # Either no workspace OR user is asking to contact staff directly
-                if is_contact_request:
-                    result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
-                    waiting_for_contact[session_id] = True
-                    last_question_before_contact[session_id] = message
+                # Then check if user is asking to contact staff directly
+                contact_request_keywords = ["liên hệ nhân viên", "hãy liên hệ", "nhân viên hỗ trợ", "liên hệ với nhân viên", "gọi nhân viên"]
+                is_contact_request = any(keyword.lower() in message.lower() for keyword in contact_request_keywords)
+                
+                if chatbot.get("workspace_id") and not is_contact_request:
+                    from src.rag.rag_service import rag_service
+                    result = rag_service.chat_store(
+                        question=message,
+                        workspace_id=str(chatbot["workspace_id"]),
+                        telegram_bot_token=None,  # Disable auto-notify, let public route handle it
+                        telegram_chat_id=None,
+                        chatbot_name=chatbot.get("name", "Chatbot")
+                    )
+                    
+                    # Check if we need to ask for contact info
+                    no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
+                    is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
+                    
+                    if is_no_info:
+                        # Ask for contact info with clear format guide
+                        result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
+                        waiting_for_contact[session_id] = True
+                        # Save the original question
+                        last_question_before_contact[session_id] = message
                 else:
-                    result["answer"] = f"Cảm ơn bạn đã hỏi: {message}"
+                    # Either no workspace OR user is asking to contact staff directly
+                    if is_contact_request:
+                        result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
+                        waiting_for_contact[session_id] = True
+                        last_question_before_contact[session_id] = message
+                    else:
+                        result["answer"] = f"Cảm ơn bạn đã hỏi: {message}"
         
         # 8. Increment quota only if it's not a contact info reply
         if not is_contact_info_reply:
