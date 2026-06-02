@@ -1,63 +1,109 @@
-
 import os
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+from qdrant_client.http.models import Distance, VectorParams, PointStruct
 from dotenv import load_dotenv
 
+# Load .env file
 load_dotenv()
 
-class ProductQdrantService:
+class QdrantService:
     def __init__(self):
-        self.url = os.getenv("PRODUCT_QDRANT_URL")
-        self.api_key = os.getenv("PRODUCT_QDRANT_API_KEY")
-        self.collection_name = os.getenv("PRODUCT_QDRANT_COLLECTION_NAME", "product_embeddings")
-        self.client = None
+        url = os.getenv("QDRANT_URL")
+        api_key = os.getenv("QDRANT_API_KEY")
         
-    def get_client(self):
-        if self.client is None:
+        if not url:
+            print("[Qdrant] ⚠️ QDRANT_URL not found in .env. Search will be disabled.")
+            self.client = None
+            return
+
+        print(f"[Qdrant] 🌐 Connecting to: {url}")
+        
+        if url.startswith("http"):
             self.client = QdrantClient(
-                url=self.url,
-                api_key=self.api_key
+                url=url,
+                api_key=api_key
             )
-        return self.client
-    
-    def ensure_collection(self):
-        client = self.get_client()
-        collections = client.get_collections().collections
-        collection_names = [col.name for col in collections]
-        
-        if self.collection_name not in collection_names:
-            client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=models.VectorParams(
-                    size=512,
-                    distance=models.Distance.COSINE
+        else:
+            # Local storage mode
+            self.client = QdrantClient(path=url)
+            
+        self.collection_name = os.getenv("QDRANT_COLLECTION_NAME", "product_embeddings")
+        self._ensure_collection()
+
+    def _ensure_collection(self):
+        """
+        Create collection if it doesn't exist.
+        """
+        if not self.client:
+            return
+            
+        try:
+            # ResNet18 output is 512 dimensions
+            vector_size = 512
+            
+            collections = self.client.get_collections().collections
+            collection_names = [c.name for c in collections]
+            
+            if self.collection_name not in collection_names:
+                print(f"[Qdrant] Creating collection: {self.collection_name} with size {vector_size}")
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
                 )
+        except Exception as e:
+            print(f"[Qdrant] Error ensuring collection: {e}")
+
+    def get_product_by_id(self, product_id):
+        """
+        Get a product by its ID from Qdrant.
+        """
+        if not self.client:
+            return None
+        try:
+            result = self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=[int(product_id)],
+                with_payload=True,
+                with_vectors=True  # useful if we want to average vectors later
             )
-    
-    def upsert_product(self, product_id, embedding, payload):
-        client = self.get_client()
-        self.ensure_collection()
-        client.upsert(
+            return result[0] if result else None
+        except Exception as e:
+            print(f"[Qdrant] Error getting product {product_id}: {e}")
+            return None
+
+    def upsert_product(self, product_id, vector, payload):
+        """
+        Upsert a product embedding to Qdrant with full payload.
+        """
+        if not self.client:
+            return None
+            
+        return self.client.upsert(
             collection_name=self.collection_name,
             points=[
-                models.PointStruct(
-                    id=product_id,
-                    vector=embedding,
+                PointStruct(
+                    id=int(product_id),
+                    vector=vector,
                     payload=payload
                 )
             ]
         )
-    
-    def search_similar(self, embedding, limit=5):
-        client = self.get_client()
-        self.ensure_collection()
-        results = client.query_points(
+
+    def search_similar(self, vector, limit=1):
+        """
+        Search for similar products.
+        """
+        if not self.client:
+            return []
+            
+        response = self.client.query_points(
             collection_name=self.collection_name,
-            query=embedding,
-            limit=limit
-        ).points
-        return results
+            query=vector,
+            limit=limit,
+            with_payload=True
+        )
+        return response.points
 
-product_qdrant_service = ProductQdrantService()
-
+# Singleton instance
+product_qdrant_service = QdrantService()

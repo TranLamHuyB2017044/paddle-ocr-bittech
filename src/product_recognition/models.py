@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import io
-from typing import List
+from typing import List, Union
 
 # Load ResNet18 model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,7 +20,7 @@ def load_model():
         model.to(device)
     return model
 
-def get_embedding_from_image(image_bytes: bytes) -> List[float]:
+def get_embedding_from_image(image_input: Union[bytes, Image.Image]) -> List[float]:
     model = load_model()
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
@@ -28,7 +28,11 @@ def get_embedding_from_image(image_bytes: bytes) -> List[float]:
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     
-    image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+    if isinstance(image_input, bytes):
+        image = Image.open(io.BytesIO(image_input)).convert('RGB')
+    else:
+        image = image_input.convert('RGB')
+    
     image_tensor: torch.Tensor = transform(image).unsqueeze(0).to(device)  # type: ignore
     
     with torch.no_grad():

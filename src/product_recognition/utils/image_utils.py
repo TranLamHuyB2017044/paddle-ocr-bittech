@@ -1,20 +1,12 @@
-
 import requests
+from io import BytesIO
 from PIL import Image
-import io
 
 def download_image(url):
     try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        return response.content
+        resp = requests.get(url)
+        resp.raise_for_status()
+        return Image.open(BytesIO(resp.content)).convert('RGB')
     except Exception as e:
-        raise Exception(f"Failed to download image: {str(e)}")
-
-def validate_image(image_bytes):
-    try:
-        Image.open(io.BytesIO(image_bytes))
-        return True
-    except Exception:
-        return False
-
+        print("Error downloading image:", e)
+        return None
