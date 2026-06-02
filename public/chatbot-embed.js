@@ -122,7 +122,7 @@
                 
                 <!-- Input Area -->
                 <div id="chatbot-input-area">
-                    <input type="text" id="chatbot-input" placeholder="Nhập tin nhắn..." autocomplete="off">
+                    <textarea id="chatbot-input" placeholder="Nhập tin nhắn..." autocomplete="off" rows="1"></textarea>
                     <button id="chatbot-send-btn" aria-label="Send Message">
                         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -144,6 +144,13 @@
         input = document.getElementById('chatbot-input');
         sendBtn = document.getElementById('chatbot-send-btn');
         messagesDiv = document.getElementById('chatbot-messages');
+        
+        // Auto-resize textarea
+        function autoResizeTextarea() {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        }
+        input.addEventListener('input', autoResizeTextarea);
         
         // Fetch Chatbot customization from DB to override values
         fetchChatbotDetails();
@@ -330,6 +337,7 @@
 
         // Clear input
         input.value = '';
+        input.style.height = 'auto';
 
         // Add user message to chat UI
         appendMessage('user', message);
@@ -840,6 +848,11 @@
                 outline: none;
                 transition: all 0.2s;
                 color: #1e293b;
+                resize: none;
+                max-height: 120px;
+                overflow-y: auto;
+                line-height: 1.5;
+                font-family: inherit;
             }
             #chatbot-input:focus {
                 border-color: ${CONFIG.themeColor};
@@ -956,8 +969,11 @@
         closeBtn.addEventListener('click', toggleChat);
         
         sendBtn.addEventListener('click', sendMessage);
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
         });
     }
 

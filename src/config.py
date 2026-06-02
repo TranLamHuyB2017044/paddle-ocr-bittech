@@ -274,7 +274,7 @@ PLANS_CONFIG = {
         'max_users': 1,
         'price': 0,
         'is_unlimited': False,
-        'features': ['5.000 lượt/tháng', '1 tài khoản', 'Dành riêng cho chatbot']
+        'features': ['6.000 lượt/tháng', '1 tài khoản', 'Dành riêng cho chatbot']
     }
 }
 
