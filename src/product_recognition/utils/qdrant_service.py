@@ -28,12 +28,12 @@ class QdrantService:
             # Local storage mode
             self.client = QdrantClient(path=url)
             
-        self.collection_name = os.getenv("QDRANT_COLLECTION_NAME", "product_embeddings")
+        self.collection_name = os.getenv("PRODUCT_QDRANT_COLLECTION_NAME", os.getenv("QDRANT_COLLECTION_NAME", "product_embeddings"))
         self._ensure_collection()
 
     def _ensure_collection(self):
         """
-        Create collection if it doesn't exist.
+        Check collection exists, skip create if it does (avoids 403 errors).
         """
         if not self.client:
             return
@@ -42,17 +42,22 @@ class QdrantService:
             # ResNet18 output is 512 dimensions
             vector_size = 512
             
-            collections = self.client.get_collections().collections
-            collection_names = [c.name for c in collections]
-            
-            if self.collection_name not in collection_names:
+            # First check if collection exists (lighter than get_collections)
+            try:
+                self.client.get_collection(collection_name=self.collection_name)
+                print(f"[Qdrant] ✅ Collection '{self.collection_name}' already exists")
+                return
+            except Exception:
+                # Collection doesn't exist, try to create it
                 print(f"[Qdrant] Creating collection: {self.collection_name} with size {vector_size}")
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
                 )
+                print(f"[Qdrant] ✅ Collection '{self.collection_name}' created successfully")
         except Exception as e:
             print(f"[Qdrant] Error ensuring collection: {e}")
+            print(f"[Qdrant] ⚠️ Continuing with existing collection (if available)")
 
     def get_product_by_id(self, product_id):
         """
