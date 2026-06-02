@@ -9,11 +9,12 @@ load_dotenv()
 
 class QdrantService:
     def __init__(self):
-        url = os.getenv("QDRANT_URL")
-        api_key = os.getenv("QDRANT_API_KEY")
+        # Use PRODUCT-specific Qdrant config first, fall back to general config
+        url = os.getenv("PRODUCT_QDRANT_URL", os.getenv("QDRANT_URL"))
+        api_key = os.getenv("PRODUCT_QDRANT_API_KEY", os.getenv("QDRANT_API_KEY"))
         
         if not url:
-            print("[Qdrant] ⚠️ QDRANT_URL not found in .env. Search will be disabled.")
+            print("[Qdrant] ⚠️ PRODUCT_QDRANT_URL/QDRANT_URL not found in .env. Search will be disabled.")
             self.client = None
             return
 
@@ -28,7 +29,7 @@ class QdrantService:
             # Local storage mode
             self.client = QdrantClient(path=url)
             
-        self.collection_name = os.getenv("PRODUCT_QDRANT_COLLECTION_NAME", os.getenv("QDRANT_COLLECTION_NAME", "product_embeddings"))
+        self.collection_name = os.getenv("PRODUCT_QDRANT_COLLECTION_NAME", "product_embeddings")
         self._ensure_collection()
 
     def _ensure_collection(self):

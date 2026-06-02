@@ -21,7 +21,7 @@ class QdrantService:
 
     def _ensure_collection(self):
         """
-        Create collection if it doesn't exist.
+        Check collection exists, skip create if it does (avoids 403 errors).
         """
         try:
             from src.rag.embedding_service import embedding_service
@@ -29,10 +29,13 @@ class QdrantService:
             sample_vector = embedding_service.embed_text(["sample"])[0]
             vector_size = len(sample_vector)
             
-            collections = self.client.get_collections().collections
-            collection_names = [c.name for c in collections]
-            
-            if self.collection_name not in collection_names:
+            # First check if collection exists (lighter than get_collections)
+            try:
+                self.client.get_collection(collection_name=self.collection_name)
+                Log.info(f"[Qdrant] ✅ Collection '{self.collection_name}' already exists")
+                return
+            except Exception:
+                # Collection doesn't exist, try to create it
                 Log.info(f"[Qdrant] Creating collection: {self.collection_name} with size {vector_size}")
                 self.client.create_collection(
                     collection_name=self.collection_name,
@@ -45,8 +48,10 @@ class QdrantService:
                     field_name="workspace_id",
                     field_schema=models.PayloadSchemaType.KEYWORD,
                 )
+                Log.info(f"[Qdrant] ✅ Collection '{self.collection_name}' created successfully")
         except Exception as e:
             Log.error(f"[Qdrant] Error ensuring collection: {e}")
+            Log.info(f"[Qdrant] ⚠️ Continuing with existing collection (if available)")
 
     def upsert_points(self, points):
         """
