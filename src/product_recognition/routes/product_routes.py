@@ -67,44 +67,7 @@ def upload_to_files_api(img, filename: str = "product.jpg"):
         Log.error(f"[Product Recognition] Lỗi khi tải file lên FILES_API: {str(e)}")
         return None
 
-# ==========================
-# HEALTH CHECK & WARMUP
-# ==========================
-@product_bp.route('/health', methods=['GET'])
-@require_auth
-def health_check():
-    """Health check endpoint for monitoring"""
-    return jsonify({
-        "status": "healthy",
-        "qdrant_status": product_qdrant_service.client is not None if hasattr(product_qdrant_service, 'client') else False
-    })
 
-
-@product_bp.route('/warmup', methods=['GET'])
-@require_auth
-def warmup():
-    """Warmup endpoint to preload model and avoid cold start"""
-    try:
-        from PIL import Image
-        
-        # Create a dummy image
-        dummy_img = Image.new('RGB', (224, 224), color='red')
-        
-        # Run inference to warm up model
-        start_time = time.time()
-        _ = get_embedding_from_image(dummy_img)
-        elapsed = time.time() - start_time
-        
-        return jsonify({
-            "status": "warmed_up",
-            "message": "Model is ready",
-            "warmup_time_ms": round(elapsed * 1000, 2)
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
 
 
 # ==========================

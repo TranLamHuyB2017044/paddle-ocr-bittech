@@ -13,23 +13,30 @@ public_chat_bp = Blueprint('public_chat_bp', __name__)
 
 # State management: Track if we're waiting for contact info
 waiting_for_contact = {}  # {session_id: True}
-customer_contact_info = {}  # {session_id: {email, phone}}
+customer_contact_info = {}  # {session_id: {name, phone}}
+last_question_before_contact = {}  # {session_id: original_question}
 
 def extract_contact_info(text):
-    """Extract email and phone number from text"""
+    """Extract name or phone number from text"""
     info = {}
-    
-    # Email regex
-    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-    emails = re.findall(email_pattern, text)
-    if emails:
-        info["email"] = emails[0]
     
     # Phone regex (Vietnamese)
     phone_pattern = r'(?:\+?84|0)(?:3[2-9]|5[689]|7[06-9]|8[1-9]|9[0-46-9])[0-9]{7}'
     phones = re.findall(phone_pattern, text)
     if phones:
         info["phone"] = phones[0]
+    
+    # Name extraction - try even without phone number
+    name_candidate = text.strip()
+    if phones:
+        name_candidate = text.replace(phones[0], "").strip()
+    # Remove common prefixes/suffixes
+    name_candidate = re.sub(r'^(tên|họ tên|tên tôi là|tôi tên là|mynameis|name:)\s*', '', name_candidate, flags=re.IGNORECASE)
+    name_candidate = re.sub(r'^(sdt|số điện thoại|phone|điện thoại|số đt):?\s*', '', name_candidate, flags=re.IGNORECASE)
+    name_candidate = re.sub(r'\s*(sdt|số điện thoại|phone|điện thoại|số đt):?\s*.*$', '', name_candidate, flags=re.IGNORECASE)
+    name_candidate = name_candidate.strip()
+    if len(name_candidate) > 1:
+        info["name"] = name_candidate
     
     return info
 
@@ -60,9 +67,9 @@ def get_public_chatbot_details(chatbot_id):
         return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
 
 @public_chat_bp.route('/api/public/chatbot/<chatbot_id>/chat', methods=['POST'])
-@limiter.limit("20 per minute")
+@limiter.limit("50 per minute")
 def public_chat_with_chatbot(chatbot_id):
-    global waiting_for_contact, customer_contact_info
+    global waiting_for_contact, customer_contact_info, last_question_before_contact
     
     try:
         # 1. Validate public token
@@ -109,37 +116,45 @@ def public_chat_with_chatbot(chatbot_id):
             # Extract contact info
             info = extract_contact_info(message)
             customer_contact_info[session_id] = info
-            waiting_for_contact[session_id] = False
             
-            # Confirmation message
-            confirmation_text = "Cảm ơn bạn! Nhân viên sẽ liên hệ lại sớm nhất."
-            if info.get("email"):
-                confirmation_text += f"\nEmail: {info['email']}"
-            if info.get("phone"):
-                confirmation_text += f"\nSĐT: {info['phone']}"
-            
-            result["answer"] = confirmation_text
-            
-            # Send telegram notification with contact info
-            if chatbot.get("telegram_bot_token") and chatbot.get("telegram_chat_id"):
-                try:
-                    from src.services.telegram_service import send_telegram_message, format_customer_question_notification
-                    last_question = "Khách hàng đã để lại thông tin liên hệ"
-                    full_message = format_customer_question_notification(last_question, chatbot.get("name", "Chatbot"))
-                    full_message += f"\n\n🔑 Session ID: {session_id}"
-                    if info:
-                        full_message += "\n\n📞 Thông tin liên hệ:"
-                        if info.get("email"):
-                            full_message += f"\nEmail: {info['email']}"
-                        if info.get("phone"):
-                            full_message += f"\nSĐT: {info['phone']}"
-                    send_telegram_message(
-                        chatbot["telegram_bot_token"],
-                        chatbot["telegram_chat_id"],
-                        full_message
-                    )
-                except Exception as e:
-                    Log.error(f"[Public Chat] Lỗi khi gửi thông báo Telegram: {e}")
+            # Check if we have either name OR phone
+            if info.get("name") or info.get("phone"):
+                # Got enough info, proceed
+                waiting_for_contact[session_id] = False
+                
+                # Confirmation message
+                confirmation_text = "Cảm ơn bạn! Nhân viên sẽ liên hệ lại sớm nhất."
+                if info.get("name"):
+                    confirmation_text += f"\nHọ tên: {info['name']}"
+                if info.get("phone"):
+                    confirmation_text += f"\nSĐT: {info['phone']}"
+                
+                result["answer"] = confirmation_text
+                
+                # Send telegram notification ONLY NOW with contact info and last question
+                if chatbot.get("telegram_bot_token") and chatbot.get("telegram_chat_id"):
+                    try:
+                        from src.services.telegram_service import send_telegram_message, format_customer_question_notification
+                        # Get the original question
+                        original_question = last_question_before_contact.get(session_id, "Không có câu hỏi trước đó")
+                        full_message = format_customer_question_notification(original_question, chatbot.get("name", "Chatbot"))
+                        full_message += f"\n\n🔑 Session ID: {session_id}"
+                        if info:
+                            full_message += "\n\n📞 Thông tin liên hệ:"
+                            if info.get("name"):
+                                full_message += f"\nHọ tên: {info['name']}"
+                            if info.get("phone"):
+                                full_message += f"\nSĐT: {info['phone']}"
+                        send_telegram_message(
+                            chatbot["telegram_bot_token"],
+                            chatbot["telegram_chat_id"],
+                            full_message
+                        )
+                    except Exception as e:
+                        Log.error(f"[Public Chat] Lỗi khi gửi thông báo Telegram: {e}")
+            else:
+                # Missing info, ask again
+                result["answer"] = "Vui lòng cung cấp họ tên hoặc số điện thoại để nhân viên hỗ trợ nhé!"
         
         else:
             # 7. Normal chat flow
@@ -158,23 +173,11 @@ def public_chat_with_chatbot(chatbot_id):
                 is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
                 
                 if is_no_info:
-                    # Ask for contact info
-                    result["answer"] += "\n\nVui lòng để lại email hoặc số điện thoại để nhân viên hỗ trợ chi tiết hơn nhé!"
+                    # Ask for contact info (name and phone)
+                    result["answer"] += "\n\nVui lòng để lại họ tên và số điện thoại để nhân viên hỗ trợ chi tiết hơn nhé!"
                     waiting_for_contact[session_id] = True
-                    
-                    # Send initial telegram notification with question
-                    if chatbot.get("telegram_bot_token") and chatbot.get("telegram_chat_id"):
-                        try:
-                            from src.services.telegram_service import send_telegram_message, format_customer_question_notification
-                            full_message = format_customer_question_notification(message, chatbot.get("name", "Chatbot"))
-                            full_message += f"\n\n🔑 Session ID: {session_id}"
-                            send_telegram_message(
-                                chatbot["telegram_bot_token"],
-                                chatbot["telegram_chat_id"],
-                                full_message
-                            )
-                        except Exception as e:
-                            Log.error(f"[Public Chat] Lỗi khi gửi thông báo Telegram: {e}")
+                    # Save the original question
+                    last_question_before_contact[session_id] = message
             
             else:
                 result["answer"] = f"Cảm ơn bạn đã hỏi: {message}"
