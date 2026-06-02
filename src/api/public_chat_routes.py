@@ -156,7 +156,7 @@ def public_chat_with_chatbot(chatbot_id):
                         import traceback
                         Log.error(traceback.format_exc())
             else:
-                # No valid format, check if it's a normal question with answer in docs
+                # No valid format, check what the user sent!
                 if chatbot.get("workspace_id"):
                     from src.rag.rag_service import rag_service
                     result = rag_service.chat_store(
@@ -172,14 +172,14 @@ def public_chat_with_chatbot(chatbot_id):
                     is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
                     
                     if not is_no_info:
-                        # Exit waiting state and answer normally
+                        # Has answer in docs! Exit waiting mode!
                         waiting_for_contact[session_id] = False
                     else:
-                        # Still no info, keep waiting and remind format
-                        result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng: Tôi tên là [tên] - sđt [số điện thoại]"
+                        # Still no info, keep waiting and show format guide
+                        result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
                 else:
-                    # No workspace, just remind format
-                    result["answer"] = "Vui lòng cung cấp thông tin theo định dạng: Tôi tên là [tên] - sđt [số điện thoại]"
+                    # No workspace, just show format guide and keep waiting
+                    result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
         
         else:
             # 7. Normal chat flow
@@ -202,15 +202,15 @@ def public_chat_with_chatbot(chatbot_id):
                 is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
                 
                 if is_no_info:
-                    # Ask for contact info (name and phone)
-                    result["answer"] += "\n\nVui lòng để lại họ tên và số điện thoại để nhân viên hỗ trợ chi tiết hơn nhé!"
+                    # Ask for contact info with clear format guide
+                    result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
                     waiting_for_contact[session_id] = True
                     # Save the original question
                     last_question_before_contact[session_id] = message
             else:
                 # Either no workspace OR user is asking to contact staff directly
                 if is_contact_request:
-                    result["answer"] = "Vui lòng để lại họ tên và số điện thoại để nhân viên hỗ trợ chi tiết hơn nhé!"
+                    result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
                     waiting_for_contact[session_id] = True
                     last_question_before_contact[session_id] = message
                 else:
