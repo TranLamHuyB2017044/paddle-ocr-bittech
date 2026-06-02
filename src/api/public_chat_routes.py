@@ -17,88 +17,27 @@ customer_contact_info = {}  # {session_id: {name, phone}}
 last_question_before_contact = {}  # {session_id: original_question}
 
 def extract_contact_info(text):
-    """Extract name and/or phone number from text, with better accuracy, and check if it's just a question/non-contact message"""
+    """Extract name and phone number using strict format: Tôi tên là [tên] - sđt [số điện thoại]"""
     info = {}
-    text_lower = text.lower()
+    # Strict regex pattern: Tôi tên là [name] - sđt [phone]
+    # Phone supports: 0912345678, +84912345678, with spaces/dots/dashes
+    pattern = r'tôi tên là\s+(.+?)\s*-\s*sđt\s*((?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])[-.\s]?[0-9]{3}[-.\s]?[0-9]{4})'
     
-    # First, check if this is likely a question or non-contact message
-    question_indicators = [
-        "?", "là gì", "như thế nào", "thế nào", " làm sao", "có không", "được không", 
-        "xin hỏi", "hỏi", "nào", "tại sao", "vì sao", "bạn có", "tôi muốn", "tôi cần",
-        "cám ơn", "cảm ơn", "ok", "okay", "được rồi", "được", "không", "có", "được không",
-        "ạ", "ơi", "à", "ôi", "nha"
-    ]
+    match = re.search(pattern, text, flags=re.IGNORECASE)
     
-    # Also check for question mark
-    has_question_mark = "?" in text
-    has_question_indicator = any(ind in text_lower for ind in question_indicators)
-    
-    # First, clean the text by removing any markdown or special characters that might interfere
-    cleaned_text = re.sub(r'[*_`~]', '', text)
-    
-    # Phone regex (Vietnamese) - more robust
-    # Covers:
-    # - 0912345678
-    # - +84912345678
-    # - 091 234 5678 (with spaces)
-    # - 091.234.5678 (with dots)
-    # - 091-234-5678 (with dashes)
-    phone_pattern = r'(?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}'
-    phones = re.findall(phone_pattern, cleaned_text)
-    
-    if phones:
-        # Normalize the phone number (remove spaces, dots, dashes)
-        normalized_phone = re.sub(r'[-.\s]', '', phones[0])
+    if match:
+        name = match.group(1).strip()
+        phone = match.group(2).strip()
+        
+        # Normalize phone number
+        normalized_phone = re.sub(r'[-.\s]', '', phone)
+        
+        # Validate name (at least 2 characters)
+        if len(name) >= 2:
+            info["name"] = name
         info["phone"] = normalized_phone
     
-    # Name extraction - improved
-    # 1. Remove any phone numbers first
-    text_without_phone = cleaned_text
-    if phones:
-        text_without_phone = re.sub(re.escape(phones[0]), '', text_without_phone, flags=re.IGNORECASE).strip()
-    
-    # 2. Remove common prefixes and keywords
-    prefixes_to_remove = [
-        r'^(tên|họ tên|tên tôi là|tôi tên là|mynameis|name:|tôi là)\s*',
-        r'^(sdt|số điện thoại|phone|điện thoại|số đt|số máy|liên hệ):?\s*',
-        r'\s*(sdt|số điện thoại|phone|điện thoại|số đt|số máy|liên hệ):?\s*.*$'
-    ]
-    
-    name_candidate = text_without_phone
-    for pattern in prefixes_to_remove:
-        name_candidate = re.sub(pattern, '', name_candidate, flags=re.IGNORECASE)
-    
-    # 3. Also handle cases where name is before phone
-    if phones and not name_candidate.strip():
-        # Try to get text before phone
-        phone_index = text.lower().find(phones[0].lower())
-        if phone_index > 0:
-            name_candidate = text[:phone_index].strip()
-            # Clean it again
-            for pattern in prefixes_to_remove:
-                name_candidate = re.sub(pattern, '', name_candidate, flags=re.IGNORECASE)
-    
-    name_candidate = name_candidate.strip()
-    
-    # 4. Validate the name - should have at least 2 characters and not be just numbers
-    if len(name_candidate) >= 2 and not re.fullmatch(r'[0-9\s]+', name_candidate):
-        # Only accept as name only if it doesn't look like a question/non-contact
-        if not (has_question_mark or has_question_indicator):
-            info["name"] = name_candidate
-    
-    # Now, decide if this is likely contact info or not
-    likely_contact = (
-        info.get("phone") is not None or 
-        (info.get("name") and len(info.get("name")) >= 2)
-    )
-    
-    # Even if it has question indicators, if it has clear contact info, still accept it
-    if has_question_indicator and not likely_contact:
-        # If it's a question without clear contact info, treat as non-contact
-        info = {}
-    
-    # Log what we found
-    Log.info(f"[extract_contact_info] Input: {text} → Output: {info}, Likely contact: {likely_contact}, Has question: {has_question_mark or has_question_indicator}")
+    Log.info(f"[extract_contact_info] Input: {text} → Output: {info}")
     
     return info
 
@@ -179,19 +118,17 @@ def public_chat_with_chatbot(chatbot_id):
             info = extract_contact_info(message)
             Log.info(f"[Public Chat] Extracted info: {info}")
             
-            # Check if we have either name OR phone
-            if info.get("name") or info.get("phone"):
+            # Check if we have both name AND phone
+            if info.get("name") and info.get("phone"):
                 # Got enough info, proceed
                 is_contact_info_reply = True
                 customer_contact_info[session_id] = info
                 waiting_for_contact[session_id] = False
                 
                 # Confirmation message
-                confirmation_text = "Tôi đã liên hệ nhân viên, họ sẽ liên hệ lại sau. Nếu có bất kỳ câu hỏi nào khác hãy hỏi tôi!"
-                if info.get("name"):
-                    confirmation_text += f"\nHọ tên: {info['name']}"
-                if info.get("phone"):
-                    confirmation_text += f"\nSĐT: {info['phone']}"
+                confirmation_text = "Tôi đã liên hệ nhân viên, họ sẽ liên hệ lại sau!"
+                confirmation_text += f"\nHọ tên: {info['name']}"
+                confirmation_text += f"\nSĐT: {info['phone']}"
                 
                 result["answer"] = confirmation_text
                 
@@ -204,12 +141,9 @@ def public_chat_with_chatbot(chatbot_id):
                         original_question = last_question_before_contact.get(session_id, "Không có câu hỏi trước đó")
                         full_message = format_customer_question_notification(original_question, chatbot.get("name", "Chatbot"))
                         full_message += f"\n\n🔑 Session ID: {session_id}"
-                        if info:
-                            full_message += "\n\n📞 Thông tin liên hệ:"
-                            if info.get("name"):
-                                full_message += f"\nHọ tên: {info['name']}"
-                            if info.get("phone"):
-                                full_message += f"\nSĐT: {info['phone']}"
+                        full_message += "\n\n📞 Thông tin liên hệ:"
+                        full_message += f"\nHọ tên: {info['name']}"
+                        full_message += f"\nSĐT: {info['phone']}"
                         Log.info(f"[Public Chat] Sending Telegram message: {full_message}")
                         send_result = send_telegram_message(
                             chatbot["telegram_bot_token"],
@@ -222,8 +156,7 @@ def public_chat_with_chatbot(chatbot_id):
                         import traceback
                         Log.error(traceback.format_exc())
             else:
-                # No contact info found - check if it's a question/other message
-                # First, try to answer it normally if possible
+                # No valid format, check if it's a normal question with answer in docs
                 if chatbot.get("workspace_id"):
                     from src.rag.rag_service import rag_service
                     result = rag_service.chat_store(
@@ -233,10 +166,20 @@ def public_chat_with_chatbot(chatbot_id):
                         telegram_chat_id=None,
                         chatbot_name=chatbot.get("name", "Chatbot")
                     )
-                    # Append reminder about contact info
-                    result["answer"] += "\n\nVui lòng cung cấp họ tên hoặc số điện thoại để nhân viên hỗ trợ chi tiết nhé!"
+                    
+                    # Check if the answer has info (not "no info")
+                    no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
+                    is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
+                    
+                    if not is_no_info:
+                        # Exit waiting state and answer normally
+                        waiting_for_contact[session_id] = False
+                    else:
+                        # Still no info, keep waiting and remind format
+                        result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng: Tôi tên là [tên] - sđt [số điện thoại]"
                 else:
-                    result["answer"] = "Vui lòng cung cấp họ tên hoặc số điện thoại để nhân viên hỗ trợ nhé!"
+                    # No workspace, just remind format
+                    result["answer"] = "Vui lòng cung cấp thông tin theo định dạng: Tôi tên là [tên] - sđt [số điện thoại]"
         
         else:
             # 7. Normal chat flow
@@ -289,7 +232,7 @@ def public_chat_with_chatbot(chatbot_id):
             customer_info=customer_contact_info.get(session_id, {})
         )
         
-        return jsonify({"statusCode": 200, "data": {**result, "sessionId": session_id}})
+        return jsonify({"statusCode": 200, "data": {**result, "sessionId": session_id, "waitingForContact": waiting_for_contact.get(session_id, False)}})
         
     except Exception as e:
         Log.error(f"[Public Chat] Error: {e}")
