@@ -3,9 +3,11 @@ from flask import Blueprint, request, jsonify
 from src.product_recognition.models import get_embedding_from_image, warmup_model
 from src.product_recognition.utils.image_utils import validate_image
 from src.product_recognition.utils.qdrant_service import product_qdrant_service
-from src.utils.cloudinary_utils import cloudinary_service
+from src.config import FILES_API_URL, FILES_API_UPLOAD_ENDPOINT, FILES_API_SYSTEM_ID, FILES_API_USER_ID, FILES_API_ALIAS, FILES_API_KEY
+from src.utils.logger import Log
 import os
 import tempfile
+import requests
 
 product_bp = Blueprint('product', __name__)
 
@@ -52,15 +54,45 @@ def train_product():
                 temp_file_path = temp_file.name
             
             try:
-                # Upload to Cloudinary
-                upload_result = cloudinary_service.upload_private(temp_file_path, folder="product_recognition")
-                if upload_result:
-                    # Generate signed URL
-                    signed_url = cloudinary_service.generate_signed_url(
-                        upload_result["public_id"],
-                        resource_type=upload_result["resource_type"]
-                    )
-                    image_urls.append(signed_url)
+                # Upload to FILES_API
+                Log.info(f"[Product Recognition] Đang tải file lên FILES_API: {img.filename}")
+                upload_url = f"{FILES_API_URL}{FILES_API_UPLOAD_ENDPOINT}"
+                
+                with open(temp_file_path, 'rb') as f:
+                    files = {
+                        'files': (os.path.basename(temp_file_path), f, 'image/jpeg')
+                    }
+                    data = {
+                        'system_id': FILES_API_SYSTEM_ID,
+                        'user_id': FILES_API_USER_ID,
+                        'alias': FILES_API_ALIAS,
+                        "file_system": False
+                    }
+                    headers = {
+                        'x-api-key': FILES_API_KEY
+                    }
+                    
+                    response = requests.post(upload_url, files=files, data=data, headers=headers)
+                    response.raise_for_status()
+                    upload_result = response.json()
+                    
+                    # Lấy URL từ response (giả sử response trả về url trong trường 'file_url' hoặc tương tự)
+                    if upload_result and isinstance(upload_result, dict):
+                        # Kiểm tra các trường phổ biến
+                        if 'file_url' in upload_result:
+                            image_urls.append(upload_result['file_url'])
+                        elif 'url' in upload_result:
+                            image_urls.append(upload_result['url'])
+                        elif 'files' in upload_result and len(upload_result['files']) > 0:
+                            file_info = upload_result['files'][0]
+                            if 'file_url' in file_info:
+                                image_urls.append(file_info['file_url'])
+                            elif 'url' in file_info:
+                                image_urls.append(file_info['url'])
+                    
+                    Log.info(f"[Product Recognition] Tải file thành công: {img.filename}")
+            except Exception as e:
+                Log.error(f"[Product Recognition] Lỗi khi tải file lên FILES_API: {str(e)}")
             finally:
                 # Clean up temp file
                 os.unlink(temp_file_path)
