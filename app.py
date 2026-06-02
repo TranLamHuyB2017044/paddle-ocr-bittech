@@ -55,6 +55,7 @@ from src.api.file_routes import file_bp
 from src.api.tts_routes import tts_bp
 from src.api.public_chat_routes import public_chat_bp
 from src.api.chatbot_routes import chatbot_bp
+from src.product_recognition.routes.product_routes import product_bp
 
 app.register_blueprint(sheet_bp)
 app.register_blueprint(auth_bp)
@@ -67,6 +68,7 @@ app.register_blueprint(file_bp)
 app.register_blueprint(tts_bp)
 app.register_blueprint(public_chat_bp)
 app.register_blueprint(chatbot_bp)
+app.register_blueprint(product_bp, url_prefix='/api')
 
 # Explicit route to serve files from public folder (registered after all other routes)
 @app.route('/<path:filename>', methods=['GET'])
