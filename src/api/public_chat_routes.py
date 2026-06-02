@@ -158,7 +158,11 @@ def public_chat_with_chatbot(chatbot_id):
         
         else:
             # 7. Normal chat flow
-            if chatbot.get("workspace_id"):
+            # First check if user is asking to contact staff directly
+            contact_request_keywords = ["liên hệ nhân viên", "hãy liên hệ", "nhân viên hỗ trợ", "liên hệ với nhân viên", "gọi nhân viên"]
+            is_contact_request = any(keyword.lower() in message.lower() for keyword in contact_request_keywords)
+            
+            if chatbot.get("workspace_id") and not is_contact_request:
                 from src.rag.rag_service import rag_service
                 result = rag_service.chat_store(
                     question=message,
@@ -169,7 +173,7 @@ def public_chat_with_chatbot(chatbot_id):
                 )
                 
                 # Check if we need to ask for contact info
-                no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết", "sẽ liên hệ", "liên hệ lại"]
+                no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
                 is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
                 
                 if is_no_info:
@@ -178,9 +182,14 @@ def public_chat_with_chatbot(chatbot_id):
                     waiting_for_contact[session_id] = True
                     # Save the original question
                     last_question_before_contact[session_id] = message
-            
             else:
-                result["answer"] = f"Cảm ơn bạn đã hỏi: {message}"
+                # Either no workspace OR user is asking to contact staff directly
+                if is_contact_request:
+                    result["answer"] = "Vui lòng để lại họ tên và số điện thoại để nhân viên hỗ trợ chi tiết hơn nhé!"
+                    waiting_for_contact[session_id] = True
+                    last_question_before_contact[session_id] = message
+                else:
+                    result["answer"] = f"Cảm ơn bạn đã hỏi: {message}"
         
         # 8. Increment quota only if it's not a contact info reply
         if not is_contact_info_reply:
