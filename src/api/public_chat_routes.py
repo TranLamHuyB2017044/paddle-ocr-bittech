@@ -17,11 +17,14 @@ customer_contact_info = {}  # {session_id: {name, phone}}
 last_question_before_contact = {}  # {session_id: original_question}
 
 def extract_contact_info(text):
-    """Extract name and phone number using strict format: Tôi tên là [tên] - sđt [số điện thoại]"""
+    """Extract name and phone number with flexible format: Tôi tên là [tên] - sđt [số điện thoại]"""
     info = {}
-    # Strict regex pattern: Tôi tên là [name] - sđt [phone] OR sdt
-    # Phone supports: 0912345678, +84912345678, with spaces/dots/dashes
-    pattern = r'tôi tên là\s+(.+?)\s*-\s*(?:sđt|sdt)\s*((?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])[-.\s]?[0-9]{3}[-.\s]?[0-9]{4})'
+    # Flexible regex pattern:
+    # - Case insensitive (handled by flags)
+    # - Allow optional spaces, dashes, dots, commas as separators
+    # - Support: sđt, sdt, so dien thoai, sdt, SĐT, etc.
+    # - Phone supports: 0912345678, +84912345678, with spaces/dots/dashes
+    pattern = r'tôi tên là\s+(.+?)\s*(?:-|,|;)?\s*(?:sđt|sdt|số điện thoại|so dien thoai)\s*[:\-]?\s*((?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])[-.\s]?[0-9]{3}[-.\s]?[0-9]{4})'
     
     match = re.search(pattern, text, flags=re.IGNORECASE)
     
@@ -100,10 +103,10 @@ def public_chat_with_chatbot(chatbot_id):
                     "message": f"Quota exceeded: {used_requests}/{max_requests}"
                 }), 403
         
-        # 5. Get user message and session_id
+        # 5. Get user message and session_id (support both session_id and sessionId)
         data = request.json or {}
         message = data.get("message")
-        session_id = data.get("session_id") or secrets.token_urlsafe(16)
+        session_id = data.get("session_id") or data.get("sessionId") or secrets.token_urlsafe(16)
         
         if not message:
             return jsonify({"statusCode": 400, "message": "Message is required"}), 400
