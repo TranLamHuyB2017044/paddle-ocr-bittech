@@ -23,7 +23,8 @@ def extract_contact_info(text):
     # - Case insensitive (handled by flags)
     # - Allow optional spaces, dashes, dots, commas as separators
     # - Support: sđt, sdt, so dien thoai, sdt, SĐT, etc.
-    # - Phone supports: 0912345678, +84912345678, with spaces/dots/dashes
+    # - Phone supports: 0912345678 (10 số), +84912345678, with spaces/dots/dashes
+    # - Note: We prefer 10-digit phone numbers
     pattern = r'tôi tên là\s+(.+?)\s*(?:-|,|;)?\s*(?:sđt|sdt|số điện thoại|so dien thoai)\s*[:\-]?\s*((?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])[-.\s]?[0-9]{3}[-.\s]?[0-9]{4})'
     
     match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -43,6 +44,50 @@ def extract_contact_info(text):
     Log.info(f"[extract_contact_info] Input: {text} → Output: {info}")
     
     return info
+
+def analyze_contact_info_error(text):
+    """Analyze what's wrong with the contact info input"""
+    text_lower = text.lower()
+    
+    # Check if has "tôi tên là"
+    has_name_prefix = "tôi tên là" in text_lower
+    
+    # Check if has phone number keyword
+    has_phone_keyword = any(keyword in text_lower for keyword in ["sđt", "sdt", "số điện thoại", "so dien thoai"])
+    
+    # Try to extract potential name
+    potential_name = None
+    if has_name_prefix:
+        name_match = re.search(r'tôi tên là\s+(.+?)(?:\s*(?:-|,|;|:|$))', text, flags=re.IGNORECASE)
+        if name_match:
+            potential_name = name_match.group(1).strip()
+    
+    # Try to extract potential phone number
+    potential_phone = None
+    phone_matches = re.findall(r'(?:\+?84|0)[0-9\-.\s]{8,12}', text)
+    if phone_matches:
+        potential_phone = phone_matches[0]
+    
+    errors = []
+    
+    if not has_name_prefix:
+        errors.append("Thiếu từ khóa \"Tôi tên là\"")
+    elif potential_name and len(potential_name) < 2:
+        errors.append("Tên quá ngắn (cần ít nhất 2 ký tự)")
+    
+    if not has_phone_keyword:
+        errors.append("Thiếu từ khóa \"sđt\" hoặc \"số điện thoại\"")
+    elif not potential_phone:
+        errors.append("Không tìm thấy số điện thoại hợp lệ")
+    else:
+        # Check if phone number is valid
+        normalized_phone = re.sub(r'[-.\s]', '', potential_phone)
+        if len(normalized_phone) not in [9, 10] and not normalized_phone.startswith('+84') and len(normalized_phone) not in [11, 12]:
+            errors.append("Số điện thoại phải có 9-10 số (hoặc 11-12 số nếu có +84)")
+        elif not re.match(r'(?:\+?84|0)(?:3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-46-9])', normalized_phone):
+            errors.append("Số điện thoại không đúng định dạng đầu số Việt Nam")
+    
+    return errors
 
 @public_chat_bp.route('/api/public/chatbot/<chatbot_id>', methods=['GET'])
 @limiter.limit("100 per minute")
@@ -161,30 +206,13 @@ def public_chat_with_chatbot(chatbot_id):
                         import traceback
                         Log.error(traceback.format_exc())
             else:
-                # No valid format, check what the user sent!
-                if chatbot.get("workspace_id"):
-                    from src.rag.rag_service import rag_service
-                    result = rag_service.chat_store(
-                        question=message,
-                        workspace_id=str(chatbot["workspace_id"]),
-                        telegram_bot_token=None,
-                        telegram_chat_id=None,
-                        chatbot_name=chatbot.get("name", "Chatbot")
-                    )
-                    
-                    # Check if the answer has info (not "no info")
-                    no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
-                    is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
-                    
-                    if not is_no_info:
-                        # Has answer in docs! Exit waiting mode!
-                        waiting_for_contact[session_id] = False
-                    else:
-                        # Still no info, keep waiting and show format guide
-                        result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
+                # No valid format - Analyze error and show specific feedback
+                errors = analyze_contact_info_error(message)
+                if errors:
+                    result["answer"] = "Thông tin chưa đúng định dạng! Lỗi:\n- " + "\n- ".join(errors)
                 else:
-                    # No workspace, just show format guide and keep waiting
                     result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
+                result["answer"] += "\n\nVí dụ đúng: Tôi tên là Nguyễn Văn A - sđt 0912345678"
         
         else:
             # 7. Normal chat flow
