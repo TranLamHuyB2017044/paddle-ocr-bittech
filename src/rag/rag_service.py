@@ -220,6 +220,15 @@ class RagService:
         results = qdrant_service.search(question_vector, workspace_id, limit=5)
         Log.info(f"[RAG Store Chat] 🔎 Found {len(results)} relevant context chunks")
         
+        # Log what Qdrant returned (for debugging)
+        if len(results) > 0:
+            Log.info(f"[RAG Store Chat] 📄 Context chunks found:")
+            for i, res in enumerate(results):
+                doc_name = res.payload.get("document_name", "unknown")
+                Log.info(f"   [{i+1}] Doc: {doc_name} | Text: {res.payload['text'][:80]}...")
+        else:
+            Log.info(f"[RAG Store Chat] 📭 NO context found in Qdrant!")
+        
         context_parts = []
         for i, res in enumerate(results):
             txt = res.payload["text"]
@@ -228,15 +237,26 @@ class RagService:
         context = "\n\n".join(context_parts)
         
         # 3. Augment & Generate - NO SOURCE CITATIONS
-        system_instruction = (
-            "Bạn là một trợ lý chatbot hỗ trợ khách hàng chuyên nghiệp. "
-            "Hãy trả lời câu hỏi của khách hàng dựa trên nội dung tài liệu được cung cấp. "
-            "Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó. "
-            "Giữ văn phong thân thiện, lịch sự và ngắn gọn."
-            "Không trả lời liên quan tới Bittech."
-            "Không tự bịa ra câu trả lời."
-            
-                   )
+        # Strict system prompt to prevent hallucination
+        if len(results) == 0:
+            # No context at all - force "no information"
+            system_instruction = (
+                "Bạn là một trợ lý chatbot hỗ trợ khách hàng. "
+                "Hiện tại bạn KHÔNG CÓ NỘI DUNG TÀI LIỆU NÀO. "
+                "BẠN CHỈ ĐƯỢC NÓI: 'Tôi không có thông tin về câu hỏi này. Vui lòng cung cấp thông tin liên hệ để nhân viên hỗ trợ bạn.' "
+                "TUYỆT ĐỘI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC. "
+                "KHÔNG ĐỀ CẬP ĐẾN Bittech. "
+            )
+        else:
+            system_instruction = (
+                "Bạn là một trợ lý chatbot hỗ trợ khách hàng chuyên nghiệp. "
+                "CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG TÀI LIỆU được cung cấp bên dưới. "
+                "Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó. "
+                "Giữ văn phong thân thiện, lịch sự và ngắn gọn. "
+                "KHÔNG tự bịa ra câu trả lời. "
+                "KHÔNG trả lời liên quan tới Bittech. "
+                "CHỈ trả lời dựa trên nội dung tài liệu được cung cấp."
+            )
         
         prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI CỦA KHÁCH HÀNG: {question}"
         
