@@ -58,7 +58,10 @@ def create_chatbot():
         description = request.form.get("description")
         avatar_url = request.form.get("avatar_url")
         color_str = request.form.get("color")
-        color = int(color_str) if color_str is not None else 0
+        try:
+            color = int(color_str) if color_str and color_str.strip() else 0
+        except (ValueError, TypeError):
+            color = 0
         greeting = request.form.get("greeting")
         telegram_bot_token = request.form.get("telegram_bot_token")
         telegram_chat_id = request.form.get("telegram_chat_id")
