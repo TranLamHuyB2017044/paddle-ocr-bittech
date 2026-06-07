@@ -6,7 +6,7 @@ from src.repositories.documents_repository import documents_repo
 from src.repositories.chat_history_repository import chat_history_repo
 from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
-from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus, BASE_URL, CHATBOT_EMBED_CDN_URL, PLANS_CONFIG
+from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus, BASE_URL, CHATBOT_EMBED_CDN_URL, PLANS_CONFIG, N8N_WEBHOOK_URL
 from src.services.subscription_service import subscription_service
 from datetime import datetime
 from bson import ObjectId
@@ -66,7 +66,12 @@ def create_chatbot():
         greeting = request.form.get("greeting")
         telegram_bot_token = request.form.get("telegram_bot_token")
         telegram_chat_id = request.form.get("telegram_chat_id")
-        workflow_webhook_url = request.form.get("workflow_webhook_url")
+        n8n_str = request.form.get("n8n", "0")
+        n8n = n8n_str in ["1", "true", "True", "yes"]
+        if n8n:
+            workflow_webhook_url = N8N_WEBHOOK_URL
+        else:
+            workflow_webhook_url = None
         workspace_name = request.form.get("workspace_name", f"Workspace for {name}" if name else None)
         
         # Validate required fields and color
@@ -182,7 +187,10 @@ def create_chatbot():
         chatbot_data = chatbot_repo.find_by_id(chatbot_id)
         public_token = chatbot_data["public_token"]
         embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
-        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
+        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"'
+        if chatbot_data.get("workflow_webhook_url"):
+            embed_code += f' data-webhook-url="{chatbot_data["workflow_webhook_url"]}"'
+        embed_code += '></script>'
         
         return jsonify({
             "statusCode": 201,
@@ -227,7 +235,10 @@ def get_chatbot(chatbot_id):
         
         public_token = chatbot["public_token"]
         embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
-        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
+        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"'
+        if chatbot.get("workflow_webhook_url"):
+            embed_code += f' data-webhook-url="{chatbot["workflow_webhook_url"]}"'
+        embed_code += '></script>'
         
         formatted_bot = format_chatbot(chatbot)
         formatted_bot["embed_code"] = embed_code

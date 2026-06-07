@@ -20,6 +20,7 @@ load_dotenv(os.path.join(root_dir, '.env'))
 UPLOAD_FOLDER = "uploads"
 BASE_URL = os.getenv("BASE_URL", "http://192.168.1.241:9000")
 CHATBOT_EMBED_CDN_URL = os.getenv("CHATBOT_EMBED_CDN_URL", None)
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://tlhuy02.app.n8n.cloud/webhook-test/chat-runtime")
 TTS_FILE_RETENTION_HOURS = int(os.getenv("TTS_FILE_RETENTION_HOURS", "24"))
 
 # Định dạng file tài liệu cho OCR / RAG

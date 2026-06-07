@@ -29,7 +29,7 @@
         botName: scriptTag?.getAttribute('data-bot-name') || 'AI Assistant',
         avatarUrl: scriptTag?.getAttribute('data-avatar-url') || '',
         workspaceId: null,
-        workflowWebhookUrl: null,
+        workflowWebhookUrl: scriptTag?.getAttribute('data-webhook-url') || null,
         suggestions: [],
         sessionId: localStorage.getItem(STORAGE_KEY) || null
     };
