@@ -29,6 +29,7 @@
         botName: scriptTag?.getAttribute('data-bot-name') || 'AI Assistant',
         avatarUrl: scriptTag?.getAttribute('data-avatar-url') || '',
         workspaceId: null,
+        workflowWebhookUrl: null,
         suggestions: [],
         sessionId: localStorage.getItem(STORAGE_KEY) || null
     };
@@ -197,6 +198,9 @@
                     if (botData.workspace_id) {
                         CONFIG.workspaceId = botData.workspace_id;
                     }
+                    if (botData.workflow_webhook_url) {
+                        CONFIG.workflowWebhookUrl = botData.workflow_webhook_url;
+                    }
                     
                     // Update the greeting message
                     const messagesDiv = document.getElementById('chatbot-messages');
@@ -346,16 +350,25 @@
         const typingIndicator = appendTypingIndicator();
 
         try {
-            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/chat`, {
+            const endpoint = CONFIG.workflowWebhookUrl || `${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/chat`;
+            const requestBody = CONFIG.workflowWebhookUrl
+                ? {
+                    chatbot_id: CONFIG.chatbotId,
+                    public_token: CONFIG.publicToken,
+                    message: message,
+                    sessionId: CONFIG.sessionId
+                  }
+                : {
+                    message: message,
+                    sessionId: CONFIG.sessionId
+                  };
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-public-token': CONFIG.publicToken
                 },
-                body: JSON.stringify({ 
-                    message: message,
-                    sessionId: CONFIG.sessionId
-                })
+                body: JSON.stringify(requestBody)
             });
             
             // Remove typing indicator

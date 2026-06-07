@@ -34,6 +34,7 @@ def format_chatbot(bot):
     bot["greeting"] = bot.get("greeting", None)
     bot["telegram_bot_token"] = bot.get("telegram_bot_token", None)
     bot["telegram_chat_id"] = bot.get("telegram_chat_id", None)
+    bot["workflow_webhook_url"] = bot.get("workflow_webhook_url", None)
     return bot
 
 @chatbot_bp.route('/api/chatbot', methods=['POST'])
@@ -65,6 +66,7 @@ def create_chatbot():
         greeting = request.form.get("greeting")
         telegram_bot_token = request.form.get("telegram_bot_token")
         telegram_chat_id = request.form.get("telegram_chat_id")
+        workflow_webhook_url = request.form.get("workflow_webhook_url")
         workspace_name = request.form.get("workspace_name", f"Workspace for {name}" if name else None)
         
         # Validate required fields and color
@@ -172,7 +174,8 @@ def create_chatbot():
             color=color,
             greeting=greeting,
             telegram_bot_token=telegram_bot_token,
-            telegram_chat_id=telegram_chat_id
+            telegram_chat_id=telegram_chat_id,
+            workflow_webhook_url=workflow_webhook_url
         )
         
         # Generate embed code
@@ -270,6 +273,8 @@ def update_chatbot(chatbot_id):
             update_data["telegram_bot_token"] = validated_data.telegram_bot_token
         if validated_data.telegram_chat_id is not None:
             update_data["telegram_chat_id"] = validated_data.telegram_chat_id
+        if validated_data.workflow_webhook_url is not None:
+            update_data["workflow_webhook_url"] = validated_data.workflow_webhook_url
         
         # Update workspace_id with 1-1 check
         if validated_data.workspace_id is not None:

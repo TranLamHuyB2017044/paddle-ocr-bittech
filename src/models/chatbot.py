@@ -17,6 +17,9 @@ class Chatbot(BaseModel):
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    workflow_webhook_url: Optional[str] = None
     
     class Config:
         populate_by_name = True

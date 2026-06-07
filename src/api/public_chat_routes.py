@@ -108,7 +108,8 @@ def get_public_chatbot_details(chatbot_id):
             "avatar_url": chatbot.get("avatar_url"),
             "color": chatbot.get("color", 0),
             "greeting": chatbot.get("greeting"),
-            "workspace_id": str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None
+            "workspace_id": str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None,
+            "workflow_webhook_url": chatbot.get("workflow_webhook_url")
         }
         return jsonify({"statusCode": 200, "data": formatted})
     except Exception as e:
