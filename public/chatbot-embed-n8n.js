@@ -259,8 +259,15 @@
                         }
                     }
                     
-                    if (resData.reply !== undefined && resData.reply !== null) {
-                        answer = String(resData.reply);
+                    // Xử lý trường hợp reply lồng nhau
+                    let replyContent = resData.reply;
+                    // Nếu reply là object và có trường reply bên trong, lấy cái trong cùng
+                    while (replyContent && typeof replyContent === 'object' && 'reply' in replyContent) {
+                        replyContent = replyContent.reply;
+                    }
+                    
+                    if (replyContent !== undefined && replyContent !== null) {
+                        answer = String(replyContent);
                     } else if (resData.answer !== undefined && resData.answer !== null) {
                         answer = String(resData.answer);
                     } else if (resData.message !== undefined && resData.message !== null) {
