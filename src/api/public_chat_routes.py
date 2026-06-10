@@ -308,16 +308,13 @@ def get_embed_script():
     try:
         import os
         from flask import send_from_directory
-        # Find absolute path of project root - works in both dev and Docker
-        current_dir = os.path.dirname(os.path.abspath(__file__)) # src/api
-        src_dir = os.path.dirname(current_dir) # src
-        root_dir = os.path.dirname(src_dir) # root (where app.py is)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        src_dir = os.path.dirname(current_dir)
+        root_dir = os.path.dirname(src_dir)
         public_dir = os.path.join(root_dir, 'public')
         file_path = os.path.join(public_dir, 'chatbot-embed.js')
         
         Log.info(f"[Embed Script] Looking for file at: {file_path}")
-        Log.info(f"[Embed Script] Public dir: {public_dir}")
-        Log.info(f"[Embed Script] Root dir: {root_dir}")
         
         if os.path.exists(file_path):
             return send_from_directory(public_dir, 'chatbot-embed.js', mimetype='application/javascript')
@@ -326,6 +323,32 @@ def get_embed_script():
             return "Script not found", 404
     except Exception as e:
         Log.error(f"[Embed Script] Error serving script: {e}")
+        import traceback
+        Log.error(traceback.format_exc())
+        return "Script not found", 404
+
+
+@public_chat_bp.route('/chatbot-embed-n8n.js', methods=['GET'])
+@limiter.limit("200 per minute")
+def get_embed_script_n8n():
+    try:
+        import os
+        from flask import send_from_directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        src_dir = os.path.dirname(current_dir)
+        root_dir = os.path.dirname(src_dir)
+        public_dir = os.path.join(root_dir, 'public')
+        file_path = os.path.join(public_dir, 'chatbot-embed-n8n.js')
+        
+        Log.info(f"[Embed Script n8n] Looking for file at: {file_path}")
+        
+        if os.path.exists(file_path):
+            return send_from_directory(public_dir, 'chatbot-embed-n8n.js', mimetype='application/javascript')
+        else:
+            Log.error(f"[Embed Script n8n] File not found at: {file_path}")
+            return "Script not found", 404
+    except Exception as e:
+        Log.error(f"[Embed Script n8n] Error serving script: {e}")
         import traceback
         Log.error(traceback.format_exc())
         return "Script not found", 404

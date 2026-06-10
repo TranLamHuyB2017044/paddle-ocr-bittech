@@ -187,10 +187,12 @@ def create_chatbot():
         chatbot_data = chatbot_repo.find_by_id(chatbot_id)
         public_token = chatbot_data["public_token"]
         embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
-        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"'
+        
+        # Choose the right embed script based on whether n8n is enabled
         if chatbot_data.get("workflow_webhook_url"):
-            embed_code += f' data-webhook-url="{chatbot_data["workflow_webhook_url"]}"'
-        embed_code += '></script>'
+            embed_code = f'<script src="{embed_base_url}/chatbot-embed-n8n.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}" data-webhook-url="{chatbot_data["workflow_webhook_url"]}"></script>'
+        else:
+            embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
         
         return jsonify({
             "statusCode": 201,
@@ -235,10 +237,12 @@ def get_chatbot(chatbot_id):
         
         public_token = chatbot["public_token"]
         embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
-        embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"'
+        
+        # Choose the right embed script based on whether n8n is enabled
         if chatbot.get("workflow_webhook_url"):
-            embed_code += f' data-webhook-url="{chatbot["workflow_webhook_url"]}"'
-        embed_code += '></script>'
+            embed_code = f'<script src="{embed_base_url}/chatbot-embed-n8n.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}" data-webhook-url="{chatbot["workflow_webhook_url"]}"></script>'
+        else:
+            embed_code = f'<script src="{embed_base_url}/chatbot-embed.js" data-chatbot-id="{chatbot_id}" data-public-token="{public_token}"></script>'
         
         formatted_bot = format_chatbot(chatbot)
         formatted_bot["embed_code"] = embed_code
