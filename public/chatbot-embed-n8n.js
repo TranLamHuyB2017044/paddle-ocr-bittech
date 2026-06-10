@@ -247,7 +247,9 @@
             if (response.ok) {
                 try {
                     const resData = await response.json();
-                    if (resData.answer) {
+                    if (resData.reply) {
+                        answer = resData.reply;
+                    } else if (resData.answer) {
                         answer = resData.answer;
                     } else if (resData.message) {
                         answer = resData.message;
