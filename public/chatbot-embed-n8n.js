@@ -203,7 +203,9 @@
     }
 
     function escapeHTML(str) {
-        return str
+        // Đảm bảo str luôn là string
+        const text = String(str ?? '');
+        return text
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
@@ -246,13 +248,23 @@
             
             if (response.ok) {
                 try {
-                    const resData = await response.json();
-                    if (resData.reply) {
-                        answer = resData.reply;
-                    } else if (resData.answer) {
-                        answer = resData.answer;
-                    } else if (resData.message) {
-                        answer = resData.message;
+                    let resData = await response.json();
+                    
+                    // Nếu có trường output và nó là string JSON, parse nó
+                    if (resData.output && typeof resData.output === 'string') {
+                        try {
+                            resData = JSON.parse(resData.output);
+                        } catch (e) {
+                            console.error('Failed to parse output JSON:', e);
+                        }
+                    }
+                    
+                    if (resData.reply !== undefined && resData.reply !== null) {
+                        answer = String(resData.reply);
+                    } else if (resData.answer !== undefined && resData.answer !== null) {
+                        answer = String(resData.answer);
+                    } else if (resData.message !== undefined && resData.message !== null) {
+                        answer = String(resData.message);
                     } else if (typeof resData === 'string') {
                         answer = resData;
                     } else {
