@@ -185,6 +185,9 @@ def create_chatbot():
         
         # Generate embed code
         chatbot_data = chatbot_repo.find_by_id(chatbot_id)
+        if not chatbot_data:
+            return jsonify({"statusCode": 500, "message": "Failed to retrieve created chatbot"}), 500
+            
         public_token = chatbot_data["public_token"]
         embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
         
