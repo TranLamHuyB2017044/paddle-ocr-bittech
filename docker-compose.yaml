@@ -63,7 +63,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0  
     volumes:
       - ./uploads:/app/uploads                     
-      - ./logs:/app/logs
+      - ./logs:/app/logs  
       - ./storage:/app/storage:ro                  
       - ./src/hand_writting:/app/src/hand_writting
     security_opt:

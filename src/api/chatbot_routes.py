@@ -189,7 +189,7 @@ def create_chatbot():
             return jsonify({"statusCode": 500, "message": "Failed to retrieve created chatbot"}), 500
             
         public_token = chatbot_data["public_token"]
-        embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
+        embed_base_url = (CHATBOT_EMBED_CDN_URL or BASE_URL).rstrip('/')
         
         # Choose the right embed script based on whether n8n is enabled
         if chatbot_data.get("workflow_webhook_url"):
@@ -239,7 +239,7 @@ def get_chatbot(chatbot_id):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
         
         public_token = chatbot["public_token"]
-        embed_base_url = CHATBOT_EMBED_CDN_URL or BASE_URL
+        embed_base_url = (CHATBOT_EMBED_CDN_URL or BASE_URL).rstrip('/')
         
         # Choose the right embed script based on whether n8n is enabled
         if chatbot.get("workflow_webhook_url"):
