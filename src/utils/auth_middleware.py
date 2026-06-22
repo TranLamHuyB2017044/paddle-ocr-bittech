@@ -54,6 +54,11 @@ def require_auth(f):
                             # Skip for rag routes
                             if request.path.startswith('/api/rag'):
                                 skip_device_check = True
+
+                            # Skip for crawl routes
+                            if request.path.startswith('/api/v1/crawl'):
+                                skip_device_check = True
+
                             
                             # Skip for plan 4 (Chatbot plan)
                             if user.get("account_id"):

@@ -8,10 +8,13 @@ from src.utils.logger import Log
 from datetime import datetime
 import time
 
+from src.utils.auth_middleware import require_auth
+
 crawl_bp = Blueprint('crawl_bp', __name__)
 limiter = get_limiter()
 
 @crawl_bp.route('/api/v1/crawl', methods=['POST'])
+@require_auth
 @limiter.limit("100 per minute")
 def crawl_url_endpoint():
     """
