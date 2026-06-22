@@ -81,6 +81,12 @@ psutil  # Để chạy benchmark RAM/CPU
 pyzbar  # Đọc mã QR siêu tốc
 
 # ============================================================
-# Text-to-Speech & Voice Cloning (VieNeu-TTS)
-# ============================================================
 vieneu
+
+# ============================================================
+# URL Content Import API
+# ============================================================
+trafilatura
+beautifulsoup4
+playwright
+
