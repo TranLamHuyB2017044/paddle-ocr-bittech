@@ -1,4 +1,5 @@
 import os
+import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
@@ -60,56 +61,123 @@ class QdrantService:
             print(f"[Qdrant] Error ensuring collection: {e}")
             print(f"[Qdrant] ⚠️ Continuing with existing collection (if available)")
 
-    def get_product_by_id(self, product_id):
+    def generate_qdrant_id(self, product_id, farm_id=None):
         """
-        Get a product by its ID from Qdrant.
+        Generates a valid Qdrant point ID (either 64-bit int or UUID string)
+        deterministically from product_id and farm_id.
+        """
+        key = f"{product_id}::{farm_id}" if farm_id else str(product_id)
+        
+        # 1. Try to convert to unsigned 64-bit integer
+        try:
+            val = int(key)
+            if 0 <= val < 2**63 - 1:
+                return val
+        except ValueError:
+            pass
+            
+        # 2. Try to parse as valid UUID
+        try:
+            return str(uuid.UUID(key))
+        except ValueError:
+            pass
+            
+        # 3. Generate deterministic UUID based on key
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, key))
+
+    def get_product_by_id(self, product_id, farm_id=None):
+        """
+        Get a product by its ID and optional farm ID from Qdrant.
         """
         if not self.client:
             return None
         try:
+            qdrant_id = self.generate_qdrant_id(product_id, farm_id)
             result = self.client.retrieve(
                 collection_name=self.collection_name,
-                ids=[int(product_id)],
+                ids=[qdrant_id],
                 with_payload=True,
                 with_vectors=True  # useful if we want to average vectors later
             )
             return result[0] if result else None
         except Exception as e:
-            print(f"[Qdrant] Error getting product {product_id}: {e}")
+            print(f"[Qdrant] Error getting product {product_id} (farm: {farm_id}): {e}")
             return None
 
-    def upsert_product(self, product_id, vector, payload):
+    def upsert_product(self, product_id, vector, payload, farm_id=None):
         """
         Upsert a product embedding to Qdrant with full payload.
         """
         if not self.client:
             return None
             
-        return self.client.upsert(
-            collection_name=self.collection_name,
-            points=[
-                PointStruct(
-                    id=int(product_id),
-                    vector=vector,
-                    payload=payload
-                )
-            ]
-        )
+        try:
+            qdrant_id = self.generate_qdrant_id(product_id, farm_id)
+            return self.client.upsert(
+                collection_name=self.collection_name,
+                points=[
+                    PointStruct(
+                        id=qdrant_id,
+                        vector=vector,
+                        payload=payload
+                    )
+                ]
+            )
+        except Exception as e:
+            print(f"[Qdrant] Error upserting product {product_id} (farm: {farm_id}): {e}")
+            return None
 
-    def search_similar(self, vector, limit=1):
+    def delete_product(self, product_id, farm_id):
+        """
+        Delete a product by its ID and farm ID from Qdrant.
+        """
+        if not self.client:
+            return False
+        try:
+            qdrant_id = self.generate_qdrant_id(product_id, farm_id)
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=models.PointIdsList(
+                    points=[qdrant_id]
+                )
+            )
+            print(f"[Qdrant] Deleted product {product_id} (farm: {farm_id}) successfully")
+            return True
+        except Exception as e:
+            print(f"[Qdrant] Error deleting product {product_id} (farm: {farm_id}): {e}")
+            return False
+
+    def search_similar(self, vector, farm_id=None, limit=1):
         """
         Search for similar products.
         """
         if not self.client:
             return []
             
-        response = self.client.query_points(
-            collection_name=self.collection_name,
-            query=vector,
-            limit=limit,
-            with_payload=True
-        )
-        return response.points
+        try:
+            query_filter = None
+            if farm_id is not None:
+                # We filter by matching farm_id payload field
+                query_filter = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="farm_id",
+                            match=models.MatchValue(value=farm_id)
+                        )
+                    ]
+                )
+                
+            response = self.client.query_points(
+                collection_name=self.collection_name,
+                query=vector,
+                query_filter=query_filter,
+                limit=limit,
+                with_payload=True
+            )
+            return response.points
+        except Exception as e:
+            print(f"[Qdrant] Error searching similar: {e}")
+            return []
 
 # Singleton instance
 product_qdrant_service = QdrantService()

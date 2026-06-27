@@ -16,7 +16,7 @@ from src.utils.auth_middleware import require_auth
 product_bp = Blueprint("product_bp", __name__)
 
 # Helper function to upload image to FILES_API
-def upload_to_files_api(img, filename: str = "product.jpg"):
+def upload_to_files_api(img, filename: str = "product.jpg", farm_id = None):
     try:
         # Save PIL Image to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
@@ -24,19 +24,22 @@ def upload_to_files_api(img, filename: str = "product.jpg"):
             temp_file_path = temp_file.name
         
         try:
-            Log.info(f"[Product Recognition] Đang tải file lên FILES_API: {filename}")
+            Log.info(f"[Product Recognition] Đang tải file lên FILES_API: {filename} (farm: {farm_id})")
             upload_url = f"{FILES_API_URL}{FILES_API_UPLOAD_ENDPOINT}"
             
             with open(temp_file_path, 'rb') as f:
                 files = {
                     'files': (os.path.basename(temp_file_path), f, 'image/jpeg')
                 }
+                alias = f"{FILES_API_ALIAS}/{farm_id}" if farm_id else FILES_API_ALIAS
                 data = {
                     'system_id': FILES_API_SYSTEM_ID,
                     'user_id': FILES_API_USER_ID,
-                    'alias': FILES_API_ALIAS,
+                    'alias': alias,
                     "file_system": False
                 }
+                if farm_id:
+                    data['folder'] = str(farm_id)
                 headers = {
                     'x-api-key': FILES_API_KEY
                 }
@@ -77,19 +80,30 @@ def upload_to_files_api(img, filename: str = "product.jpg"):
 @require_auth
 def train_product():
     try:
-        # 1. Lấy data từ JSON hoặc Form (cho id, name, price)
+        # 1. Lấy data từ JSON hoặc Form (cho id, name, price, farm_id, overwrite)
         data = request.get_json(silent=True) or request.form.to_dict()
         
         product_id = data.get("id")
         name = data.get("name")
         price = data.get("price")
+        farm_id = data.get("farm_id") or data.get("farmId")
+        overwrite = data.get("overwrite")
         
+        # Normalize and validate farm_id
+        if farm_id is not None:
+            farm_id = str(farm_id).strip()
+        if not farm_id:
+            return jsonify({"error": "Missing farm_id"}), 400
+            
+        if isinstance(overwrite, str):
+            overwrite = overwrite.lower() in ("true", "1", "yes")
+        else:
+            overwrite = bool(overwrite)
+            
         # 2. Lấy danh sách ảnh (có thể là FILE upload hoặc URL list)
-        # Ưu tiên lấy file upload từ request.files
         uploaded_files = request.files.getlist("images")
         image_urls = data.get("images")
         
-        # Chuyển image_urls thành list nếu nó là string (trường hợp gửi qua form-data)
         if isinstance(image_urls, str):
             try:
                 image_urls = json.loads(image_urls)
@@ -98,36 +112,43 @@ def train_product():
         elif not image_urls:
             image_urls = []
 
-        if not all([product_id, name, price]) or (not uploaded_files and not image_urls):
-            return jsonify({"error": "Missing product id, name, price OR images (files/urls)"}), 400
+        if not product_id or not name or (not uploaded_files and not image_urls):
+            return jsonify({"error": "Missing product id, name OR images (files/urls)"}), 400
 
-        try:
-            product_id_int = int(product_id)
-        except:
-            return jsonify({"error": "product id must be an integer"}), 400
+        product_id = str(product_id)
 
-        # Kiểm tra xem sản phẩm đã có bao nhiêu ảnh trong Qdrant
-        existing_point = product_qdrant_service.get_product_by_id(product_id_int)
-        existing_num = 0
-        existing_vector = None
-        if existing_point:
-            existing_num = existing_point.payload.get("num_images", 0)
-            existing_vector = np.array(existing_point.vector) if existing_point.vector else None
-            
-            # Nếu đã đủ 5 ảnh thì không cần train thêm (hoặc trả về is_embedded=True)
-            if existing_num >= 5:
-                return jsonify({
-                    "id": product_id_int,
-                    "name": name,
-                    "price": price,
-                    "num_images": existing_num,
-                    "is_embedded": True,
-                    "message": "Product already has 5 images (max limit)"
-                })
+        # Nếu truyền overwrite=True, tiến hành xóa sản phẩm cũ trước khi train mới
+        if overwrite:
+            Log.info(f"[TRAIN] Overwrite requested. Deleting existing point for product {product_id} (farm: {farm_id})")
+            product_qdrant_service.delete_product(product_id, farm_id)
+            existing_point = None
+            existing_num = 0
+            existing_vector = None
+        else:
+            # Kiểm tra xem sản phẩm đã có bao nhiêu ảnh trong Qdrant
+            existing_point = product_qdrant_service.get_product_by_id(product_id, farm_id)
+            existing_num = 0
+            existing_vector = None
+            if existing_point:
+                existing_num = existing_point.payload.get("num_images", 0)
+                existing_vector = np.array(existing_point.vector) if existing_point.vector else None
+                
+                # Nếu đã đủ 5 ảnh thì không cần train thêm (hoặc trả về is_embedded=True)
+                if existing_num >= 5:
+                    return jsonify({
+                        "id": product_id,
+                        "name": name,
+                        "price": price,
+                        "farm_id": farm_id,
+                        "num_images": existing_num,
+                        "is_embedded": True,
+                        "message": "Product already has 5 images (max limit)"
+                    })
 
         from PIL import Image
         product_embeddings = []
         final_url = None
+        upload_errors = []
         
         # Số lượng ảnh tối đa cần bù đắp
         allowed_to_add = 5 - existing_num
@@ -139,9 +160,12 @@ def train_product():
                 img = Image.open(file).convert('RGB')
                 
                 # Upload to FILES_API
-                remote_url = upload_to_files_api(img, filename=f"product_{product_id_int}_{idx+1}.jpg")
-                if remote_url and not final_url:
-                    final_url = remote_url
+                remote_url = upload_to_files_api(img, filename=f"product_{product_id}_{idx+1}.jpg", farm_id=farm_id)
+                if remote_url:
+                    if not final_url:
+                        final_url = remote_url
+                else:
+                    upload_errors.append(f"Upload failed for file {idx+1}")
 
                 # Embed
                 emb = get_embedding_from_image(img)
@@ -149,30 +173,38 @@ def train_product():
                 Log.info(f"[TRAIN] Processed uploaded file {idx+1}")
             except Exception as e:
                 Log.error(f"[TRAIN] Error processing uploaded file: {e}")
+                upload_errors.append(f"Processing failed for file {idx+1}: {str(e)}")
 
         # --- PHẦN 2: Xử lý URL (nếu có) ---
         if len(product_embeddings) < allowed_to_add:
             for idx, img_url in enumerate(image_urls):
                 if len(product_embeddings) >= allowed_to_add: break
-                
-                img = download_image(img_url)
-                if not img: continue
+                try:
+                    img = download_image(img_url)
+                    if not img:
+                        upload_errors.append(f"Download failed for URL {idx+1}: {img_url}")
+                        continue
 
-                # Upload to FILES_API (nếu chưa có final_url)
-                remote_url = upload_to_files_api(img, filename=f"product_{product_id_int}_url_{idx+1}.jpg")
-                if remote_url and not final_url:
-                    final_url = remote_url
+                    # Upload to FILES_API (nếu chưa có final_url)
+                    remote_url = upload_to_files_api(img, filename=f"product_{product_id}_url_{idx+1}.jpg", farm_id=farm_id)
+                    if remote_url:
+                        if not final_url:
+                            final_url = remote_url
+                    else:
+                        upload_errors.append(f"Upload failed for image URL {idx+1}")
 
-                # Embed
-                emb = get_embedding_from_image(img)
-                product_embeddings.append(emb)
-                Log.info(f"[TRAIN] Processed image URL {idx+1}")
+                    # Embed
+                    emb = get_embedding_from_image(img)
+                    product_embeddings.append(emb)
+                    Log.info(f"[TRAIN] Processed image URL {idx+1}")
+                except Exception as e:
+                    Log.error(f"[TRAIN] Error processing image URL: {e}")
+                    upload_errors.append(f"Processing failed for URL {idx+1}: {str(e)}")
 
         if not product_embeddings and existing_num == 0:
-            return jsonify({"error": "Failed to process any images"}), 400
+            return jsonify({"error": "Failed to process any images", "upload_errors": upload_errors}), 400
 
         # Tính vector trung bình mới
-        # Nếu có vector cũ, ta tính trung bình trọng số: (V_cu * N_cu + V_moi_sum) / (N_cu + N_moi)
         new_num = existing_num + len(product_embeddings)
         
         if len(product_embeddings) > 0:
@@ -189,27 +221,32 @@ def train_product():
             # Đẩy lên Qdrant Cloud
             is_embedded = (new_num >= 5)
             product_qdrant_service.upsert_product(
-                product_id=product_id_int,
+                product_id=product_id,
                 vector=final_vec,
                 payload={
+                    "id": product_id,
                     "name": name,
                     "price": price,
+                    "farm_id": farm_id,
                     "url": final_url if final_url else (existing_point.payload.get("url") if existing_point else ""),
                     "num_images": new_num,
                     "is_embedded": is_embedded
-                }
+                },
+                farm_id=farm_id
             )
 
             return jsonify({
-                "id": product_id_int,
+                "id": product_id,
                 "name": name,
                 "price": price,
+                "farm_id": farm_id,
                 "num_images": new_num,
                 "is_embedded": is_embedded,
-                "url": final_url if final_url else (existing_point.payload.get("url") if existing_point else "")
+                "url": final_url if final_url else (existing_point.payload.get("url") if existing_point else ""),
+                "upload_errors": upload_errors if upload_errors else None
             })
         else:
-            return jsonify({"error": "Failed to generate embedding"}), 500
+            return jsonify({"error": "Failed to generate embedding", "upload_errors": upload_errors}), 500
 
     except Exception as e:
         Log.error(f"[TRAIN] Internal server error: {str(e)}")
@@ -217,9 +254,6 @@ def train_product():
 
 
 
-# ==========================
-# API Detect Product
-# ==========================
 @product_bp.route('/product/detect', methods=['POST'])
 @require_auth
 def detect_product():
@@ -231,11 +265,20 @@ def detect_product():
         return jsonify({"error": "No image file provided"}), 400
 
     img_file = request.files['image']
+    farm_id = request.form.get("farm_id") or request.form.get("farmId") or request.args.get("farm_id") or request.args.get("farmId")
+    
+    if farm_id is not None:
+        farm_id = str(farm_id).strip()
+        
+    if not farm_id:
+        Log.info("[DETECT] Missing farm_id in request")
+        return jsonify({"error": "Missing farm_id"}), 400
+        
     from PIL import Image
     
     try:
         img = Image.open(img_file).convert('RGB')
-        Log.info(f"[DETECT] Image loaded: {img.size} {img.mode}")
+        Log.info(f"[DETECT] Image loaded: {img.size} {img.mode} (farm: {farm_id})")
     except Exception as e:
         Log.error(f"[DETECT] Error opening image: {e}")
         return jsonify({"error": f"Invalid image: {e}"}), 400
@@ -249,7 +292,7 @@ def detect_product():
     # Tìm kiếm trên Qdrant Cloud
     start_search = time.time()
     # Tăng limit lên một chút để log được nhiều kết quả hơn khi debug
-    search_results = product_qdrant_service.search_similar(input_emb, limit=3)
+    search_results = product_qdrant_service.search_similar(input_emb, farm_id=farm_id, limit=3)
     search_time = time.time() - start_search
     Log.info(f"[DETECT] Qdrant search completed in {search_time:.3f}s")
 
@@ -259,7 +302,7 @@ def detect_product():
         Log.info(f"[DETECT] Found {len(search_results)} candidates:")
         for i, res in enumerate(search_results):
             p = res.payload
-            Log.info(f"  {i+1}. ID: {res.id}, Score: {res.score:.4f}, Name: {p.get('name')}")
+            Log.info(f"  {i+1}. ID: {res.id}, Score: {res.score:.4f}, Name: {p.get('name')}, Farm ID: {p.get('farm_id')}")
 
     if search_results:
         best_point = search_results[0]
@@ -271,10 +314,12 @@ def detect_product():
             Log.info(f"[DETECT] Total detect time: {total_time:.3f}s")
             
             p = best_point.payload
+            original_product_id = p.get("id", best_point.id)
             return jsonify({
-                "id": best_point.id,
+                "id": original_product_id,
                 "name": p.get("name"),
                 "price": p.get("price"),
+                "farm_id": p.get("farm_id"),
                 "url": p.get("url"),
                 "similarity": best_point.score,
                 "num_images": p.get("num_images",0),
@@ -306,17 +351,21 @@ def update_embedding():
     # Cho phép nhận cả tham số text nếu cần
     name = request.form.get("name")
     price = request.form.get("price")
+    farm_id = request.form.get("farm_id") or request.form.get("farmId") or request.args.get("farm_id") or request.args.get("farmId")
+
+    if farm_id is not None:
+        farm_id = str(farm_id).strip()
+        
+    if not farm_id:
+        return jsonify({"error": "Missing farm_id"}), 400
 
     if not product_id or not files:
         return jsonify({"error": "Missing product_id or image_files"}), 400
 
-    try:
-        product_id_int = int(product_id)
-    except:
-        return jsonify({"error": "product_id must be an integer"}), 400
+    product_id = str(product_id)
 
     # Lấy thông tin hiện tại từ Qdrant
-    existing_point = product_qdrant_service.get_product_by_id(product_id_int)
+    existing_point = product_qdrant_service.get_product_by_id(product_id, farm_id)
     existing_num = 0
     existing_vector = None
     existing_payload = {}
@@ -328,7 +377,7 @@ def update_embedding():
         
         if existing_num >= 5:
             return jsonify({
-                "message": f"Product {product_id_int} already has {existing_num} images (max limit)",
+                "message": f"Product {product_id} already has {existing_num} images (max limit)",
                 "is_embedded": True,
                 "num_images": existing_num
             })
@@ -336,6 +385,7 @@ def update_embedding():
     new_embeddings = []
     final_url = existing_payload.get("url")
     allowed_to_add = 5 - existing_num
+    upload_errors = []
 
     for idx, file in enumerate(files):
         if len(new_embeddings) >= allowed_to_add: break
@@ -344,19 +394,23 @@ def update_embedding():
             img = Image.open(file).convert("RGB")
             
             # Upload to FILES_API
-            remote_url = upload_to_files_api(img, filename=f"product_{product_id_int}_update_{idx+1}.jpg")
-            if remote_url and not final_url:
-                final_url = remote_url
+            remote_url = upload_to_files_api(img, filename=f"product_{product_id}_update_{idx+1}.jpg", farm_id=farm_id)
+            if remote_url:
+                if not final_url:
+                    final_url = remote_url
+            else:
+                upload_errors.append(f"Upload failed for file {idx+1}")
             
             # Embed
             new_emb = get_embedding_from_image(img)
             new_embeddings.append(new_emb)
         except Exception as e:
             Log.error(f"[UPDATE] Error processing image {idx+1}: {e}")
+            upload_errors.append(f"Processing failed for file {idx+1}: {str(e)}")
             continue
 
     if not new_embeddings:
-        return jsonify({"error": "Failed to process images or limit exceeded"}), 400
+        return jsonify({"error": "Failed to process images or limit exceeded", "upload_errors": upload_errors}), 400
 
     # Tính lại vector trung bình
     total_num = existing_num + len(new_embeddings)
@@ -371,19 +425,58 @@ def update_embedding():
 
     # Cập nhật Qdrant
     product_qdrant_service.upsert_product(
-        product_id=product_id_int,
+        product_id=product_id,
         vector=combined_vec.tolist(),
         payload={
+            "id": product_id,
             "name": name if name else existing_payload.get("name", "Unknown"),
-            "price": price if price else existing_payload.get("price", 0),
+            "price": price if price is not None else existing_payload.get("price"),
+            "farm_id": farm_id,
             "url": final_url,
             "num_images": total_num,
             "is_embedded": is_embedded
-        }
+        },
+        farm_id=farm_id
     )
 
     return jsonify({
-        "message": f"Updated Qdrant for product {product_id_int}",
+        "message": f"Updated Qdrant for product {product_id}",
         "num_images": total_num,
-        "is_embedded": is_embedded
+        "is_embedded": is_embedded,
+        "upload_errors": upload_errors if upload_errors else None
     })
+
+
+# ==========================
+# API Delete Product
+# ==========================
+@product_bp.route("/product/delete", methods=["POST", "DELETE"])
+@require_auth
+def delete_product():
+    try:
+        data = request.get_json(silent=True) or request.form.to_dict() or request.args.to_dict()
+        product_id = data.get("product_id") or data.get("id")
+        farm_id = data.get("farm_id") or data.get("farmId")
+        
+        if farm_id is not None:
+            farm_id = str(farm_id).strip()
+            
+        if not product_id or not farm_id:
+            return jsonify({"error": "Missing product_id or farm_id"}), 400
+            
+        product_id = str(product_id)
+        
+        success = product_qdrant_service.delete_product(product_id, farm_id)
+        if success:
+            return jsonify({
+                "message": f"Deleted product {product_id} from farm {farm_id} in Qdrant successfully",
+                "status": "success"
+            })
+        else:
+            return jsonify({
+                "error": f"Failed to delete product {product_id} from Qdrant",
+                "status": "error"
+            }), 500
+    except Exception as e:
+        Log.error(f"[DELETE] Internal server error: {str(e)}")
+        return jsonify({"error": "Internal server error", "detail": str(e)}), 500
