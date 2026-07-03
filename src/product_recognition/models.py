@@ -42,6 +42,6 @@ def get_embedding_from_image(image_input: Union[bytes, Image.Image]) -> List[flo
 
 def warmup_model():
     load_model()
-    dummy_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
-    get_embedding_from_image(dummy_image.tobytes())
+    dummy_image = Image.fromarray(np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8))
+    get_embedding_from_image(dummy_image)
 
