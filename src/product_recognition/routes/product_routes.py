@@ -372,7 +372,7 @@ def detect_product():
 
     if search_results:
         best_point = search_results[0]
-        threshold = 0.5
+        threshold = 0.8
         
         if best_point.score > threshold:
             Log.info(f"[DETECT] MATCH FOUND: '{best_point.payload.get('name')}' (Score={best_point.score:.4f} > Threshold={threshold})")
