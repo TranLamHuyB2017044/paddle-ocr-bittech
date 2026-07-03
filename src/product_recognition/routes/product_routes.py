@@ -31,15 +31,12 @@ def upload_to_files_api(img, filename: str = "product.jpg", farm_id = None):
                 files = {
                     'files': (os.path.basename(temp_file_path), f, 'image/jpeg')
                 }
-                alias = f"{FILES_API_ALIAS}/{farm_id}" if farm_id else FILES_API_ALIAS
                 data = {
                     'system_id': FILES_API_SYSTEM_ID,
                     'user_id': FILES_API_USER_ID,
-                    'alias': alias,
+                    'alias': FILES_API_ALIAS,
                     "file_system": False
                 }
-                if farm_id:
-                    data['folder'] = str(farm_id)
                 headers = {
                     'x-api-key': FILES_API_KEY
                 }
@@ -157,7 +154,7 @@ def train_product():
         for idx, file in enumerate(uploaded_files):
             if len(product_embeddings) >= allowed_to_add: break
             try:
-                img = Image.open(file).convert('RGB')
+                img = Image.open(file.stream).convert('RGB')
                 
                 # Upload to FILES_API
                 remote_url = upload_to_files_api(img, filename=f"product_{product_id}_{idx+1}.jpg", farm_id=farm_id)
@@ -268,7 +265,7 @@ def detect_product():
     farm_id = request.form.get("farm_id") or request.form.get("farmId") or request.args.get("farm_id") or request.args.get("farmId")
     
     if farm_id is not None:
-        farm_id = str(farm_id).strip()
+        farm_id = farm_id.strip()
         
     if not farm_id:
         Log.info("[DETECT] Missing farm_id in request")
@@ -277,7 +274,7 @@ def detect_product():
     from PIL import Image
     
     try:
-        img = Image.open(img_file).convert('RGB')
+        img = Image.open(img_file.stream).convert('RGB')
         Log.info(f"[DETECT] Image loaded: {img.size} {img.mode} (farm: {farm_id})")
     except Exception as e:
         Log.error(f"[DETECT] Error opening image: {e}")
@@ -354,15 +351,13 @@ def update_embedding():
     farm_id = request.form.get("farm_id") or request.form.get("farmId") or request.args.get("farm_id") or request.args.get("farmId")
 
     if farm_id is not None:
-        farm_id = str(farm_id).strip()
+        farm_id = farm_id.strip()
         
     if not farm_id:
         return jsonify({"error": "Missing farm_id"}), 400
 
     if not product_id or not files:
         return jsonify({"error": "Missing product_id or image_files"}), 400
-
-    product_id = str(product_id)
 
     # Lấy thông tin hiện tại từ Qdrant
     existing_point = product_qdrant_service.get_product_by_id(product_id, farm_id)
@@ -391,7 +386,7 @@ def update_embedding():
         if len(new_embeddings) >= allowed_to_add: break
         try:
             from PIL import Image
-            img = Image.open(file).convert("RGB")
+            img = Image.open(file.stream).convert("RGB")
             
             # Upload to FILES_API
             remote_url = upload_to_files_api(img, filename=f"product_{product_id}_update_{idx+1}.jpg", farm_id=farm_id)
