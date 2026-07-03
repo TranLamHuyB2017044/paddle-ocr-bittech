@@ -37,6 +37,16 @@ app.config['JSON_SORT_KEYS'] = False
 from src.utils.logger import Log
 # Models will be loaded on-demand by the worker, not the API server
 Log.info(f"📁 Upload folder: {config.UPLOAD_FOLDER}")
+
+# Preload ResNet18 model for Product Recognition
+try:
+    from src.product_recognition.models import warmup_model
+    Log.info("📖 Preloading ResNet18 model for Product Recognition...")
+    warmup_model()
+    Log.info("✅ ResNet18 model preloaded successfully!")
+except Exception as e:
+    Log.error(f"❌ Failed to preload ResNet18 model: {e}")
+
 Log.info("="*70)
 
 

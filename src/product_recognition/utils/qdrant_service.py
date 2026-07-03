@@ -44,12 +44,15 @@ class QdrantService:
             # ResNet18 output is 512 dimensions
             vector_size = 512
             
-            # First check if collection exists (lighter than get_collections)
+            # Check if collection exists
+            exists = True
             try:
                 self.client.get_collection(collection_name=self.collection_name)
                 print(f"[Qdrant] ✅ Collection '{self.collection_name}' already exists")
-                return
             except Exception:
+                exists = False
+                
+            if not exists:
                 # Collection doesn't exist, try to create it
                 print(f"[Qdrant] Creating collection: {self.collection_name} with size {vector_size}")
                 self.client.create_collection(
@@ -57,6 +60,18 @@ class QdrantService:
                     vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
                 )
                 print(f"[Qdrant] ✅ Collection '{self.collection_name}' created successfully")
+                
+            # Create payload index for farm_id
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name="farm_id",
+                    field_schema=models.PayloadSchemaType.KEYWORD
+                )
+                print(f"[Qdrant] ✅ Payload index for 'farm_id' created successfully")
+            except Exception as ie:
+                print(f"[Qdrant] Info: Payload index for 'farm_id' creation skipped/already exists: {ie}")
+                
         except Exception as e:
             print(f"[Qdrant] Error ensuring collection: {e}")
             print(f"[Qdrant] ⚠️ Continuing with existing collection (if available)")

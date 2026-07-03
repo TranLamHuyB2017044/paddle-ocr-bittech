@@ -67,6 +67,9 @@ RUN mkdir -p uploads logs storage && \
 
 USER appuser
 
+# Pre-download ResNet18 weights to appuser's torch cache directory
+RUN python -c "import torchvision.models as m; m.resnet18(weights=m.ResNet18_Weights.DEFAULT)"
+
 EXPOSE ${PORT}
 
 # Healthcheck giúp quản lý container trên VPS ổn định
