@@ -48,16 +48,38 @@ def upload_to_files_api(img, filename: str = "product.jpg", farm_id = None):
                 # Extract URL from response
                 final_url = None
                 if upload_result and isinstance(upload_result, dict):
-                    if 'file_url' in upload_result:
-                        final_url = upload_result['file_url']
-                    elif 'url' in upload_result:
-                        final_url = upload_result['url']
-                    elif 'files' in upload_result and len(upload_result['files']) > 0:
-                        file_info = upload_result['files'][0]
-                        if 'file_url' in file_info:
-                            final_url = file_info['file_url']
-                        elif 'url' in file_info:
-                            final_url = file_info['url']
+                    data_obj = upload_result.get('data') if isinstance(upload_result.get('data'), dict) else upload_result
+                    
+                    # 1. New response structure: data.results[0].file.publicPath
+                    results = data_obj.get('results', [])
+                    if isinstance(results, list) and len(results) > 0:
+                        first_result = results[0]
+                        if isinstance(first_result, dict) and first_result.get('success'):
+                            file_info = first_result.get('file', {})
+                            if isinstance(file_info, dict):
+                                public_path = file_info.get('publicPath') or file_info.get('path')
+                                if public_path:
+                                    if public_path.startswith('/'):
+                                        final_url = f"{FILES_API_URL}{public_path}"
+                                    else:
+                                        final_url = f"{FILES_API_URL}/{public_path}"
+                    
+                    # 2. Fallbacks
+                    if not final_url:
+                        if 'file_url' in data_obj:
+                            final_url = data_obj['file_url']
+                        elif 'url' in data_obj:
+                            final_url = data_obj['url']
+                        elif 'files' in data_obj and len(data_obj['files']) > 0:
+                            file_info = data_obj['files'][0]
+                            if isinstance(file_info, dict):
+                                if 'file_url' in file_info:
+                                    final_url = file_info['file_url']
+                                elif 'url' in file_info:
+                                    final_url = file_info['url']
+                                elif 'publicPath' in file_info:
+                                    pp = file_info['publicPath']
+                                    final_url = f"{FILES_API_URL}{pp}" if pp.startswith('/') else f"{FILES_API_URL}/{pp}"
                 
                 Log.info(f"[Product Recognition] Tải file thành công: {filename}")
                 return final_url
