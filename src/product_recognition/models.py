@@ -7,6 +7,12 @@ import numpy as np
 import io
 from typing import List, Union
 
+# Thiết đặt giới hạn luồng của PyTorch
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
+import gc
+
 # Load ResNet18 model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = None
@@ -38,7 +44,16 @@ def get_embedding_from_image(image_input: Union[bytes, Image.Image]) -> List[flo
     with torch.no_grad():
         embedding = model(image_tensor)
     
-    return embedding.squeeze().cpu().numpy().tolist()
+    result = embedding.squeeze().cpu().numpy().tolist()
+    
+    # Giải phóng bộ nhớ của các tensors và ép GC chạy ngay lập tức
+    del image_tensor
+    del embedding
+    if isinstance(image_input, bytes):
+        del image
+    gc.collect()
+    
+    return result
 
 def warmup_model():
     load_model()
