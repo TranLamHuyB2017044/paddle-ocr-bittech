@@ -338,6 +338,9 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
             def check_is_word(path_file):
                 return path_file.lower().endswith(('.docx', '.doc'))
 
+            def check_is_excel(path_file):
+                return path_file.lower().endswith('.xlsx')
+
             native_doc_text = []
 
             for p in input_paths:
@@ -365,12 +368,31 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                             native_doc_text.append(w_text)
                     except Exception as w_err:
                         Log.error(f"[Worker-Detect] ❌ Failed to extract text from Word document {p}: {w_err}")
+                elif check_is_excel(p):
+                    Log.info(f"[Worker-Detect] 📄 Excel document '{p}' detected, extracting text directly...")
+                    try:
+                        import openpyxl
+                        wb = openpyxl.load_workbook(p, data_only=True)
+                        excel_text_lines = []
+                        for sheet_name in wb.sheetnames:
+                            ws = wb[sheet_name]
+                            excel_text_lines.append(f"--- Sheet: {sheet_name} ---")
+                            for row in ws.iter_rows(values_only=True):
+                                row_text = "  |  ".join([str(val).strip() for val in row if val is not None])
+                                if row_text.strip():
+                                    excel_text_lines.append(row_text)
+                        
+                        e_text = "\n".join(excel_text_lines)
+                        if e_text.strip():
+                            native_doc_text.append(e_text)
+                    except Exception as e_err:
+                        Log.error(f"[Worker-Detect] ❌ Failed to extract text from Excel document {p}: {e_err}")
                 else:
                     all_images.append(p)
 
-            # If we successfully extracted native PDF/Word text and there are no other pure images
+            # If we successfully extracted native PDF/Word/Excel text and there are no other pure images
             if native_doc_text and not all_images:
-                Log.info(f"[Worker-Detect] 📝 Using native PDF/Word text source (Skipping OCR)")
+                Log.info(f"[Worker-Detect] 📝 Using native PDF/Word/Excel text source (Skipping OCR)")
                 raw_text_combined = "\n".join(native_doc_text)
                 for line in raw_text_combined.split('\n'):
                     if line.strip(): 

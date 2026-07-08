@@ -24,7 +24,7 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://tlhuy02.app.n8n.cloud/we
 TTS_FILE_RETENTION_HOURS = int(os.getenv("TTS_FILE_RETENTION_HOURS", "24"))
 
 # Định dạng file tài liệu cho OCR / RAG
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc', 'xlsx'}
 
 # Định dạng ảnh dùng cho avatar / ảnh đại diện
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}

@@ -21,6 +21,7 @@ _MAGIC_SIGNATURES: dict[str, list[bytes]] = {
     "pdf":  [b"%PDF-"],
     # DOCX / XLSX / PPTX đều là ZIP: PK\x03\x04
     "docx": [b"PK\x03\x04"],
+    "xlsx": [b"PK\x03\x04"],
     # DOC (OLE Compound): D0 CF 11 E0
     "doc":  [b"\xd0\xcf\x11\xe0"],
     # Markdown — plain text, không có magic bytes rõ ràng → bỏ qua magic check
