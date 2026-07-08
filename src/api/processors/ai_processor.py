@@ -121,7 +121,10 @@ def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None,
                 "provider": "openai",
                 "doc_type": doc_type,
                 "openai_metadata": metadata,
-                "ocr_raw": {"front": raw_front, "back": raw_back}
+                "ocr_raw": {
+                    "front": [{"text": x.get("text", "")} if isinstance(x, dict) else {"text": str(x)} for x in raw_front],
+                    "back": [{"text": x.get("text", "")} if isinstance(x, dict) else {"text": str(x)} for x in raw_back]
+                }
             }
         }
     except Exception as e:

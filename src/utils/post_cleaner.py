@@ -405,12 +405,19 @@ class PostCleaner:
     @staticmethod
     def _format_date(date_str):
         """
-        Input: 01012000, 01-01-2000, 01/01/2000, 01.01.2000
+        Input: 01012000, 01-01-2000, 01/01/2000, 01.01.2000, 2026-06-08
         Output: 01/01/2000
         """
         # Nếu là chuỗi số thuần túy 8 ký tự
         s = re.sub(r"[^0-9]", "", date_str)
         if len(s) == 8:
+            try:
+                # Kiểm tra xem có bắt đầu bằng năm không (YYYYMMDD)
+                year_start = int(s[:4])
+                if 1900 <= year_start <= 2100:
+                    return f"{s[6:]}/{s[4:6]}/{s[:4]}"
+            except ValueError:
+                pass
             return f"{s[:2]}/{s[2:4]}/{s[4:]}"
             
         # Xóa ký tự lạ (chỉ giữ số và separator)

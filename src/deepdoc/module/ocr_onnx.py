@@ -1,18 +1,3 @@
-#
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-#
 
 import logging
 import copy
@@ -51,6 +36,24 @@ model, vocab = build_model(config)
 # load weight
 # model.load_state_dict(torch.load(weight_path, map_location=torch.device(config['device'])))
 # model = model.eval()
+
+def is_valid_crop(img_crop, min_w=6, min_h=6, min_blur_var=10.0):
+    """
+    Checks if a cropped text image is valid (not too small, not too blurry).
+    """
+    if img_crop is None or img_crop.size == 0:
+        return False
+    h, w = img_crop.shape[:2]
+    if w < min_w or h < min_h:
+        return False
+    # Check blurriness for crops that are large enough (to avoid false positives on small but sharp dots)
+    if w > 15 and h > 15:
+        gray = cv2.cvtColor(img_crop, cv2.COLOR_BGR2GRAY) if img_crop.ndim == 3 else img_crop
+        var = cv2.Laplacian(gray, cv2.CV_64F).var()
+        if var < min_blur_var:
+            return False
+    return True
+
 
 def transform(data, ops=None):
     """ transform """
@@ -143,7 +146,7 @@ def load_model(model_dir, nm, device_id: int | None = None):
     return loaded_model
 
 #Add ONNX vietocr
-def translate_onnx(img, session, max_seq_length=128, sos_token=1, eos_token=2):
+def translate_onnx(img, session, max_seq_length=64, sos_token=1, eos_token=2):
     """data: BxCxHxW"""
     cnn_session, encoder_session, decoder_session = session
 
@@ -168,17 +171,12 @@ def translate_onnx(img, session, max_seq_length=128, sos_token=1, eos_token=2):
         }
 
         output, hidden, _ = decoder_session.run(None, decoder_input)
-        output = np.expand_dims(output, axis=1)
-        output = torch.Tensor(output)
-
-        values, indices = torch.topk(output, 1)
-        indices = indices[:, -1, 0]
-        indices = indices.tolist()
+        
+        # Pure NumPy argmax to avoid PyTorch overhead on CPU
+        indices = np.argmax(output, axis=-1).tolist()
 
         translated_sentence.append(indices)
         max_length += 1
-
-        del output
 
     translated_sentence = np.asarray(translated_sentence).T
 
@@ -200,8 +198,19 @@ class TextRecognizer:
         # You may need to load vocab here, e.g., self.vocab = ... 
 
     def __call__(self, img_list):
-        results = []
-        for img in img_list:
+        if not img_list:
+            return [], 0.0
+
+        st = time.time()
+        
+        # Parallel execution using ThreadPoolExecutor
+        # (ONNX Runtime releases the GIL during inference, allowing true CPU concurrency)
+        from concurrent.futures import ThreadPoolExecutor
+        
+        # Default to 4 threads; can be adjusted via OCR_THREADS env variable
+        num_threads = int(os.getenv("OCR_THREADS", "4"))
+        
+        def recognize_single(img):
             # Ensure image is RGB
             if img.ndim == 2:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
@@ -215,20 +224,24 @@ class TextRecognizer:
             # Resize to height 32, keep aspect ratio
             h, w, c = img.shape
             new_h = 32
-            new_w = int(w * (new_h / h))
+            new_w = max(8, int(w * (new_h / h)))
             img_resized = cv2.resize(img, (new_w, new_h))
 
             # Transpose to (C, H, W)
             img_resized = img_resized.transpose(2, 0, 1)
             # Normalize to float32 [0, 1]
             img_resized = img_resized.astype(np.float32) / 255.0
-            # Add batch dimension
+            # Add batch dimension (B=1, since models expect 4D input)
             img_resized = np.expand_dims(img_resized, 0)
 
             s = translate_onnx(img_resized, self.session)[0].tolist()
             text = vocab.decode(s)
-            results.append((text, 1.0))
-        return results, 0.0
+            return (text, 1.0)
+
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            results = list(executor.map(recognize_single, img_list))
+            
+        return results, time.time() - st
 
 
 class TextDetector:
@@ -512,13 +525,17 @@ class OCR:
             return None, None, time_dict
 
         img_crop_list = []
+        filtered_dt_boxes = []
 
         dt_boxes = self.sorted_boxes(dt_boxes)
 
         for bno in range(len(dt_boxes)):
             tmp_box = copy.deepcopy(dt_boxes[bno])
             img_crop = self.get_rotate_crop_image(ori_im, tmp_box)
-            img_crop_list.append(img_crop)
+            if is_valid_crop(img_crop):
+                img_crop_list.append(img_crop)
+                filtered_dt_boxes.append(tmp_box)
+        dt_boxes = filtered_dt_boxes
 
         rec_res, _elapse = self.text_recognizer[device_id](img_crop_list)
         time_dict['rec'] = _elapse
