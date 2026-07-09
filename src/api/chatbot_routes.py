@@ -154,10 +154,13 @@ def create_chatbot():
                     "message": "Document uploaded and enqueued"
                 })
                 
+                # Chỉ sử dụng vision_extract khi truyền cờ 'vision' bằng True (mặc định ưu tiên deepdoc và viet ocr)
+                vision_extract = request.args.get('vision', 'false').lower() == 'true' or request.form.get('vision', 'false').lower() == 'true'
+                
                 rag_queue.enqueue(
                     process_document_task,
                     args=(doc_id, workspace_id_str, file_path, original_filename, g.user_id),
-                    kwargs={"vision_extract": True},
+                    kwargs={"vision_extract": vision_extract},
                     job_timeout='10m'
                 )
                 

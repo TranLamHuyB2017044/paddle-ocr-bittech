@@ -249,8 +249,8 @@ def upload_to_workspace(workspace_id):
             
         # 2. Get files and flags
         files = request.files.getlist('files')
-        # Mặc định sử dụng vision_extract để tối ưu (ưu tiên Gemini API, tự động fallback sang OCR cơ bản khi quá giới hạn/lỗi)
-        vision_extract = True
+        # Chỉ sử dụng vision_extract khi truyền cờ 'vision' bằng True (mặc định ưu tiên deepdoc và viet ocr)
+        vision_extract = request.args.get('vision', 'false').lower() == 'true' or request.form.get('vision', 'false').lower() == 'true'
         if not files:
             return jsonify({"statusCode": 400, "message": "No files uploaded"}), 400
             
@@ -886,7 +886,8 @@ def replace_document_file(workspace_id, document_id):
         )
 
         # 7. Enqueue process_document_task
-        vision_extract = True
+        # Chỉ sử dụng vision_extract khi truyền cờ 'vision' bằng True (mặc định ưu tiên deepdoc và viet ocr)
+        vision_extract = request.args.get('vision', 'false').lower() == 'true' or request.form.get('vision', 'false').lower() == 'true'
         rag_queue.enqueue(
             process_document_task,
             args=(document_id, workspace_id, new_file_path, original_filename, g.user_id),
