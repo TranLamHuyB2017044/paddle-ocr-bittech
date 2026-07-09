@@ -28,7 +28,7 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc', 'xlsx'}
 
 # Định dạng ảnh dùng cho avatar / ảnh đại diện
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-MAX_RAG_FILE_SIZE = 5 * 1024 * 1024  # 5 MB per file for RAG
+MAX_RAG_FILE_SIZE = 100 * 1024 * 1024  # 100 MB per file for RAG
 MAX_OCR_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit for general OCR
 MAX_FILE_COUNT = 5 # Maximum files per upload
 MAX_DOCUMENTS_PER_WORKSPACE = 10 # Maximum documents per workspace
