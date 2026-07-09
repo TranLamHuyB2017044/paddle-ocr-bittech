@@ -83,33 +83,62 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
             text = extract_text_from_word(file_path)
             structured_data = [{"text": text, "page_num": 1}]
         elif ext == 'pdf':
-            pages = extract_text_from_pdf(file_path) # Now returns list[dict]
-            has_text = any(p['text'].strip() for p in pages)
-            
-            if not has_text:
-                Log.info(f"[Worker] PDF '{original_filename}' has no text, switching to OCR")
-                image_paths = get_pdf_pages_as_images(file_path)
-                for idx, img_p in enumerate(image_paths):
-                    text = None
-                    if vision_extract:
-                        try:
-                            Log.info(f"[Worker] Using Vision LLM for RAG PDF page {idx+1}")
-                            text = extract_text_with_vision_llm(img_p)
-                            # Trừ quota cho Vision LLM
-                            from ..config import VISION_LLM_COST
-                            users_repo.increment_extraction_stats(user_id, "document", cost=VISION_LLM_COST)
-                        except Exception as e:
-                            Log.warning(f"[Worker] Vision LLM RAG failed for {img_p}: {e}. Fallback to traditional OCR.")
+            import fitz
+            try:
+                doc = fitz.open(file_path)
+                for idx in range(len(doc)):
+                    page = doc[idx]
+                    page_text = page.get_text().strip()
+                    has_images = len(page.get_images()) > 0
                     
-                    if not text:
-                        res, _ = ocr_extract(img_p)
-                        if res:
-                            text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
+                    # Cần OCR nếu trang trống hoặc text quá ngắn (< 200 ký tự) và có chứa hình ảnh
+                    needs_ocr = not page_text or (len(page_text) < 200 and has_images)
+                    
+                    if needs_ocr:
+                        Log.info(f"[Worker] PDF page {idx+1} needs OCR (text len: {len(page_text)}, images: {has_images})")
+                        try:
+                            from src.config import root_dir
+                            abs_temp_dir = os.path.join(root_dir, "uploads/temp")
+                            os.makedirs(abs_temp_dir, exist_ok=True)
                             
-                    if text:
-                        structured_data.append({"text": text, "page_num": idx + 1})
-                    if os.path.exists(img_p): os.remove(img_p)
-            else:
+                            import uuid
+                            img_path = os.path.join(abs_temp_dir, f"{uuid.uuid4()}_p{idx}.jpg")
+                            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                            pix.save(img_path)
+                            
+                            text = None
+                            if vision_extract:
+                                try:
+                                    Log.info(f"[Worker] Using Vision LLM for RAG PDF page {idx+1}")
+                                    text = extract_text_with_vision_llm(img_path)
+                                    from ..config import VISION_LLM_COST
+                                    users_repo.increment_extraction_stats(user_id, "document", cost=VISION_LLM_COST)
+                                except Exception as e:
+                                    Log.warning(f"[Worker] Vision LLM RAG failed for page {idx+1}: {e}. Fallback to traditional OCR.")
+                            
+                            if not text:
+                                res, _ = ocr_extract(img_path)
+                                if res:
+                                    text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
+                            
+                            if text:
+                                structured_data.append({"text": text, "page_num": idx + 1})
+                            else:
+                                structured_data.append({"text": page_text, "page_num": idx + 1})
+                                
+                            if os.path.exists(img_path):
+                                os.remove(img_path)
+                        except Exception as e:
+                            Log.error(f"[Worker] Failed to OCR page {idx+1}: {e}")
+                            structured_data.append({"text": page_text, "page_num": idx + 1})
+                    else:
+                        Log.info(f"[Worker] PDF page {idx+1} has native text (len: {len(page_text)})")
+                        structured_data.append({"text": page_text, "page_num": idx + 1})
+                doc.close()
+            except Exception as e:
+                Log.error(f"[Worker] Failed to process PDF page-by-page: {e}")
+                # Fallback to extract_text_from_pdf
+                pages = extract_text_from_pdf(file_path)
                 structured_data = pages
         elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
             text = None
@@ -135,7 +164,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
             # Lưu toàn bộ nội dung văn bản thô vào MongoDB để hỗ trợ reindex sau này
             # mà không cần file gốc
             combined_raw_text = "\n\n".join(
-                item["text"] for item in structured_data if item.get("text", "").strip()
+                str(item.get("text", "")) for item in structured_data if isinstance(item.get("text"), str) and str(item.get("text", "")).strip()
             )
             total_chunks = rag_service.index_text(structured_data, workspace_id, original_filename)
             documents_repo.update_status(
@@ -345,17 +374,35 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
 
             for p in input_paths:
                 if check_is_pdf(p):
-                    # Step 1: Try PyMuPDF native text extraction first
                     pages = extract_text_from_pdf(p)
-                    has_text = any(page.get('text', '').strip() for page in pages)
                     
-                    if has_text:
+                    # Kiểm tra xem PDF có trang nào là trang scan hay không
+                    is_scanned = True
+                    if pages:
+                        import fitz
+                        try:
+                            doc = fitz.open(p)
+                            is_scanned = False
+                            for idx in range(len(doc)):
+                                page = doc[idx]
+                                page_text = page.get_text().strip()
+                                has_images = len(page.get_images()) > 0
+                                # Nếu trang trống hoặc text quá ngắn và chứa ảnh, coi là trang scan
+                                if not page_text or (len(page_text) < 200 and has_images):
+                                    is_scanned = True
+                                    break
+                            doc.close()
+                        except Exception as e:
+                            Log.warning(f"[Worker-Detect] Error checking PDF scan status: {e}")
+                            is_scanned = not any(page.get('text', '').strip() for page in pages)
+                    
+                    if not is_scanned:
                         Log.info(f"[Worker-Detect] 📄 PDF '{p}' has native text, extracting directly...")
                         for page in pages:
                             if page.get('text'):
                                 native_doc_text.append(page['text'])
                     else:
-                        Log.info(f"[Worker-Detect] 📄 Expanding PDF to images: {p}")
+                        Log.info(f"[Worker-Detect] 📄 PDF '{p}' appears to be scanned/image-based, expanding to images for OCR...")
                         pdf_imgs = get_pdf_pages_as_images(p)
                         all_images.extend(pdf_imgs)
                         # Add new temp images to file_paths so they get cleaned up in finally block
