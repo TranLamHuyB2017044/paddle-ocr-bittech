@@ -33,6 +33,16 @@ class QdrantService:
             try:
                 self.client.get_collection(collection_name=self.collection_name)
                 Log.info(f"[Qdrant] ✅ Collection '{self.collection_name}' already exists")
+                # Ensure the workspace_id index exists even if the collection was already created
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name="workspace_id",
+                        field_schema=models.PayloadSchemaType.KEYWORD,
+                    )
+                    Log.info(f"[Qdrant] ✅ Ensured payload index for 'workspace_id' exists")
+                except Exception as index_err:
+                    Log.warning(f"[Qdrant] Warning ensuring payload index for 'workspace_id': {index_err}")
                 return
             except Exception:
                 # Collection doesn't exist, try to create it
