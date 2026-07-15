@@ -1,6 +1,7 @@
 import uuid
 import concurrent.futures
 import os
+import re
 from typing import List, Dict
 from src.rag.embedding_service import embedding_service
 from src.rag.qdrant_service import qdrant_service
@@ -8,6 +9,15 @@ from src.rag.llm_service import llm_service
 from src.utils.logger import Log
 import src.config as config
 from qdrant_client.http import models
+
+def clean_question(question: str) -> str:
+    """
+    Loại bỏ các ký tự số thứ tự hoặc gạch đầu dòng dư thừa ở đầu câu hỏi gợi ý.
+    Ví dụ: "1. Tiêu chí đánh giá..." -> "Tiêu chí đánh giá..."
+    """
+    if not question:
+        return ""
+    return re.sub(r'^\s*[\d\.\-\*\•]+\s*', '', question).strip()
 
 class RagService:
     @staticmethod
@@ -112,9 +122,10 @@ class RagService:
         """
         Perform RAG: Search -> Augment -> Generate.
         """
-        # 1. Embed question
-        Log.info(f"[RAG] 🔍 Querying for: '{question}' in Workspace '{workspace_id}'")
-        question_vector = embedding_service.embed_text([question])[0]
+        # 1. Clean and Embed question
+        cleaned_q = clean_question(question)
+        Log.info(f"[RAG] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}'")
+        question_vector = embedding_service.embed_text([cleaned_q])[0]
         
         # 2. Search Qdrant
         results = qdrant_service.search(question_vector, workspace_id, limit=5)
@@ -124,19 +135,59 @@ class RagService:
         sources = []
         unique_sources = set()
         
+        retrieved_pages = set()
+        parent_pages_count = 0
+        MAX_PARENT_PAGES = 2 # Giới hạn tối đa 2 trang nguyên vẹn để tránh bùng nổ Token
+        
         for i, res in enumerate(results):
             txt = res.payload["text"]
-            doc = res.payload["document_name"]
+            doc = res.payload.get("document_name", "unknown")
             page = res.payload.get("page_num", 1)
             score = res.score
             
             Log.debug(f"   [{i}] Score: {score:.4f} | Source: {doc} (P.{page}) | Text: {txt[:50]}...")
             
-            # Add to context with source label
-            context_parts.append(f"--- NGUỒN: {doc}, TRANG: {page} ---\n{txt}")
-            
             source_key = f"{doc}_page_{page}"
+            page_key = (doc, page)
+            
+            # Nếu trang này đã được lấy nguyên bản trước đó -> Bỏ qua
+            if page_key in retrieved_pages:
+                if source_key not in unique_sources:
+                    sources.append({
+                        "document_name": doc,
+                        "page_num": page,
+                        "score": score
+                    })
+                    unique_sources.add(source_key)
+                continue
+                
+            # Kiểm tra điều kiện nạp nguyên trang (Parent Page)
+            if doc != "unknown" and page > 0 and parent_pages_count < MAX_PARENT_PAGES:
+                retrieved_pages.add(page_key)
+                parent_pages_count += 1
+                
+                # Fetch toàn bộ các mảnh của trang đó để ghép lại
+                page_chunks = qdrant_service.get_chunks_for_page(workspace_id, doc, page)
+                if page_chunks:
+                    # Sắp xếp theo chunk_index để giữ đúng thứ tự đọc tự nhiên
+                    page_chunks.sort(key=lambda x: x.payload.get("chunk_index", 0))
+                    full_page_text = "\n".join([c.payload["text"] for c in page_chunks])
+                    
+                    context_parts.append(f"--- NGUỒN: {doc}, TRANG: {page} ---\n{full_page_text}")
+                    Log.info(f"[RAG] Reconstructed full parent page context: {doc} (Page {page})")
+                    
+                    if source_key not in unique_sources:
+                        sources.append({
+                            "document_name": doc,
+                            "page_num": page,
+                            "score": score
+                        })
+                        unique_sources.add(source_key)
+                    continue
+            
+            # Fallback: Nếu vượt quá giới hạn trang hoặc không thể ghép trang, dùng chính nội dung chunk thô
             if source_key not in unique_sources:
+                context_parts.append(f"--- NGUỒN: {doc}, TRANG: {page} (Đoạn trích) ---\n{txt}")
                 sources.append({
                     "document_name": doc,
                     "page_num": page,
@@ -196,7 +247,10 @@ class RagService:
         
         prompt = (
             f"Dựa trên nội dung sau đây, hãy gợi ý 3 câu hỏi ngắn gọn mà người dùng có thể muốn hỏi "
-            f"để tìm hiểu thông tin từ tài liệu này. Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng.\n\n"
+            f"để tìm hiểu thông tin từ tài liệu này. QUY TẮC: Chỉ gợi ý các câu hỏi mà câu trả lời chi tiết "
+            f"của nó có thể được tìm thấy trực tiếp trong đoạn nội dung được cung cấp bên dưới (không gợi ý câu hỏi "
+            f"nếu nội dung chỉ đề cập lướt qua tên tiêu đề hoặc từ khóa mà không giải thích chi tiết).\n"
+            f"Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng.\n\n"
             f"NỘI DUNG:\n{context}"
         )
         
@@ -212,9 +266,10 @@ class RagService:
         Chat for store: no source citations, optimized for customer support.
         Sends Telegram notification if no information is found.
         """
-        # 1. Embed question
-        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{question}' in Workspace '{workspace_id}'")
-        question_vector = embedding_service.embed_text([question])[0]
+        # 1. Clean and Embed question
+        cleaned_q = clean_question(question)
+        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}'")
+        question_vector = embedding_service.embed_text([cleaned_q])[0]
         
         # 2. Search Qdrant
         results = qdrant_service.search(question_vector, workspace_id, limit=5)
@@ -230,8 +285,37 @@ class RagService:
             Log.info(f"[RAG Store Chat] 📭 NO context found in Qdrant!")
         
         context_parts = []
+        retrieved_pages = set()
+        parent_pages_count = 0
+        MAX_PARENT_PAGES = 2 # Giới hạn tối đa 2 trang nguyên vẹn để tránh bùng nổ Token
+        
         for i, res in enumerate(results):
             txt = res.payload["text"]
+            doc = res.payload.get("document_name", "unknown")
+            page = res.payload.get("page_num", 1)
+            
+            page_key = (doc, page)
+            
+            # Nếu trang này đã được lấy nguyên bản trước đó -> Bỏ qua
+            if page_key in retrieved_pages:
+                continue
+                
+            # Kiểm tra điều kiện nạp nguyên trang (Parent Page)
+            if doc != "unknown" and page > 0 and parent_pages_count < MAX_PARENT_PAGES:
+                retrieved_pages.add(page_key)
+                parent_pages_count += 1
+                
+                # Fetch toàn bộ các mảnh của trang đó để ghép lại
+                page_chunks = qdrant_service.get_chunks_for_page(workspace_id, doc, page)
+                if page_chunks:
+                    # Sắp xếp theo chunk_index để giữ đúng thứ tự đọc tự nhiên
+                    page_chunks.sort(key=lambda x: x.payload.get("chunk_index", 0))
+                    full_page_text = "\n".join([c.payload["text"] for c in page_chunks])
+                    context_parts.append(full_page_text)
+                    Log.info(f"[RAG Store Chat] Reconstructed full parent page context: {doc} (Page {page})")
+                    continue
+            
+            # Fallback: dùng chính nội dung chunk thô
             context_parts.append(txt)
         
         context = "\n\n".join(context_parts)

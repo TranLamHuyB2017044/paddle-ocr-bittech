@@ -5,7 +5,7 @@ from ..repositories.documents_repository import documents_repo
 from ..repositories.users_repository import users_repo
 from ..rag.rag_service import rag_service
 from ..utils.ocr_utils import ocr_extract, preprocess_for_ocr, ocr_structure_extract, smart_menu_ocr_extract
-from ..utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images
+from ..utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images, extract_page_text_with_tables
 from ..utils.word_utils import extract_text_from_word
 from ..utils.logger import Log
 from ..services.log_service import log_service
@@ -133,7 +133,8 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                             structured_data.append({"text": page_text, "page_num": idx + 1})
                     else:
                         Log.info(f"[Worker] PDF page {idx+1} has native text (len: {len(page_text)})")
-                        structured_data.append({"text": page_text, "page_num": idx + 1})
+                        page_text_extracted = extract_page_text_with_tables(page)
+                        structured_data.append({"text": page_text_extracted, "page_num": idx + 1})
                 doc.close()
             except Exception as e:
                 Log.error(f"[Worker] Failed to process PDF page-by-page: {e}")

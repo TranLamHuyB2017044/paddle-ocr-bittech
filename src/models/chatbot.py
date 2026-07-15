@@ -15,11 +15,12 @@ class Chatbot(BaseModel):
     public_token: str
     account_id: PyObjectId
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     workflow_webhook_url: Optional[str] = None
+    collect_contact_info: bool = True
     
     class Config:
         populate_by_name = True

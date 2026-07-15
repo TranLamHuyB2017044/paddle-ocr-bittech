@@ -109,7 +109,8 @@ def get_public_chatbot_details(chatbot_id):
             "color": chatbot.get("color", 0),
             "greeting": chatbot.get("greeting"),
             "workspace_id": str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None,
-            "workflow_webhook_url": chatbot.get("workflow_webhook_url")
+            "workflow_webhook_url": chatbot.get("workflow_webhook_url"),
+            "collect_contact_info": chatbot.get("collect_contact_info", True)
         }
         return jsonify({"statusCode": 200, "data": formatted})
     except Exception as e:
@@ -226,7 +227,10 @@ def public_chat_with_chatbot(chatbot_id):
                 contact_request_keywords = ["liên hệ nhân viên", "hãy liên hệ", "nhân viên hỗ trợ", "liên hệ với nhân viên", "gọi nhân viên"]
                 is_contact_request = any(keyword.lower() in message.lower() for keyword in contact_request_keywords)
                 
-                if chatbot.get("workspace_id") and not is_contact_request:
+                # Check if contact collection is enabled
+                collect_contact = chatbot.get("collect_contact_info", True)
+                
+                if chatbot.get("workspace_id") and not (is_contact_request and collect_contact):
                     from src.rag.rag_service import rag_service
                     result = rag_service.chat_store(
                         question=message,
@@ -240,7 +244,7 @@ def public_chat_with_chatbot(chatbot_id):
                     no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
                     is_no_info = any(keyword.lower() in result["answer"].lower() for keyword in no_info_keywords)
                     
-                    if is_no_info:
+                    if is_no_info and collect_contact:
                         # Ask for contact info with clear format guide
                         result["answer"] += "\n\nVui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
                         waiting_for_contact[session_id] = True
@@ -248,7 +252,7 @@ def public_chat_with_chatbot(chatbot_id):
                         last_question_before_contact[session_id] = message
                 else:
                     # Either no workspace OR user is asking to contact staff directly
-                    if is_contact_request:
+                    if is_contact_request and collect_contact:
                         result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
                         waiting_for_contact[session_id] = True
                         last_question_before_contact[session_id] = message

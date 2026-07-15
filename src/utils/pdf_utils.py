@@ -35,6 +35,60 @@ def is_pdf_scanned(pdf_path):
         Log.error(f"[PDF-CHECK] Lỗi khi kiểm tra file: {e}")
         return True
 
+def extract_page_text_with_tables(page) -> str:
+    """
+    Trích xuất text từ page của PyMuPDF, định dạng các bảng biểu thành Markdown
+    để giữ nguyên cấu trúc hàng/cột phục vụ cho RAG.
+    """
+    page_text = page.get_text().strip()
+    if not page_text:
+        return ""
+        
+    try:
+        tables = page.find_tables()
+        if not tables:
+            return page_text
+            
+        table_bboxes = [t.bbox for t in tables]
+        elements = []
+        
+        # 1. Trích xuất các block text thông thường nằm ngoài bảng
+        blocks = page.get_text("blocks")
+        for b in blocks:
+            x0, y0, x1, y1, text, block_no, block_type = b
+            in_table = False
+            for bbox in table_bboxes:
+                # Kiểm tra giao nhau giữa text block và bảng
+                if not (x1 < bbox[0] or x0 > bbox[2] or y1 < bbox[1] or y0 > bbox[3]):
+                    in_table = True
+                    break
+            if not in_table and text.strip():
+                elements.append((y0, "text", text.strip()))
+        
+        # 2. Trích xuất các bảng dưới dạng Markdown
+        for t in tables:
+            grid = t.extract()
+            md_lines = []
+            if grid:
+                # Tiêu đề cột
+                headers = [str(cell or "").strip().replace("\n", " ") for cell in grid[0]]
+                md_lines.append("| " + " | ".join(headers) + " |")
+                md_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+                # Các dòng dữ liệu
+                for row in grid[1:]:
+                    cells = [str(cell or "").strip().replace("\n", " ") for cell in row]
+                    md_lines.append("| " + " | ".join(cells) + " |")
+            md_table = "\n".join(md_lines)
+            elements.append((t.bbox[1], "table", md_table))
+            
+        # 3. Sắp xếp các đoạn text và bảng theo thứ tự từ trên xuống dưới (y0)
+        elements.sort(key=lambda x: x[0])
+        return "\n\n".join([el[2] for el in elements])
+        
+    except Exception as e:
+        Log.warning(f"[PDF-TABLES] Lỗi tự động nhận diện bảng: {e}")
+        return page_text
+
 def extract_text_from_pdf(pdf_path):
     """
     Extract text from PDF pages.
@@ -50,7 +104,7 @@ def extract_text_from_pdf(pdf_path):
         doc = fitz.open(pdf_path)
         for page_num in range(len(doc)):
             page = doc[page_num]
-            page_text = page.get_text().strip()
+            page_text = extract_page_text_with_tables(page)
             
             if page_text:
                 pages.append({

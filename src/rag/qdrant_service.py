@@ -177,6 +177,39 @@ class QdrantService:
             *args, **kwargs
         )
 
+    def get_chunks_for_page(self, workspace_id: str, document_name: str, page_num: int):
+        """
+        Lấy toàn bộ các chunks thuộc cùng một trang tài liệu trong một workspace.
+        """
+        try:
+            scroll_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="workspace_id",
+                        match=models.MatchValue(value=workspace_id),
+                    ),
+                    models.FieldCondition(
+                        key="document_name",
+                        match=models.MatchValue(value=document_name),
+                    ),
+                    models.FieldCondition(
+                        key="page_num",
+                        match=models.MatchValue(value=page_num),
+                    )
+                ]
+            )
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=scroll_filter,
+                limit=100,  # Một trang thường không quá 10 chunks
+                with_payload=True,
+                with_vectors=False
+            )
+            return points
+        except Exception as e:
+            Log.error(f"[Qdrant] Lỗi khi scroll chunks cho trang {page_num}: {e}")
+            return []
+
 # Lazy singleton pattern
 _qdrant_service_instance = None
 
@@ -221,5 +254,9 @@ class QdrantServiceProxy:
     def get_document_count(self, *args, **kwargs):
         if self.instance: return self.instance.get_document_count(*args, **kwargs)
         return 0
+
+    def get_chunks_for_page(self, *args, **kwargs):
+        if self.instance: return self.instance.get_chunks_for_page(*args, **kwargs)
+        return []
 
 qdrant_service = QdrantServiceProxy()

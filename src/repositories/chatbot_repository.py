@@ -14,7 +14,7 @@ class ChatbotRepository(BaseRepository):
         """Generate a secure public token for chatbot embed"""
         return f"cb_{secrets.token_urlsafe(32)}"
     
-    def create_chatbot(self, name: str, account_id: str, workspace_id: Optional[str] = None, description: Optional[str] = None, avatar_url: Optional[str] = None, color: int = 0, greeting: Optional[str] = None, telegram_bot_token: Optional[str] = None, telegram_chat_id: Optional[str] = None, workflow_webhook_url: Optional[str] = None) -> str:
+    def create_chatbot(self, name: str, account_id: str, workspace_id: Optional[str] = None, description: Optional[str] = None, avatar_url: Optional[str] = None, color: int = 0, greeting: Optional[str] = None, telegram_bot_token: Optional[str] = None, telegram_chat_id: Optional[str] = None, workflow_webhook_url: Optional[str] = None, collect_contact_info: bool = True) -> str:
         """Create a new chatbot and return its string ID"""
         # If workspace_id is provided, check if it's already used by another chatbot
         if workspace_id:
@@ -31,6 +31,7 @@ class ChatbotRepository(BaseRepository):
             "telegram_bot_token": telegram_bot_token,
             "telegram_chat_id": telegram_chat_id,
             "workflow_webhook_url": workflow_webhook_url,
+            "collect_contact_info": collect_contact_info,
             "workspace_id": ObjectId(workspace_id) if workspace_id else None,
             "public_token": self.generate_public_token(),
             "account_id": ObjectId(account_id),
