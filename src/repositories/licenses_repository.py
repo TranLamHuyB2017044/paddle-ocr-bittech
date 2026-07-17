@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from src.database.base_repository import BaseRepository
 
 class MongoLicenseRepository(BaseRepository):
@@ -44,19 +44,25 @@ class MongoLicenseRepository(BaseRepository):
         public_id: str,
         license_key: str,
         signature: Optional[str],
-        expired_at: datetime,
+        expired_at: Union[datetime, str],
         notes: Optional[str],
         connection_id: int = 12,
     ) -> dict[str, Any]:
         """
         Saves a pending license to the database (status=0).
         """
+        if isinstance(expired_at, str):
+            clean_str = expired_at.replace("Z", "+00:00")
+            expired_at_dt = datetime.fromisoformat(clean_str)
+        else:
+            expired_at_dt = expired_at
+
         # Ensure expired_at is stored without timezone info for PyMongo consistency,
         # since PyMongo stores naive datetimes representing UTC.
-        if expired_at.tzinfo is not None:
-            expired_at_naive = expired_at.astimezone(timezone.utc).replace(tzinfo=None)
+        if expired_at_dt.tzinfo is not None:
+            expired_at_naive = expired_at_dt.astimezone(timezone.utc).replace(tzinfo=None)
         else:
-            expired_at_naive = expired_at
+            expired_at_naive = expired_at_dt
 
         record = {
             "public_id": public_id,
