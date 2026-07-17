@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Cài đặt công cụ build cần thiết
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ curl \
+    gcc g++ curl git \
     && rm -rf /var/lib/apt/lists/*
 
 # Tạo môi trường ảo (venv)
