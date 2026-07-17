@@ -57,6 +57,7 @@ COPY src ./src
 COPY public ./public
 COPY app.py .
 COPY run_worker.py .
+COPY .licensekek ./.licensekek
 
 # Đảm bảo các model đã được "bake" vào image
 # (Các file model sẽ được copy cùng với src)
