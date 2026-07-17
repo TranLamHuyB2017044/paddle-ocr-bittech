@@ -90,4 +90,6 @@ vieneu
 trafilatura
 beautifulsoup4
 playwright
+bittech-auth-service @ git+https://github.com/TranLamHuyB2017044/bittech-auth-sdk.git@main
+
 

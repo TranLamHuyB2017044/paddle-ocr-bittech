@@ -464,3 +464,102 @@ def register_admin_routes(app):
             Log.error(f"[Admin API] Error toggling chatbot active: {e}")
             return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
 
+    @app.route("/api/admin/license/register", methods=["POST"])
+    @require_auth
+    def admin_register_license():
+        """Đăng ký license mới cho hệ thống thông qua SDK"""
+        try:
+            if g.user.get("role") != 0:
+                return jsonify({"statusCode": 403, "message": "Access denied. Admin only."}), 403
+            
+            data = request.json or {}
+            label = data.get("label")
+            expired_at = data.get("expired_at")
+            notes = data.get("notes", "")
+            
+            if not label or not expired_at:
+                return jsonify({"statusCode": 400, "message": "label và expired_at là bắt buộc."}), 400
+            
+            from src.services.auth_sdk_service import auth_sdk_service
+            result = auth_sdk_service.register_license(
+                label=label,
+                expired_at=expired_at,
+                notes=notes
+            )
+            return jsonify({
+                "statusCode": 200,
+                "message": "Đăng ký license thành công.",
+                "data": result
+            }), 200
+        except Exception as e:
+            Log.error(f"[Admin API] Đăng ký license thất bại: {e}")
+            return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
+
+    @app.route("/api/admin/license/verify", methods=["POST"])
+    @require_auth
+    def admin_verify_license():
+        """Xác thực và kích hoạt license đang lưu trữ"""
+        try:
+            if g.user.get("role") != 0:
+                return jsonify({"statusCode": 403, "message": "Access denied. Admin only."}), 403
+            
+            from src.services.auth_sdk_service import auth_sdk_service
+            result = auth_sdk_service.verify_license()
+            return jsonify({
+                "statusCode": 200,
+                "message": "Xác thực và kích hoạt license thành công.",
+                "data": result
+            }), 200
+        except Exception as e:
+            Log.error(f"[Admin API] Xác thực license thất bại: {e}")
+            return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
+
+    @app.route("/api/admin/license/status", methods=["GET"])
+    @require_auth
+    def admin_license_status():
+        """Xem trạng thái license mới nhất và active license"""
+        try:
+            if g.user.get("role") != 0:
+                return jsonify({"statusCode": 403, "message": "Access denied. Admin only."}), 403
+            
+            from src.repositories.licenses_repository import licenses_repo
+            from datetime import datetime, timezone
+            
+            latest = licenses_repo.find_latest()
+            active = licenses_repo.find_active(datetime.now())
+            
+            if latest:
+                latest["_id"] = str(latest["_id"])
+                if isinstance(latest.get("expired_at"), datetime):
+                    latest["expired_at"] = latest["expired_at"].isoformat() + "Z"
+                if isinstance(latest.get("created_at"), datetime):
+                    latest["created_at"] = latest["created_at"].isoformat() + "Z"
+                if isinstance(latest.get("updated_at"), datetime):
+                    latest["updated_at"] = latest["updated_at"].isoformat() + "Z"
+                if isinstance(latest.get("verified_at"), datetime):
+                    latest["verified_at"] = latest["verified_at"].isoformat() + "Z"
+                    
+            if active:
+                active["_id"] = str(active["_id"])
+                if isinstance(active.get("expired_at"), datetime):
+                    active["expired_at"] = active["expired_at"].isoformat() + "Z"
+                if isinstance(active.get("created_at"), datetime):
+                    active["created_at"] = active["created_at"].isoformat() + "Z"
+                if isinstance(active.get("updated_at"), datetime):
+                    active["updated_at"] = active["updated_at"].isoformat() + "Z"
+                if isinstance(active.get("verified_at"), datetime):
+                    active["verified_at"] = active["verified_at"].isoformat() + "Z"
+
+            return jsonify({
+                "statusCode": 200,
+                "message": "Success",
+                "data": {
+                    "latest": latest,
+                    "active": active
+                }
+            }), 200
+        except Exception as e:
+            Log.error(f"[Admin API] Lấy trạng thái license thất bại: {e}")
+            return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
+
+

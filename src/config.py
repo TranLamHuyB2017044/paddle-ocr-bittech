@@ -280,6 +280,11 @@ PLANS_CONFIG = {
 }
 
 AUTH_API_URL = os.getenv("AUTH_SERVICE_URL", "")
+SYSTEM_ID = os.getenv("SYSTEM_ID", "5efc2c21-b02e-4c8f-965b-1e01d7384a51")
+LICENSE_FILENAME = os.getenv("LICENSE_FILENAME", "license.online-docx-ai-quet-tai-lieu.config")
+LICENSE_CONFIG_PATH = os.path.join(".licensekek", LICENSE_FILENAME)
+
+
 
 # ========== EXTERNAL FILES API CONFIG ==========
 FILES_API_URL = os.getenv("FILES_API_URL", "https://files.bittechx.cloud")

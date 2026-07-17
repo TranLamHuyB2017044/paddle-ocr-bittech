@@ -6,61 +6,22 @@ from src.utils.logger import Log
 
 def call_system_connections_get(group_key: list[str], client_register: list[str]):
     """
-    Gọi API lấy danh sách System Connections từ auth.bittechx.cloud.
-    
-    Tham số group_key nhận trực tiếp list[str] và truyền lên API dưới
-    cả hai trường 'group_key' và 'groupkey' để tương thích tối đa.
+    Gọi API lấy danh sách System Connections bằng bittech-auth-sdk.
     """
-    # Lọc và làm sạch khoảng trắng các key trong list
-    group_key_list = [k.strip() for k in group_key if isinstance(k, str) and k.strip()]
-
-    Log.info(f"--- Calling API: {AUTH_API_URL}/api/system-connections/get ---")
-    Log.info(f"Payload group_key list: {group_key_list}")
-
-    url = f"{AUTH_API_URL}/api/system-connections/get"
-
-    # Gửi cả 'group_key' và 'groupkey' để đảm bảo tương thích với API đối tác
-    payload = {
-        "group_key": group_key_list,
-        "groupkey": group_key_list,
-        "client_register": client_register,
-    }
-
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-
+    from src.services.auth_sdk_service import auth_sdk_service
+    Log.info(f"--- Calling SDK: get_system_connections ---")
     try:
-        response = requests.get(url, json=payload, headers=headers, timeout=10)
-
-        try:
-            data = response.json()
-            # SECURITY: Chỉ log status_code, không log full response body
-            Log.info(f"--- [system-connections/get] Response Status: {response.status_code} ---")
-            Log.debug(f"--- [system-connections/get] Body: {response.text} ---")
-            return data
-        except json.JSONDecodeError:
-            Log.error(f"Invalid JSON response (status={response.status_code})")
-            return {
-                "success": False,
-                "message": "Invalid JSON response",
-                "raw_response": response.text,
-                "status_code": response.status_code,
-            }
-
-    except requests.exceptions.RequestException as e:
-        error_detail = ""
-        if hasattr(e, "response") and e.response is not None:
-            error_detail = e.response.text
-
+        data = auth_sdk_service.get_system_connections(
+            group_keys=group_key,
+            client_register=client_register
+        )
+        return data
+    except Exception as e:
+        Log.error(f"SDK get_system_connections failed: {e}")
         return {
             "success": False,
-            "message": "Request failed",
-            "error": str(e),
-            "detail": error_detail,
+            "message": str(e)
         }
-
 
 
 # In-memory token cache: { "system_id": { "access_token": "...", "api_key": "...", "user_id": ... } }
@@ -75,86 +36,51 @@ def call_client_register_post(
     user_info: str
 ):
     """
-    Calls https://auth.hkbcert.vn/api/client-register/post
+    Đăng ký client mới bằng bittech-auth-sdk.
     """
-    url = f"{AUTH_API_URL}/api/client-registers"
-    
-    payload = {
-        "system_connection_id": system_connection_id,
-        "system_id": system_id,
-        "system_register": system_register,
-        "external_id": external_id,
-        "description": description,
-        "user_info": user_info
-    }
-    
-    print(f"--- Calling API: {url} ---")
-    print("Payload:")
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-
+    from src.services.auth_sdk_service import auth_sdk_service
+    Log.info(f"--- Calling SDK: register_client ---")
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        data = auth_sdk_service.register_client(
+            connection_id=system_connection_id,
+            target_system_id=system_id,
+            external_id=external_id,
+            description=description
+        )
         
-        print("\n--- Response ---")
-        print(f"Status Code: {response.status_code}")
+        # --- AUTO CALL AUTH TOKEN AFTER CONNECT ---
+        is_reg_ok = False
+        if data and isinstance(data, dict):
+            is_reg_ok = (data.get("success") is True) or (data.get("status") == "success")
+
+        if is_reg_ok:
+            first_lv = data.get("data", {})
+            nested_data = None
+            
+            if isinstance(first_lv, dict):
+                if "api_key" in first_lv:
+                    nested_data = first_lv
+                elif isinstance(first_lv.get("data"), dict):
+                    nested_data = first_lv.get("data")
+
+            if nested_data:
+                api_key = nested_data.get("api_key")
+                if api_key:
+                    Log.info(f"--- [Auto Auth] Fetching token for {system_id} ---")
+                    call_auth_token(system_id, api_key, external_id)
         
-        try:
-            data = response.json()
-            print("Body (JSON):")
-            print(json.dumps(data, indent=2, ensure_ascii=False))
-            
-            # --- AUTO CALL AUTH TOKEN AFTER CONNECT ---
-            # data structure check: result["success"] == True or result["status"] == "success"
-            is_reg_ok = False
-            if data and isinstance(data, dict):
-                is_reg_ok = (data.get("success") is True) or (data.get("status") == "success")
-
-            if is_reg_ok:
-                first_lv = data.get("data", {})
-                nested_data = None
-                
-                if isinstance(first_lv, dict):
-                    if "api_key" in first_lv:
-                        nested_data = first_lv
-                    elif isinstance(first_lv.get("data"), dict):
-                        nested_data = first_lv.get("data")
-
-                if nested_data:
-                    api_key = nested_data.get("api_key")
-                    if api_key:
-                        Log.info(f"--- [Auto Auth] Fetching token for {system_id} ---")
-                        # Auto call auth token to cache it
-                        call_auth_token(system_id, api_key, external_id)
-            
-            return data
-        except json.JSONDecodeError:
-            print("Body (Text):")
-            print(response.text)
-            return {
-                "success": False,
-                "message": "Invalid JSON response from external API",
-                "raw_response": response.text,
-                "status_code": response.status_code
-            }
-            
-    except requests.exceptions.RequestException as e:
-        print(f"\n[!] Error calling API: {e}")
-        error_detail = ""
-        if hasattr(e, 'response') and e.response is not None:
-             print("Error Response Content:", e.response.text)
-             error_detail = e.response.text
-             
+        return data
+    except Exception as e:
+        Log.error(f"SDK register_client failed: {e}")
         return {
             "success": False,
-            "message": "External API Request failed",
-            "error": str(e),
-            "detail": error_detail
+            "message": str(e)
         }
 
 
 def call_revoke_api_key(system_id: str, api_key: str, password: str):
     """
-    Calls the external API to revoke an API key.
+    Calls the external API to revoke an API key. (Giữ cuộc gọi thủ công vì SDK không hỗ trợ revoke)
     """
     url = f"{AUTH_API_URL}/api/client-registers/revoke-api-key"
     
@@ -180,7 +106,7 @@ def call_revoke_api_key(system_id: str, api_key: str, password: str):
     except requests.exceptions.RequestException as e:
         error_detail = ""
         if hasattr(e, 'response') and e.response is not None:
-             error_detail = e.response.text
+            error_detail = e.response.text
              
         return {
             "status": "error",
@@ -192,68 +118,41 @@ def call_revoke_api_key(system_id: str, api_key: str, password: str):
 
 def call_auth_token(system_id: str, api_key: str, user_id: int):
     """
-    Calls https://auth.hkbcert.vn/api/authenticate
+    Xác thực API Key lấy Access Token bằng bittech-auth-sdk.
     """
-    url = f"{AUTH_API_URL}/api/authenticate"
-    
-    payload = {
-        "system_id": system_id,
-        "api_key": api_key, 
-        "user_id": user_id
-    }
-    
-    Log.info(f"--- [Auth] Requesting Token for system_id={system_id}, user_id={user_id} ---")
-    
+    from src.services.auth_sdk_service import auth_sdk_service
+    Log.info(f"--- Calling SDK: authenticate for system_id={system_id}, user_id={user_id} ---")
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        result = auth_sdk_service.authenticate(
+            api_key=api_key,
+            user_id=user_id
+        )
         
-        try:
-            result = response.json()
-            
-            # --- UPDATE CACHE ---
-            is_auth_ok = False
-            if result and isinstance(result, dict):
-                is_auth_ok = (result.get("success") is True) or (result.get("status") == "success")
+        is_auth_ok = False
+        if result and isinstance(result, dict):
+            is_auth_ok = (result.get("success") is True) or (result.get("status") == "success")
 
-            if is_auth_ok:
-                token_data = result.get("data", {})
-                access_token = token_data.get("access_token")
-                
-                if access_token:
-                    # TODO: Key should probably be (user_id, system_id) to avoid collision
-                    _TOKEN_CACHE[system_id] = {
-                        "access_token": access_token,
-                        "api_key": api_key,
-                        "user_id": user_id
-                    }
-                    Log.info(f"--- [Auth Cache] Token updated successfully for {system_id} ---")
-                return result
-            else:
-                # SECURITY: Không log full result (có thể chứa token/api_key)
-                Log.error(f"--- [Auth Error] API returned failure (status={response.status_code}) ---")
-                return result
-
-        except json.JSONDecodeError:
-            # SECURITY: Không log response body raw
-            Log.error(f"--- [Auth Error] Invalid JSON from API (Status {response.status_code}) ---")
-            return {
-                "success": False,
-                "message": "Invalid JSON response from external API",
-                "raw_response": response.text,
-                "status_code": response.status_code
-            }
+        if is_auth_ok:
+            token_data = result.get("data", {})
+            access_token = token_data.get("access_token")
             
-    except requests.exceptions.RequestException as e:
-        Log.error(f"--- [Auth Error] Request failed: {e} ---")
-        error_detail = ""
-        if hasattr(e, 'response') and e.response is not None:
-             error_detail = e.response.text
-             
+            if access_token:
+                _TOKEN_CACHE[system_id] = {
+                    "access_token": access_token,
+                    "api_key": api_key,
+                    "user_id": user_id
+                }
+                Log.info(f"--- [Auth Cache] Token updated successfully for {system_id} ---")
+            return result
+        else:
+            Log.error(f"--- [Auth Error] SDK returned failure ---")
+            return result
+
+    except Exception as e:
+        Log.error(f"SDK authenticate failed: {e}")
         return {
             "success": False,
-            "message": "External API Request failed", 
-            "error": str(e),
-            "detail": error_detail
+            "message": str(e)
         }
 
 
