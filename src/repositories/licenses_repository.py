@@ -46,6 +46,7 @@ class MongoLicenseRepository(BaseRepository):
         signature: Optional[str],
         expired_at: datetime,
         notes: Optional[str],
+        connection_id: int = 12,
     ) -> dict[str, Any]:
         """
         Saves a pending license to the database (status=0).
@@ -64,6 +65,7 @@ class MongoLicenseRepository(BaseRepository):
             "expired_at": expired_at_naive,
             "status": 0,  # 0 = pending, 1 = active
             "notes": notes,
+            "connection_id": connection_id,
             "created_at": datetime.now(),
             "updated_at": datetime.now()
         }
