@@ -2,6 +2,7 @@
 # Core Web Framework
 # ============================================================
 flask
+setuptools
 flask-cors
 gunicorn
 werkzeug
