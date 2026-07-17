@@ -15,7 +15,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # 1. Nâng cấp pip đầu tiên
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir --upgrade pip "setuptools<70.0.0" wheel
 
 # 2. Cài đặt Torch & Torchvision CPU-only ĐẦU TIÊN (để tối ưu cache)
 # Lệnh này cài bản CPU (~250MB) thay vì bản GPU (~2.5GB)
