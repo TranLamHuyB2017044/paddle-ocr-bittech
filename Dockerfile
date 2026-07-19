@@ -43,14 +43,7 @@ RUN python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo
 # 4. Tải FastEmbed model (bge-small-en-v1.5) sử dụng cho RAG
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')"
 
-# 5. Tải VieNeu-TTS model (nếu có tải từ Hugging Face/Internet)
-RUN python -c " \
-try: \
-    from vieneu import Vieneu; \
-    Vieneu() \
-except Exception as e: \
-    print('Skip Vieneu preload:', e) \
-"
+RUN python -c "from vieneu import Vieneu; Vieneu()" || echo "Skip Vieneu preload"
 
 
 # ============================================================
