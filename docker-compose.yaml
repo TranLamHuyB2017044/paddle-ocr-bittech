@@ -58,8 +58,6 @@ services:
       - ./src/hand_writting:/app/src/hand_writting
     security_opt:
       - no-new-privileges:true                     
-    cap_drop:
-      - ALL
     deploy:
       resources:
         limits:
@@ -94,8 +92,6 @@ services:
       - PYTHONUNBUFFERED=1
     security_opt:
       - no-new-privileges:true 
-    cap_drop:
-      - ALL
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
