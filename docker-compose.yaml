@@ -1,10 +1,7 @@
 services:
-  # ============================================================
-  # Redis - Hàng đợi công việc
-  # SECURITY: Đã thêm password, chỉ bind localhost, pin version
-  # ============================================================
+
   redis:
-    image: redis:7.2-alpine                         # [FIX-1] Pin version cụ thể, dùng alpine (nhẹ hơn, ít attack surface hơn)
+    image: redis:7.2-alpine                         
     container_name: paddle-ocr-redis
     command: >
       redis-server
@@ -18,18 +15,18 @@ services:
       --rename-command DEBUG ""
       --rename-command SLAVEOF ""
       --rename-command REPLICAOF ""
-    ports:
-      - "127.0.0.1:16379:6379"                     # [FIX-2] Chỉ bind localhost, KHÔNG public ra internet
-    restart: unless-stopped                         # [FIX-3] Dùng unless-stopped thay always (tránh restart loop vô tận)
+    restart: unless-stopped          
     networks:
       - ocr-network
     volumes:
-      - redis-data:/data                            # [FIX-4] Persistent data vào named volume, không mount host path
+      - redis-data:/data                            
     security_opt:
-      - no-new-privileges:true                      # [FIX-5] Chặn container tự leo thang đặc quyền
-    read_only: true                                 # [FIX-6] Filesystem container read-only
+      - no-new-privileges:true                     
+    cap_drop:
+      - ALL
+    read_only: true                                
     tmpfs:
-      - /tmp                                        # Redis cần /tmp để write tạm
+      - /tmp                                        
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s
@@ -40,12 +37,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 600M                             # [FIX-7] Giới hạn RAM để tránh DoS
-
-  # ============================================================
-  # Background Worker - Xử lý OCR và Embedding nặng
-  # SECURITY: Bỏ user root, thêm security options
-  # ============================================================
+          memory: 600M                             
   worker:
     build: .
     container_name: paddle-ocr-worker
@@ -68,6 +60,8 @@ services:
       - ./src/hand_writting:/app/src/hand_writting
     security_opt:
       - no-new-privileges:true                     
+    cap_drop:
+      - ALL
     deploy:
       resources:
         limits:
@@ -102,6 +96,8 @@ services:
       - PYTHONUNBUFFERED=1
     security_opt:
       - no-new-privileges:true 
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
