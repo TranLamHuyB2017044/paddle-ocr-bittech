@@ -97,4 +97,7 @@ def serve_public_file(filename):
 
 # ==================== RUN APP ====================
 if __name__ == "__main__":
+    # Local development không đi qua Gunicorn post_fork.
+    from src.models.model_loader import model_loader
+    model_loader.preload_photo_models(require_rembg=True)
     app.run(host="0.0.0.0", port=5000, debug=True)

@@ -74,6 +74,14 @@ class FileStorageRepository(BaseRepository):
         """Trả về tất cả file metadata thuộc về một document."""
         return list(self.collection.find({"document_id": document_id, "deleted_at": None}))
 
+    def find_by_document_and_owner(self, document_id: str, owner_user_id: str) -> list:
+        """Lấy file còn hiệu lực của một document/session thuộc đúng owner."""
+        return list(self.collection.find({
+            "document_id": document_id,
+            "owner_user_id": str(owner_user_id),
+            "deleted_at": None,
+        }))
+
     def find_expired(self) -> list:
         """
         Trả về tất cả record đã quá hạn nhưng chưa bị xóa.
@@ -90,6 +98,22 @@ class FileStorageRepository(BaseRepository):
             {"_id": ObjectId(record_id)},
             {"$set": {"deleted_at": datetime.now()}}
         )
+
+    def mark_deleted_many(self, record_ids: list[str]) -> int:
+        """Soft-delete nhiều record sau khi asset Cloudinary đã được xóa."""
+        object_ids = []
+        for record_id in record_ids:
+            try:
+                object_ids.append(ObjectId(record_id))
+            except Exception:
+                continue
+        if not object_ids:
+            return 0
+        result = self.collection.update_many(
+            {"_id": {"$in": object_ids}},
+            {"$set": {"deleted_at": datetime.now()}},
+        )
+        return result.modified_count
 
 
 file_storage_repo = FileStorageRepository()

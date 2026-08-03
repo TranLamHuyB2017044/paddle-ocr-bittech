@@ -6,6 +6,7 @@ import os
 import traceback
 import numpy as np
 import json
+import threading
 import onnxruntime as ort
 from PIL import Image
 from ..utils.logger import Log
@@ -48,6 +49,7 @@ class ModelLoader:
     _instance = None
     _ocr = None
     _rembg_session = None
+    _rembg_lock = threading.Lock()
     _handwritten_predictor = None
     _tts = None
     
@@ -68,6 +70,36 @@ class ModelLoader:
         # Tạm thời loại bỏ preload handwriting model khi run app bằng docker
         # self._load_handwritten()
         Log.info("✅ Hoàn tất tải trước toàn bộ AI Models!")
+
+    def preload_photo_models(self, require_rembg: bool = False) -> bool:
+        """
+        Khởi tạo session photo ngay khi API worker boot để request đầu không phải
+        trả chi phí load ONNX. Mỗi Gunicorn worker sở hữu session riêng.
+        """
+        Log.info("📦 Preloading photo models (MODNet + InsightFace)...")
+        rembg_session = self._load_rembg()
+
+        # Face analyzer cũng nằm trên synchronous photo route nên preload cùng lúc.
+        try:
+            from ..utils.image_processing import get_face_analyzer
+            face_analyzer = get_face_analyzer()
+        except Exception as e:
+            face_analyzer = None
+            Log.error(f"❌ Failed to preload InsightFace: {e}")
+            Log.error(traceback.format_exc())
+
+        if rembg_session is None and require_rembg:
+            raise RuntimeError("Không thể preload Rembg MODNet; API worker không được khởi động.")
+
+        if face_analyzer is None:
+            Log.warning("⚠️ InsightFace unavailable; photo route will use Haar fallback.")
+
+        success = rembg_session is not None
+        Log.info(
+            f"✅ Photo model preload completed: rembg={rembg_session is not None}, "
+            f"insightface={face_analyzer is not None}"
+        )
+        return success
 
     def _load_ocr(self):
         """Load DeepDoc + VietOCR engine"""
@@ -90,15 +122,19 @@ class ModelLoader:
         return self._ocr
 
     def _load_rembg(self):
-        """Load Rembg model only when needed"""
+        """Khởi tạo và cache một Rembg MODNet session cho process hiện tại."""
         if self._rembg_session is None:
-            Log.info("🎨 Loading Rembg Model (modnet)...")
-            try:
-                from rembg import new_session
-                self._rembg_session = new_session("modnet")
-                Log.info("✅ Rembg Model (modnet) loaded success!")
-            except Exception as e:
-                Log.error(f"❌ Failed to load Rembg Model: {e}")
+            with self._rembg_lock:
+                if self._rembg_session is not None:
+                    return self._rembg_session
+                Log.info("🎨 Loading Rembg Model (modnet)...")
+                try:
+                    from rembg import new_session
+                    self._rembg_session = new_session("modnet")
+                    Log.info("✅ Rembg Model (modnet) loaded success!")
+                except Exception as e:
+                    Log.error(f"❌ Failed to load Rembg Model: {e}")
+                    Log.error(traceback.format_exc())
         return self._rembg_session
 
     def _load_handwritten(self):
@@ -139,8 +175,8 @@ class ModelLoader:
 
     @property
     def rembg_session(self):
-        """Get rembg session (DISABLED by default)"""
-        return self._rembg_session
+        """Get preloaded MODNet session; lazy fallback giữ tương thích ngoài Gunicorn."""
+        return self._load_rembg()
 
     @property
     def handwritten_predictor(self):

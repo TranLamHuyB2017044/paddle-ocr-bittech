@@ -15,6 +15,11 @@ class Log:
         logger.setLevel(getattr(logging, log_level, logging.INFO))
         
         if not logger.handlers:
+            if hasattr(sys.stdout, "reconfigure"):
+                try:
+                    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+                except Exception:
+                    pass
             handler = logging.StreamHandler(sys.stdout)
             # Simple format, similar to what user had but with timestamp
             formatter = logging.Formatter(

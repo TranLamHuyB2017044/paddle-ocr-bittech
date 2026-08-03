@@ -3,26 +3,46 @@ import io
 import gc
 import base64
 import warnings
+import threading
 
 import cv2
 import numpy as np
 from PIL import Image, ImageColor, ImageOps, ImageFilter
-
-warnings.filterwarnings("ignore")
+from src.config import (
+    PHOTO_FACE_ROLL_AUTO_ALIGN_DEGREES,
+    PHOTO_FACE_ROLL_WARN_DEGREES,
+)
 
 _FACE_ANALYZER = None
+_FACE_ANALYZER_FAILED = False
+_FACE_ANALYZER_LOCK = threading.Lock()
+MAX_INPUT_PIXELS = 25_000_000
+ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP", "BMP"}
 
 def get_face_analyzer():
     """Lazy load InsightFace FaceAnalysis."""
-    global _FACE_ANALYZER
+    global _FACE_ANALYZER, _FACE_ANALYZER_FAILED
+    if _FACE_ANALYZER_FAILED:
+        return None
     if _FACE_ANALYZER is None:
-        try:
-            from insightface.app import FaceAnalysis
-            _FACE_ANALYZER = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
-            _FACE_ANALYZER.prepare(ctx_id=0, det_size=(640, 640))
-        except Exception as e:
-            print(f"Error loading InsightFace: {e}")
-            return None
+        with _FACE_ANALYZER_LOCK:
+            if _FACE_ANALYZER is not None:
+                return _FACE_ANALYZER
+            if _FACE_ANALYZER_FAILED:
+                return None
+            try:
+                from insightface.app import FaceAnalysis
+                _FACE_ANALYZER = FaceAnalysis(
+                    name="buffalo_sc",
+                    allowed_modules=["detection"],
+                    providers=["CPUExecutionProvider"],
+                )
+                _FACE_ANALYZER.prepare(ctx_id=0, det_thresh=0.5, det_size=(640, 640))
+            except Exception as e:
+                from src.utils.logger import Log
+                _FACE_ANALYZER_FAILED = True
+                Log.error(f"[PHOTO MODEL] InsightFace unavailable, using Haar fallback: {e}")
+                return None
     return _FACE_ANALYZER
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -53,8 +73,24 @@ _EYE_CASCADE = cv2.CascadeClassifier(
 # ─── Input Validation & Normalization ─────────────────────────────────────────
 
 def normalize_input(stream) -> Image.Image:
-
-    img = Image.open(stream)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            img = Image.open(stream)
+            if img.format not in ALLOWED_IMAGE_FORMATS:
+                raise UnidentifiedImageError(
+                    f"Định dạng ảnh không được hỗ trợ: {img.format or 'unknown'}."
+                )
+            w, h = img.size
+            if w <= 0 or h <= 0 or w * h > MAX_INPUT_PIXELS:
+                raise ValueError(
+                    f"Ảnh vượt giới hạn {MAX_INPUT_PIXELS:,} pixels hoặc kích thước không hợp lệ."
+                )
+            img.load()
+    except (Image.DecompressionBombWarning, Image.DecompressionBombError) as e:
+        raise ValueError(
+            f"Ảnh vượt giới hạn an toàn {MAX_INPUT_PIXELS:,} pixels."
+        ) from e
     img = ImageOps.exif_transpose(img)
     if img.mode != "RGB":
         img = img.convert("RGB")
@@ -79,9 +115,75 @@ def validate_image_size(img: Image.Image) -> list[str]:
 
 # ─── Face Detection & Alignment ───────────────────────────────────────────────
 
-def align_face(img_pil: Image.Image) -> tuple[Image.Image, float]:
+FACE_ROLL_MIN_DEGREES = 0.5
+FACE_ROLL_WARN_DEGREES = PHOTO_FACE_ROLL_WARN_DEGREES
+FACE_ROLL_AUTO_ALIGN_DEGREES = PHOTO_FACE_ROLL_AUTO_ALIGN_DEGREES
 
-    img_rgba = img_pil.convert("RGBA")
+
+def estimate_face_roll(landmarks: dict) -> tuple[float, dict]:
+    """
+    Ước lượng face roll bằng median của trục mắt, khóe miệng và trục dọc mặt.
+    Median giảm ảnh hưởng của makeup, mắt không cân hoặc nụ cười lệch.
+    """
+    components: dict[str, float] = {}
+
+    def _line_angle(left, right) -> float | None:
+        dx = float(right[0]) - float(left[0])
+        dy = float(right[1]) - float(left[1])
+        if abs(dx) < 1e-6:
+            return None
+        return float(np.degrees(np.arctan2(dy, dx)))
+
+    left_eye = landmarks.get("left_eye")
+    right_eye = landmarks.get("right_eye")
+    left_mouth = landmarks.get("left_mouth")
+    right_mouth = landmarks.get("right_mouth")
+
+    if left_eye is not None and right_eye is not None:
+        eye_angle = _line_angle(left_eye, right_eye)
+        if eye_angle is not None:
+            components["eyes"] = eye_angle
+
+    if left_mouth is not None and right_mouth is not None:
+        mouth_angle = _line_angle(left_mouth, right_mouth)
+        if mouth_angle is not None:
+            components["mouth"] = mouth_angle
+
+    if all(point is not None for point in (left_eye, right_eye, left_mouth, right_mouth)):
+        eye_mid_x = (float(left_eye[0]) + float(right_eye[0])) / 2
+        eye_mid_y = (float(left_eye[1]) + float(right_eye[1])) / 2
+        mouth_mid_x = (float(left_mouth[0]) + float(right_mouth[0])) / 2
+        mouth_mid_y = (float(left_mouth[1]) + float(right_mouth[1])) / 2
+        vertical_dx = mouth_mid_x - eye_mid_x
+        vertical_dy = mouth_mid_y - eye_mid_y
+        if vertical_dy > 1e-6:
+            components["face_axis"] = float(
+                np.degrees(np.arctan2(-vertical_dx, vertical_dy))
+            )
+
+    if not components:
+        return 0.0, {}
+
+    # Trục mắt của InsightFace là anchor; mouth/face-axis chỉ tham gia khi đồng thuận.
+    # Điều này tránh yaw hoặc nụ cười lệch kéo sai kết quả roll.
+    anchor = components.get("eyes", float(np.median(list(components.values()))))
+    consistent = {
+        name: angle
+        for name, angle in components.items()
+        if abs(angle - anchor) <= 8.0
+    }
+    selected = consistent or components
+    return float(np.median(list(selected.values()))), components
+
+
+def align_face(
+    img_pil: Image.Image,
+    force_align: bool = False,
+) -> tuple[Image.Image, dict]:
+    """
+    Đo face roll, chỉ tự xoay khi |roll| >= 8° hoặc client force_align.
+    Trả metadata để client phân biệt face roll với độ nghiêng của toàn ảnh.
+    """
 
     def _find_eyes_on_image(image: Image.Image) -> tuple[tuple[int, int], tuple[int, int]] | None:
         cv_img = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
@@ -102,12 +204,21 @@ def align_face(img_pil: Image.Image) -> tuple[Image.Image, float]:
         eye2_center = (x + eyes[1][0] + eyes[1][2] // 2, y + eyes[1][1] + eyes[1][3] // 2)
         return eye1_center, eye2_center
 
-    # 1. Thử tìm mắt trên ảnh gốc
+    # 1. Ưu tiên multi-landmark InsightFace, fallback Haar nếu không khả dụng.
     final_angle = 0.0
-    eye_coords = _find_eyes_on_image(img_pil)
-    
+    angle_components: dict[str, float] = {}
+    detector = "none"
+    landmarks = get_face_landmarks(img_pil)
+    if landmarks and "left_eye" in landmarks and "right_eye" in landmarks:
+        final_angle, angle_components = estimate_face_roll(landmarks)
+        detector = "insightface"
+        eye_coords = None
+    else:
+        eye_coords = _find_eyes_on_image(img_pil)
+        detector = "haar" if eye_coords else "none"
+
     # 2. Nếu không thấy, thử xoay ảnh và tìm lại
-    if eye_coords is None:
+    if detector == "none":
         for angle_offset in [25, -25, 40, -40]:
             rotated_pil = img_pil.rotate(angle_offset, expand=True)
             found_eyes = _find_eyes_on_image(rotated_pil)
@@ -117,21 +228,51 @@ def align_face(img_pil: Image.Image) -> tuple[Image.Image, float]:
                 dx = found_eyes[1][0] - found_eyes[0][0]
                 if dx == 0: continue
                 angle_on_rotated = float(np.degrees(np.arctan2(dy, dx)))
-                # final_angle = bù trừ góc xoay tạm + góc đo được
                 final_angle = angle_offset + angle_on_rotated
-                break 
-    else:
-        # Tính góc nghiêng trên ảnh gốc
+                angle_components = {"eyes": final_angle}
+                detector = "haar_rotated_search"
+                break
+    elif detector == "haar" and eye_coords is not None:
         dy = eye_coords[1][1] - eye_coords[0][1]
         dx = eye_coords[1][0] - eye_coords[0][0]
         if dx != 0:
-            # Góc dương trong PIL xoay ngược chiều kim đồng hồ
-            # Nếu mắt phải thấp (dy > 0), góc atan2 dương, ta xoay dương để level mắt
             final_angle = float(np.degrees(np.arctan2(dy, dx)))
+            angle_components = {"eyes": final_angle}
 
-    # 3. Xoay ảnh gốc một lần duy nhất với góc tổng hợp
-    if abs(final_angle) < 0.5:
-        return img_pil, 0.0
+    absolute_angle = abs(final_angle)
+    should_align = (
+        absolute_angle >= FACE_ROLL_MIN_DEGREES
+        and (force_align or absolute_angle >= FACE_ROLL_AUTO_ALIGN_DEGREES)
+    )
+
+    if detector == "none":
+        reason = "landmarks_unavailable"
+    elif absolute_angle < FACE_ROLL_MIN_DEGREES:
+        reason = "already_aligned"
+    elif force_align:
+        reason = "client_forced"
+    elif absolute_angle >= FACE_ROLL_AUTO_ALIGN_DEGREES:
+        reason = "above_auto_align_threshold"
+    elif absolute_angle >= FACE_ROLL_WARN_DEGREES:
+        reason = "warning_only"
+    else:
+        reason = "within_tolerance"
+
+    metadata = {
+        "applied": should_align,
+        "face_roll_degrees": round(final_angle, 2),
+        "absolute_face_roll_degrees": round(absolute_angle, 2),
+        "detector": detector,
+        "reason": reason,
+        "components": {
+            name: round(angle, 2) for name, angle in angle_components.items()
+        },
+        "warning_threshold_degrees": FACE_ROLL_WARN_DEGREES,
+        "auto_align_threshold_degrees": FACE_ROLL_AUTO_ALIGN_DEGREES,
+    }
+
+    if not should_align:
+        return img_pil, metadata
 
     # Lấy màu nền để fill các góc trống thay vì màu đen
     bg_color_name = detect_source_bg_color(img_pil)
@@ -145,18 +286,7 @@ def align_face(img_pil: Image.Image) -> tuple[Image.Image, float]:
     img_rgb = img_pil.convert("RGB")
     rotated_rgb = img_rgb.rotate(final_angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill_color)
     
-    # 4. Cắt bỏ phần dư thừa (Bounding box của nội dung chính)
-    # Vì dùng fillcolor có màu giống nền nên ta cần crop lại để loại bỏ phần mở rộng quá mức của canvas xoay
-    # Ta dùng lại detect_face trên ảnh đã xoay để tìm vùng chứa người
-    face_bbox_rotated = detect_face(rotated_rgb)
-    if face_bbox_rotated:
-        # Nếu tìm thấy mặt trên ảnh đã xoay, ta có thể tự tin crop xung quanh mặt
-        # Ở đây ta chỉ cần trả về ảnh đã xoay thẳng, việc crop 3x4 sẽ do hàm khác lo
-        return rotated_rgb, final_angle
-    
-    return rotated_rgb, final_angle
-    
-    return rotated_rgba.convert("RGB"), final_angle
+    return rotated_rgb, metadata
 
 
 def detect_face(img_pil: Image.Image) -> tuple[int, int, int, int] | None:
@@ -177,7 +307,8 @@ def detect_face(img_pil: Image.Image) -> tuple[int, int, int, int] | None:
                 x, y, x2, y2 = bbox
                 return (x, y, x2 - x, y2 - y)
         except Exception as e:
-            print(f"InsightFace error: {e}")
+            from src.utils.logger import Log
+            Log.warning(f"[PHOTO MODEL] InsightFace inference failed, using Haar fallback: {e}")
 
     # 2. Fallback sang Haar Cascade (Tốc độ cao, độ chính xác thấp hơn)
     cv_img = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
@@ -195,13 +326,6 @@ def detect_face(img_pil: Image.Image) -> tuple[int, int, int, int] | None:
 
     # Thử xoay nhẹ
     rows, cols = gray.shape
-    for angle in [20, -20]:
-        M = cv2.getRotationMatrix2D((cols/2, rows/2), angle, 1)
-        rotated_gray = cv2.warpAffine(gray, M, (cols, rows))
-        face = _try_detect(rotated_gray)
-        if face is not None:
-            return tuple(face.tolist()) # type: ignore
-
     return None
 
 
@@ -234,6 +358,43 @@ def get_face_landmarks(img_pil: Image.Image) -> dict | None:
         return None
 
 
+def calculate_face_crop_box(
+    image_size: tuple[int, int],
+    face_bbox: tuple[int, int, int, int],
+    aspect_ratio: str,
+    center_x: float | None = None,
+) -> tuple[int, int, int, int]:
+    """Tạo crop box nằm trong ảnh và luôn giữ đúng tỷ lệ yêu cầu."""
+    ratio_map = {"1:1": 1.0, "3:4": 3 / 4, "4:6": 2 / 3, "2:3": 2 / 3}
+    if aspect_ratio not in ratio_map:
+        raise ValueError("aspect_ratio chỉ chấp nhận 1:1, 3:4, 4:6 hoặc 2:3.")
+
+    img_w, img_h = image_size
+    fx, fy, fw, fh = face_bbox
+    ratio = ratio_map[aspect_ratio]
+    cx = float(center_x if center_x is not None else fx + fw / 2)
+
+    # Đủ rộng cho vai và đủ cao cho đầu/ngực, sau đó ép theo target ratio.
+    crop_w = max(fw * 2.5, fh * 2.8 * ratio)
+    if aspect_ratio == "3:4":
+        crop_w = max(img_w * 0.2, min(img_w * 0.95, crop_w))
+    max_w = min(float(img_w), float(img_h) * ratio)
+    crop_w = min(crop_w, max_w)
+
+    final_w = max(1, int(crop_w))
+    final_h = max(1, int(round(final_w / ratio)))
+    if final_h > img_h:
+        final_h = img_h
+        final_w = max(1, int(round(final_h * ratio)))
+
+    # Chừa khoảng trống ~30% chiều cao mặt phía trên bbox.
+    final_x = int(round(cx - final_w / 2))
+    final_y = int(round(fy - fh * 0.30))
+    final_x = max(0, min(final_x, img_w - final_w))
+    final_y = max(0, min(final_y, img_h - final_h))
+    return final_x, final_y, final_w, final_h
+
+
 # ─── Quality Validation ───────────────────────────────────────────────────────
 
 def validate_photo_quality(img_pil: Image.Image, face_bbox) -> list[str]:
@@ -242,7 +403,20 @@ def validate_photo_quality(img_pil: Image.Image, face_bbox) -> list[str]:
     """
     quality_warnings: list[str] = []
     w, h = img_pil.size
-    gray = cv2.cvtColor(np.array(img_pil.convert("L")), cv2.COLOR_GRAY2BGR)
+    gray_single = np.array(img_pil.convert("L"))
+    gray = cv2.cvtColor(gray_single, cv2.COLOR_GRAY2BGR)
+
+    sharpness = float(cv2.Laplacian(gray_single, cv2.CV_64F).var())
+    if sharpness < 60.0:
+        quality_warnings.append(
+            "Ảnh có dấu hiệu bị mờ. Vui lòng dùng ảnh rõ nét hơn để tăng độ chính xác."
+        )
+
+    mean_luma = float(gray_single.mean())
+    if mean_luma < 45:
+        quality_warnings.append("Ảnh quá tối. Vui lòng tăng ánh sáng khi chụp.")
+    elif mean_luma > 225:
+        quality_warnings.append("Ảnh quá sáng hoặc bị cháy sáng. Vui lòng giảm ánh sáng khi chụp.")
 
     if face_bbox:
         fx, fy, fw, fh = face_bbox
@@ -291,7 +465,7 @@ def crop_portrait_rgb(
 
     # 0. Xác định biên giới hạn (Effective Bounds)
     # Nếu phát hiện nền xanh/trắng, ta sẽ crop trong vùng đó thay vì toàn bộ ảnh
-    bg_color = detect_source_bg_color(img_rgb)
+    bg_color = detect_source_bg_color(img_rgb, face_bbox)
     bg_res = get_background_region_bbox(img_rgb, bg_color)
     
     if isinstance(bg_res, Image.Image):
@@ -363,14 +537,15 @@ def crop_portrait_rgb(
 def crop_portrait_rgba(
     no_bg_rgba: Image.Image,
     target_w: int,
-    target_h: int
+    target_h: int,
+    face_bbox: tuple[int, int, int, int] | None = None,
 ) -> Image.Image | None:
     """
     [TYPE=FULL] Crop chuẩn ảnh thẻ từ ảnh RGBA đã tách nền.
     Dùng getbbox() để tìm viền người qua alpha channel.
     Trả về Image RGBA đã resize hoặc None nếu không tìm thấy mặt.
     """
-    bbox = detect_face(no_bg_rgba)
+    bbox = face_bbox or detect_face(no_bg_rgba)
     if bbox is None:
         return None
 
@@ -428,7 +603,10 @@ def crop_portrait_rgba(
 
 # ─── Background Removal Helpers ───────────────────────────────────────────────
 
-def detect_source_bg_color(img_rgb: Image.Image) -> str:
+def detect_source_bg_color(
+    img_rgb: Image.Image,
+    face_bbox: tuple[int, int, int, int] | None = None,
+) -> str:
     """
     Đoán màu nền gốc bằng cách lấy mẫu 4 góc ảnh và vùng quanh mặt.
     """
@@ -450,7 +628,7 @@ def detect_source_bg_color(img_rgb: Image.Image) -> str:
             valid_samples.append(sample.reshape(-1, 3))
 
     # 2. Lấy mẫu vùng quanh mặt (phía trên đầu và 2 bên vai)
-    face_bbox = detect_face(img_rgb)
+    face_bbox = face_bbox or detect_face(img_rgb)
     if face_bbox:
         fx, fy, fw, fh = face_bbox
         # Vùng trên đầu

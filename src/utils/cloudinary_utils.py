@@ -65,7 +65,7 @@ class CloudinaryService:
     # ── Private upload (cho ảnh gốc OCR) ──────────────────────────────────────
     def upload_private(
         self,
-        file_path: str,
+        file_path,
         public_id: str | None = None,
         folder: str = "ocr_source_images",
     ) -> dict | None:
@@ -74,7 +74,7 @@ class CloudinaryService:
         Ảnh sẽ không thể truy cập qua URL thông thường — chỉ qua signed URL.
 
         Args:
-            file_path: Đường dẫn file trên disk.
+            file_path: Đường dẫn file hoặc file-like object/BytesIO.
             public_id: ID tùy chỉnh (không bắt buộc).
             folder:    Folder trên Cloudinary.
 
@@ -89,8 +89,8 @@ class CloudinaryService:
                 "folder": folder,
                 "resource_type": "image",
                 "type": "authenticated",   # Key: private / authenticated delivery
-                "use_filename": True,
-                "unique_filename": True,
+                "use_filename": isinstance(file_path, (str, bytes)),
+                "unique_filename": public_id is None,
             }
             if public_id:
                 upload_params["public_id"] = public_id
@@ -170,7 +170,8 @@ class CloudinaryService:
                 type="authenticated",
                 invalidate=True,
             )
-            ok = result.get("result") == "ok"
+            # "not found" được xem là idempotent success: asset đã không còn tồn tại.
+            ok = result.get("result") in ("ok", "not found")
             if ok:
                 Log.info(f"[CLOUDINARY] 🗑️ Deleted: {public_id}")
             else:

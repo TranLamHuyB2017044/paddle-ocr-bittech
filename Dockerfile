@@ -57,6 +57,7 @@ COPY src ./src
 COPY public ./public
 COPY app.py .
 COPY run_worker.py .
+COPY gunicorn.conf.py .
 COPY .licensekek ./.licensekek
 
 # Đảm bảo các model đã được "bake" vào image
@@ -71,6 +72,9 @@ USER appuser
 # Pre-download ResNet18 weights to appuser's torch cache directory
 RUN python -c "import torchvision.models as m; m.resnet18(weights=m.ResNet18_Weights.DEFAULT)"
 
+# Bake photo models vào image để request đầu tiên không phụ thuộc network runtime.
+RUN python -c "from rembg import new_session; new_session('modnet'); from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_sc', allowed_modules=['detection'], providers=['CPUExecutionProvider'])"
+
 EXPOSE ${PORT}
 
 # Healthcheck giúp quản lý container trên VPS ổn định
@@ -78,6 +82,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:${PORT}/ || exit 1
 
 CMD ["gunicorn", \
+     "--config", "gunicorn.conf.py", \
      "--bind", "0.0.0.0:8080", \
      "--workers", "2", \
      "--threads", "4", \

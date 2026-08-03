@@ -2,7 +2,7 @@
 Photo Routes — API Endpoint xử lý ảnh thẻ.
 Route handler thuần túy: validate request → gọi service → trả response.
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 
 from src.utils.auth_middleware import require_auth
 from src.utils.logger import Log
@@ -12,6 +12,7 @@ from src.services.photo_service import (
     process_batch,
     clear_session_data,
     BatchValidationError,
+    PhotoStorageError,
 )
 
 photo_bp = Blueprint('photo_routes', __name__)
@@ -41,16 +42,29 @@ def process_photo():
         size_param      = request.form.get('size', '3x4').strip()
         bg_color_param  = request.form.get('bg_color', 'blue').lower().strip()
         ignore_warnings = request.form.get('ignore_warnings', 'false').lower() == 'true'
+        auto_align_raw  = request.form.get('auto_align', 'false').lower().strip()
+        if auto_align_raw not in ("true", "false"):
+            return jsonify({
+                "statusCode": 400,
+                "message": "Tham số 'auto_align' chỉ chấp nhận 'true' hoặc 'false'.",
+            }), 400
+        auto_align = auto_align_raw == "true"
 
         Log.info(
-            f"[PHOTO API] Request: session={session_id}, type={process_type}, size={size_param}, "
-            f"bg_color={bg_color_param}, files={len(files)}, ignore_warnings={ignore_warnings}"
+            f"[PHOTO API] Request: user={g.user_id}, session={session_id}, "
+            f"type={process_type}, size={size_param}, "
+            f"bg_color={bg_color_param}, files={len(files)}, "
+            f"ignore_warnings={ignore_warnings}, auto_align={auto_align}"
         )
 
         # ── 3. Validate batch (fail fast, không tốn CPU) ──────────────────────
         try:
             validate_batch_request(files, process_type, size_param, bg_color_param)
         except BatchValidationError as e:
+            Log.warning(
+                f"[PHOTO API] Validation failed: user={g.user_id} "
+                f"session={session_id} reason={e}"
+            )
             return jsonify({"statusCode": 400, "message": str(e)}), 400
 
         # ── 4. Xử lý batch ────────────────────────────────────────────────────
@@ -60,7 +74,10 @@ def process_photo():
             size_param    = size_param,
             bg_color_param= bg_color_param,
             ignore_warnings = ignore_warnings,
-            session_id    = session_id
+            session_id    = session_id,
+            owner_user_id = g.user_id,
+            account_id    = g.user.get("account_id"),
+            auto_align    = auto_align,
         )
 
         # ── 5. Build summary & Full URLs ──────────────────────────────────────
@@ -68,29 +85,27 @@ def process_photo():
         success = sum(1 for r in results if r["status"] == "success")
         failed  = total - success
 
-        # Chuyển đổi path tương đối thành Full URL
-        # Sử dụng request.host_url (có kèm / ở cuối)
-        base_url = request.host_url.rstrip('/') 
-        
-        for r in results:
-            if r.get("original_url") and not r["original_url"].startswith("http"):
-                r["original_url"] = f"{base_url}{r['original_url']}"
-            if r.get("cropped_url") and not r["cropped_url"].startswith("http"):
-                r["cropped_url"] = f"{base_url}{r['cropped_url']}"
-
-        Log.info(f"[PHOTO API] Response ready. Session: {session_id}, Success: {success}")
+        Log.info(
+            f"[PHOTO API] Response ready. user={g.user_id} session={session_id} "
+            f"success={success} failed={failed}"
+        )
 
         return jsonify({
             "statusCode": 200,
             "session_id": session_id,
             "type":       process_type,
             "size":       size_param,
+            "bg_color":   bg_color_param if process_type == "full" else None,
+            "auto_align": auto_align,
             "total":      total,
             "success":    success,
             "failed":     failed,
             "results":    results,
         }), 200
 
+    except PhotoStorageError as e:
+        Log.error(f"[PHOTO API] Storage unavailable: {e}")
+        return jsonify({"statusCode": 503, "message": str(e)}), 503
     except Exception as e:
         Log.error(f"[PHOTO API] Unhandled error: {e}")
         import traceback
@@ -115,17 +130,25 @@ def clear_photo_session():
         if not session_id:
             return jsonify({"statusCode": 400, "message": "session_id is required"}), 400
 
-        success = clear_session_data(session_id)
+        if session_id == "all":
+            return jsonify({
+                "statusCode": 400,
+                "message": "Không hỗ trợ xóa toàn bộ session.",
+            }), 400
+
+        clear_result = clear_session_data(session_id, g.user_id)
         
-        if success:
+        if clear_result["success"]:
             return jsonify({
                 "statusCode": 200,
-                "message": f"Successfully cleared data for session {session_id}" if session_id != "all" else "Successfully cleared all temporary files"
+                "message": f"Successfully cleared data for session {session_id}",
+                **clear_result,
             }), 200
         else:
             return jsonify({
-                "statusCode": 500, 
-                "message": f"Failed to clear data for session {session_id}" if session_id != "all" else "Failed to clear temporary files"
+                "statusCode": 500,
+                "message": f"Failed to clear all data for session {session_id}",
+                **clear_result,
             }), 500
 
     except Exception as e:
@@ -135,47 +158,43 @@ def clear_photo_session():
 
 @photo_bp.route("/api/driver-center/ai/auto-crop", methods=["POST"])
 @require_auth
+@limiter.limit("20 per minute")
 def auto_crop_face():
-    import os
     import uuid
-    from PIL import Image
-    from werkzeug.utils import secure_filename
-    from src.utils.image_processing import detect_face, get_face_landmarks
-    from src.services.photo_service import PREVIEW_DIR, PREVIEW_SUBFOLDER
+    from src.utils.image_processing import (
+        calculate_face_crop_box,
+        detect_face,
+        get_face_landmarks,
+        normalize_input,
+    )
+    from src.services.photo_service import persist_photo_preview
 
     try:
-        # 1. Lấy file ảnh từ request
         file = request.files.get('image')
         if not file:
-            # Hỗ trợ fallback sang 'file' hoặc 'files'
             file = request.files.get('file')
             if not file:
                 files = request.files.getlist('files')
                 if files:
                     file = files[0]
-                    
+
         if not file:
             return jsonify({
                 "status": "error",
                 "message": "Không tìm thấy tệp hình ảnh trong request."
             }), 400
 
-        aspect_ratio = request.form.get('aspect_ratio', '').strip()
-
-        # Đọc ảnh
+        aspect_ratio = request.form.get('aspect_ratio', '3:4').strip()
         try:
-            img = Image.open(file.stream)
-            # Fix EXIF orientation nếu có
-            from PIL import ImageOps
-            img = ImageOps.exif_transpose(img)
+            validate_batch_request([file], "crop", "3x4", "blue")
+            img = normalize_input(file.stream)
             img_w, img_h = img.size
-        except Exception as e:
+        except (BatchValidationError, ValueError, OSError) as e:
             return jsonify({
                 "status": "error",
-                "message": "Không thể đọc tệp hình ảnh. Vui lòng đảm bảo đó là định dạng hợp lệ (JPEG, PNG)."
+                "message": str(e) or "Không thể đọc tệp hình ảnh."
             }), 400
 
-        # 2. Phát hiện khuôn mặt
         face_bbox = detect_face(img)
         if not face_bbox:
             return jsonify({
@@ -183,187 +202,34 @@ def auto_crop_face():
                 "message": "Không tìm thấy khuôn mặt trong ảnh, vui lòng tải ảnh rõ nét hơn."
             }), 400
 
-        face_x, face_y, face_w, face_h = face_bbox
-
-        # 3. Lấy landmarks để định tâm chính xác (nếu dùng InsightFace)
         landmarks = get_face_landmarks(img)
-        center_x = face_x + face_w / 2
-        
+        center_x = face_bbox[0] + face_bbox[2] / 2
         if landmarks and "center_nose" in landmarks:
-            # Ưu tiên dùng tọa độ mũi để căn giữa chiều ngang
-            center_x = landmarks["center_nose"][0]
+            center_x = float(landmarks["center_nose"][0])
 
-        # 4. Tính toán Padding Box (margin)
-        padding_w = face_w * 1.5
-        padding_h = face_h * 1.8
-
-        # Định tâm theo center_x thay vì chỉ dựa vào face_x
-        ideal_x = center_x - ((face_w + padding_w) / 2)
-        ideal_y = face_y - (padding_h / 3)
-
-        ideal_w = face_w + padding_w
-        ideal_h = face_h + padding_h
-
-        # 4. Xử lý Aspect Ratio (tỷ lệ khung hình)
-        if aspect_ratio == '1:1':
-            # Cân bằng width và height bằng nhau
-            max_side = max(ideal_w, ideal_h)
-            
-            # Căn giữa lại x và y sau khi điều chỉnh kích thước
-            ideal_x = ideal_x - (max_side - ideal_w) / 2
-            ideal_y = ideal_y - (max_side - ideal_h) / 2
-            
-            ideal_w = max_side
-            ideal_h = max_side
-            
-        elif aspect_ratio == '3:4':
-            # Height = Width * 4/3
-            # Ta giữ nguyên width, tính lại height để đảm bảo lấy đủ 2 bên vai
-            target_h = ideal_w * (4 / 3)
-            if target_h < ideal_h:
-                # Nếu height tính ra nhỏ hơn height cần thiết, ta mở rộng width theo height
-                ideal_w = ideal_h * (3 / 4)
-                target_h = ideal_h
-                ideal_x = ideal_x - (ideal_w - (face_w + padding_w)) / 2
-                
-            ideal_y = ideal_y - (target_h - ideal_h) / 2
-            ideal_h = target_h
-            
-            # Đảm bảo crop_box của ảnh 3x4 không quá nhỏ hoặc quá to so với ảnh gốc
-            # Tối thiểu 20% chiều rộng ảnh gốc, tối đa 95% chiều rộng ảnh gốc
-            min_w = img_w * 0.2
-            max_w = img_w * 0.95
-            
-            if ideal_w < min_w:
-                diff_w = min_w - ideal_w
-                ideal_w = min_w
-                ideal_h = min_w * (4 / 3)
-                ideal_x -= diff_w / 2
-                ideal_y -= (ideal_h - target_h) / 2
-            elif ideal_w > max_w:
-                diff_w = ideal_w - max_w
-                ideal_w = max_w
-                ideal_h = max_w * (4 / 3)
-                ideal_x += diff_w / 2
-                ideal_y += (target_h - ideal_h) / 2
-            
-        elif aspect_ratio == '4:6' or aspect_ratio == '2:3':
-            # Height = Width * 1.5
-            target_h = ideal_w * 1.5
-            if target_h < ideal_h:
-                ideal_w = ideal_h / 1.5
-                target_h = ideal_h
-                ideal_x = ideal_x - (ideal_w - (face_w + padding_w)) / 2
-                
-            ideal_y = ideal_y - (target_h - ideal_h) / 2
-            ideal_h = target_h
-
-        # 5. Đảm bảo crop_box nằm trong giới hạn của ảnh thực tế VÀ GIỮ ĐÚNG TỶ LỆ KHUNG HÌNH
-        # Thu nhỏ khung nếu nó lớn hơn ảnh gốc
-        if ideal_w > img_w or ideal_h > img_h:
-            scale_w = img_w / ideal_w if ideal_w > 0 else 1.0
-            scale_h = img_h / ideal_h if ideal_h > 0 else 1.0
-            scale = min(scale_w, scale_h)
-            
-            center_x = ideal_x + ideal_w / 2
-            center_y = ideal_y + ideal_h / 2
-            
-            ideal_w *= scale
-            ideal_h *= scale
-            ideal_x = center_x - ideal_w / 2
-            ideal_y = center_y - ideal_h / 2
-
-        final_w = int(ideal_w)
-        final_h = int(ideal_h)
-        
-        # Cố định lại chiều cao theo chiều rộng để tỷ lệ chính xác 100% sau khi làm tròn
-        if aspect_ratio == '1:1':
-            final_h = final_w
-        elif aspect_ratio == '3:4':
-            final_h = int(final_w * 4 / 3)
-        elif aspect_ratio == '4:6' or aspect_ratio == '2:3':
-            final_h = int(final_w * 1.5)
-            
-        # Đảm bảo làm tròn không làm kích thước lố qua ảnh gốc
-        if final_h > img_h:
-            final_h = img_h
-            if aspect_ratio == '3:4':
-                final_w = int(final_h * 3 / 4)
-            elif aspect_ratio == '4:6' or aspect_ratio == '2:3':
-                final_w = int(final_h / 1.5)
-            elif aspect_ratio == '1:1':
-                final_w = final_h
-                
-        if final_w > img_w:
-            final_w = img_w
-            if aspect_ratio == '3:4':
-                final_h = int(final_w * 4 / 3)
-            elif aspect_ratio == '4:6' or aspect_ratio == '2:3':
-                final_h = int(final_w * 1.5)
-            elif aspect_ratio == '1:1':
-                final_h = final_w
-
-        # 6. ĐẢM BẢO GIỮ TÂM MŨI KHI CHẠM MÉP (Shrink instead of Shift)
-        # Nếu khung crop bị tràn ra ngoài ảnh, ta thu nhỏ khung lại thay vì dịch chuyển x/y
-        # để khuôn mặt luôn nằm ở chính giữa chiều ngang.
-        
-        final_x = int(ideal_x)
-        final_y = int(ideal_y)
-        final_w = int(ideal_w)
-        final_h = int(ideal_h)
-
-        # Kiểm tra tràn biên trái/phải
-        dist_to_left_edge = center_x
-        dist_to_right_edge = img_w - center_x
-        
-        # Chiều rộng tối đa có thể có để giữ center_x ở giữa
-        max_half_w = min(dist_to_left_edge, dist_to_right_edge)
-        if (final_w / 2) > max_half_w:
-            # Thu nhỏ w để vừa khít, và thu nhỏ h theo tỉ lệ
-            new_w = int(max_half_w * 2 * 0.98) # Lấy 98% cho an toàn
-            ratio = final_h / final_w
-            final_w = new_w
-            final_h = int(final_w * ratio)
-            
-            # Cập nhật lại x, y dựa trên center_x và final_h mới
-            final_x = int(center_x - final_w / 2)
-            # Giữ nguyên y_top (ideal_y) hoặc tính lại nếu cần
-            # Ở đây ta giữ nguyên khoảng cách đỉnh đầu
-        
-        # Kiểm tra tràn biên trên/dưới
-        if final_y < 0:
-            final_y = 0
-            
-        if final_y + final_h > img_h:
-            final_h = img_h - final_y
-            # Điều chỉnh lại w để giữ ratio nếu cần (tùy chọn)
-
-        # Double check lọt lòng ảnh
-        final_x = max(0, min(final_x, img_w - final_w))
-        final_y = max(0, min(final_y, img_h - final_h))
-
-        # 7. Cắt ảnh và lưu để tạo URL xem trước
+        final_x, final_y, final_w, final_h = calculate_face_crop_box(
+            (img_w, img_h),
+            face_bbox,
+            aspect_ratio,
+            center_x=center_x,
+        )
         cropped_img = img.crop((final_x, final_y, final_x + final_w, final_y + final_h))
-        
         session_id = str(uuid.uuid4())
-        filename = secure_filename(file.filename) if file.filename else "image.jpg"
-        name, ext = os.path.splitext(filename)
-        if not ext:
-            ext = ".jpg"
-            
-        cropped_filename = f"autocrop_{session_id}{ext}"
-        cropped_path = os.path.join(PREVIEW_DIR, cropped_filename)
-        
-        # Lưu ảnh (convert sang RGB nếu là RGBA để lưu JPEG)
-        if cropped_img.mode in ("RGBA", "P"):
-            cropped_img = cropped_img.convert("RGB")
-        cropped_img.save(cropped_path, quality=90)
-        
-        # Tạo URL
-        base_url = request.host_url.rstrip('/')
-        cropped_url = f"{base_url}/uploads/{PREVIEW_SUBFOLDER}/{cropped_filename}"
-
-        # 7. Trả về response theo chuẩn
+        item_id = uuid.uuid4().hex[:8]
+        asset = persist_photo_preview(
+            cropped_img,
+            session_id=session_id,
+            owner_user_id=g.user_id,
+            account_id=g.user.get("account_id"),
+            item_id=item_id,
+            kind="autocrop",
+            original_filename=f"autocrop_{item_id}.jpg",
+        )
+        Log.info(
+            f"[AUTO-CROP API] user={g.user_id} session={session_id} "
+            f"ratio={aspect_ratio} input={img_w}x{img_h} "
+            f"box={final_x},{final_y},{final_w},{final_h}"
+        )
         return jsonify({
             "status": "success",
             "data": {
@@ -373,12 +239,22 @@ def auto_crop_face():
                     "width": final_w,
                     "height": final_h
                 },
-                "confidence": 0.98,  # Fake confidence as requested in example
+                "confidence": None,
+                "confidence_source": "not_available",
                 "message": "Phát hiện khuôn mặt thành công",
-                "cropped_url": cropped_url
+                "session_id": session_id,
+                "image_size": {"width": img_w, "height": img_h},
+                "cropped_url": asset["url"],
+                "url_expires_in_seconds": asset["url_expires_in_seconds"],
+                "retention_expires_at": asset["retention_expires_at"],
             }
         }), 200
 
+    except PhotoStorageError as e:
+        Log.error(f"[AUTO-CROP API] Storage unavailable: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 503
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
         Log.error(f"[AUTO-CROP API] Lỗi xử lý: {e}")
         import traceback

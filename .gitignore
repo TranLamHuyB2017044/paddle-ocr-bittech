@@ -188,3 +188,4 @@ client_secret.json
 
 src/hand_writting/*.onnx
 /.licensekek
+/data_test

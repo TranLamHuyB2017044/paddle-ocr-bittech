@@ -22,6 +22,23 @@ BASE_URL = os.getenv("BASE_URL", "http://192.168.1.241:9000")
 CHATBOT_EMBED_CDN_URL = os.getenv("CHATBOT_EMBED_CDN_URL", None)
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://tlhuy02.app.n8n.cloud/webhook-test/chat-runtime")
 TTS_FILE_RETENTION_HOURS = int(os.getenv("TTS_FILE_RETENTION_HOURS", "24"))
+PHOTO_TEMP_RETENTION_DAYS = max(1, min(365, int(os.getenv("PHOTO_TEMP_RETENTION_DAYS", "30"))))
+PHOTO_SIGNED_URL_EXPIRY_SECONDS = max(
+    300,
+    min(24 * 3600, int(os.getenv("PHOTO_SIGNED_URL_EXPIRY_SECONDS", "3600"))),
+)
+PHOTO_BATCH_TIMEOUT_SECONDS = max(
+    20,
+    min(600, int(os.getenv("PHOTO_BATCH_TIMEOUT_SECONDS", "120"))),
+)
+PHOTO_FACE_ROLL_WARN_DEGREES = max(
+    1.0,
+    min(15.0, float(os.getenv("PHOTO_FACE_ROLL_WARN_DEGREES", "5.0"))),
+)
+PHOTO_FACE_ROLL_AUTO_ALIGN_DEGREES = max(
+    PHOTO_FACE_ROLL_WARN_DEGREES,
+    min(25.0, float(os.getenv("PHOTO_FACE_ROLL_AUTO_ALIGN_DEGREES", "8.0"))),
+)
 
 # Định dạng file tài liệu cho OCR / RAG
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'md', 'docx', 'doc', 'xlsx'}
