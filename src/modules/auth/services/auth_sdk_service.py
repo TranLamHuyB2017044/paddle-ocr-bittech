@@ -1,7 +1,7 @@
 import os
 from bittech_auth import AuthServiceClient, HttpxTransport, AuthService
-from src.shared.repositories.licenses_repository import licenses_repo
-from src.shared.repositories.auth_audit_repository import auth_audit_repo
+from src.modules.auth.repositories.licenses_repository import licenses_repo
+from src.modules.auth.repositories.auth_audit_repository import auth_audit_repo
 import src.core.config as config
 
 # 1. Khởi tạo transport và client

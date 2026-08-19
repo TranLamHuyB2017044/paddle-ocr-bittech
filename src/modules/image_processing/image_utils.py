@@ -8,7 +8,7 @@ import threading
 import cv2
 import numpy as np
 from PIL import Image, ImageColor, ImageOps, ImageFilter
-from src.config import (
+from src.core.config import (
     PHOTO_FACE_ROLL_AUTO_ALIGN_DEGREES,
     PHOTO_FACE_ROLL_WARN_DEGREES,
 )
@@ -307,7 +307,7 @@ def detect_face(img_pil: Image.Image) -> tuple[int, int, int, int] | None:
                 x, y, x2, y2 = bbox
                 return (x, y, x2 - x, y2 - y)
         except Exception as e:
-            from src.utils.logger import Log
+            from src.shared.utils.logger import Log
             Log.warning(f"[PHOTO MODEL] InsightFace inference failed, using Haar fallback: {e}")
 
     # 2. Fallback sang Haar Cascade (Tốc độ cao, độ chính xác thấp hơn)

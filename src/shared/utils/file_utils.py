@@ -5,7 +5,7 @@ Xử lý các thao tác liên quan đến file
 import os
 import io
 from datetime import datetime
-from src.config import ALLOWED_EXTENSIONS, ALLOWED_IMAGE_EXTENSIONS, UPLOAD_FOLDER
+from src.core.config import ALLOWED_EXTENSIONS, ALLOWED_IMAGE_EXTENSIONS, UPLOAD_FOLDER
 
 
 # ========== MIME TYPE SIGNATURES (Magic Bytes) ==========
@@ -205,7 +205,7 @@ def save_uploaded_file_list(files):
     """
     Lưu danh sách file upload — validate cả extension lẫn MIME type thật.
     """
-    from src.utils.logger import Log
+    from src.shared.utils.logger import Log
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     

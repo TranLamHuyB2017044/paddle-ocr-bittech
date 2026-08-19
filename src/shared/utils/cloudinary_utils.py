@@ -8,8 +8,8 @@ CloudinaryService — Nâng cấp hỗ trợ:
 import cloudinary
 import cloudinary.uploader
 import cloudinary.utils
-from src.config import CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
-from src.utils.logger import Log
+from src.core.config import CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+from src.shared.utils.logger import Log
 
 # Thời gian mặc định signed URL (giây). 15 phút.
 DEFAULT_SIGNED_URL_EXPIRY_SEC = 15 * 60

@@ -22,7 +22,7 @@ class AuthService:
             raise ValueError("Số điện thoại đã tồn tại")
             
         # 1. Handle Account creation (Every new self-registered user gets an account)
-        from src.shared.repositories.accounts_repository import accounts_repo
+        from src.modules.auth.repositories.accounts_repository import accounts_repo
         
         # Set default plan based on role if plan is not provided
         if plan is None:
@@ -193,7 +193,7 @@ class AuthService:
         
         # 3. Handle API Key
         # STRATEGY: Store plain secret in DB (Unsafe but requested) and always return full key.
-        from src.utils.security import generate_user_api_key
+        from src.shared.utils.security import generate_user_api_key
         
         full_key_response = None
         
@@ -217,7 +217,7 @@ class AuthService:
             full_key_response = full_key
 
         # 4. Get Account Info
-        from src.services.subscription_service import subscription_service
+        from src.shared.services.subscription_service import subscription_service
         quota_data = None
         if user.account_id:
             quota_data = subscription_service.get_quota_info(user.account_id)

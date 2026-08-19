@@ -1,7 +1,7 @@
 import ipaddress
 import socket
 from urllib.parse import urlparse
-from src.utils.logger import Log
+from src.shared.utils.logger import Log
 
 def is_safe_url(url: str) -> bool:
     """

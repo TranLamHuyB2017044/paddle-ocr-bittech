@@ -39,7 +39,7 @@ def serve_uploaded_file(filename):
     from flask import send_from_directory, current_app
     from src.shared.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
     from src.shared.utils.security import hash_token
-    from src.shared.repositories.users_repository import users_repo
+    from src.modules.auth.repositories.users_repository import users_repo
 
     upload_folder = current_app.config.get("UPLOAD_FOLDER", "uploads")
     

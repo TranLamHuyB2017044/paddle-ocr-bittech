@@ -355,7 +355,7 @@ class RagService:
         
         if is_no_info and telegram_bot_token and telegram_chat_id:
             try:
-                from src.services.telegram_service import send_telegram_message, format_customer_question_notification
+                from src.shared.services.telegram_service import send_telegram_message, format_customer_question_notification
                 notification_message = format_customer_question_notification(question, chatbot_name)
                 send_telegram_message(telegram_bot_token, telegram_chat_id, notification_message)
             except Exception as e:

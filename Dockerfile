@@ -50,11 +50,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy môi trường venv đã build từ stage 1
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy mã nguồn và public folder
-COPY src ./src
-COPY public ./public
-COPY app.py .
-
 # Thiết lập thư mục và user bảo mật
 RUN mkdir -p uploads logs storage && \
     useradd -m -u 1000 appuser && \
@@ -62,11 +57,15 @@ RUN mkdir -p uploads logs storage && \
 
 USER appuser
 
-# Pre-download ResNet18 weights to appuser's torch cache directory
+# Pre-download AI weights & models vào cache image (được Docker cache vĩnh viễn)
 RUN python -c "import torchvision.models as m; m.resnet18(weights=m.ResNet18_Weights.DEFAULT)"
+RUN python -c "from rembg import new_session; new_session('u2net'); new_session('modnet'); from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_sc', allowed_modules=['detection'], providers=['CPUExecutionProvider'])"
 
-# Bake photo models vào image
-RUN python -c "from rembg import new_session; new_session('modnet'); from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_sc', allowed_modules=['detection'], providers=['CPUExecutionProvider'])"
+# Copy mã nguồn, license và public folder sau cùng (sửa code sẽ không bị tải lại model)
+COPY src ./src
+COPY public ./public
+COPY .licensekek ./.licensekek
+COPY app.py .
 
 EXPOSE ${PORT}
 

@@ -1,8 +1,8 @@
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from src.utils.logger import Log
-from src import config
+from src.shared.utils.logger import Log
+import src.core.config as config
 
 class EmailService:
     """Service class for sending emails using SMTP."""

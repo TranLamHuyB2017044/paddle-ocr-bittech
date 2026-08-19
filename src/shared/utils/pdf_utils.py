@@ -4,7 +4,7 @@ try:
 except ImportError:
     fitz = None
 
-from src.utils.logger import Log
+from src.shared.utils.logger import Log
 
 def is_pdf_scanned(pdf_path):
     """
@@ -135,7 +135,7 @@ def get_pdf_pages_as_images(pdf_path, temp_dir="uploads/temp"):
         return []
 
     # Use absolute path to avoid permission issues when run from different contexts
-    from src.config import root_dir
+    from src.core.config import root_dir
     abs_temp_dir = os.path.join(root_dir, temp_dir)
     os.makedirs(abs_temp_dir, exist_ok=True)
     image_paths = []

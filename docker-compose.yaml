@@ -55,6 +55,7 @@ services:
     volumes:
       - uploads-data:/app/uploads                     
       - logs-data:/app/logs  
+      - ./.licensekek:/app/.licensekek:ro
       - ./storage:/app/storage:ro                  
       - ./src/modules/ocr/hand_writting:/app/src/modules/ocr/hand_writting
     security_opt:
@@ -84,6 +85,7 @@ services:
     volumes:
       - uploads-data:/app/uploads
       - logs-data:/app/logs
+      - ./.licensekek:/app/.licensekek:ro
       - ./storage:/app/storage:ro
       - ./src/modules/ocr/hand_writting:/app/src/modules/ocr/hand_writting
     env_file:

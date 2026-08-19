@@ -1,4 +1,4 @@
-from src.utils.redis_client import redis_conn
+from src.shared.utils.redis_client import redis_conn
 
 class RedisNonceStore:
     def contains(self, nonce: str) -> bool:

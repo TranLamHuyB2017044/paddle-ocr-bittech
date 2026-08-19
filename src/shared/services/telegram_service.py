@@ -1,5 +1,5 @@
 import requests
-from src.utils.logger import Log
+from src.shared.utils.logger import Log
 
 
 def send_telegram_message(bot_token: str, chat_id: str, message: str) -> bool:

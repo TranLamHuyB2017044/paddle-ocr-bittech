@@ -8,7 +8,7 @@ Kiểm tra quyền xem file theo policy:
                        mọi lần xem đều bị ghi audit log.
 """
 from flask import request
-from src.utils.logger import Log
+from src.shared.utils.logger import Log
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ Job xóa ảnh hết hạn khỏi Cloudinary và đánh dấu soft-delete trong 
 Job xóa file TTS cũ để giải phóng dung lượng.
 
 Cách chạy (thêm vào cron / RQ Scheduler):
-    from src.tasks.retention_task import run_retention_cleanup, run_tts_cleanup
+    from src.shared.tasks.retention_task import run_retention_cleanup, run_tts_cleanup
     run_retention_cleanup()
     run_tts_cleanup()
 

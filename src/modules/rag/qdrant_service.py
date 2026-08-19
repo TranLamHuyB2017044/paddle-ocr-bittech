@@ -1,8 +1,8 @@
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.models import Distance, VectorParams
-import src.config as config
-from src.utils.logger import Log
+import src.core.config as config
+from src.shared.utils.logger import Log
 
 class QdrantService:
     def __init__(self):

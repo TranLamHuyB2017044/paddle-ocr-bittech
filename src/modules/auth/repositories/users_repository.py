@@ -99,12 +99,12 @@ class UsersRepository(BaseRepository):
             )
             
             if result.matched_count == 0:
-                from src.utils.logger import Log
+                from src.shared.utils.logger import Log
                 Log.error(f"[UserRepo] ⚠️ No user found with query {query} for stats increment")
                 
             return result.modified_count > 0
         except Exception as e:
-            from src.utils.logger import Log
+            from src.shared.utils.logger import Log
             Log.error(f"[UserRepo] ❌ Error incrementing extraction stats: {e}")
             return False
 
@@ -116,7 +116,7 @@ class UsersRepository(BaseRepository):
         - Nếu đã có: so sánh với device_id hiện tại.
         Trả về True nếu hợp lệ, raise ValueError nếu bị lỗi hoặc sai thiết bị.
         """
-        from src.utils.logger import Log
+        from src.shared.utils.logger import Log
         if not device_id:
             Log.warning(f"[UserRepo] ⚠️ No device_id provided for user {user_id}")
             raise ValueError("Device ID là bắt buộc để đăng nhập")

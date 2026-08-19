@@ -1,7 +1,7 @@
 
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-from src.config import MONGODB_URI
+from src.core.config import MONGODB_URI
 import certifi
 
 uri = MONGODB_URI

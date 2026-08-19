@@ -1,13 +1,17 @@
 from functools import wraps
 from flask import request, jsonify, g
 from src.shared.utils.security import decode_access_token, hash_token
-from src.modules.auth.repositories.users_repository import users_repo
-from src.modules.auth.repositories.accounts_repository import accounts_repo
 from src.shared.utils.logger import Log
+
+def _get_repos():
+    from src.modules.auth.repositories.users_repository import users_repo
+    from src.modules.auth.repositories.accounts_repository import accounts_repo
+    return users_repo, accounts_repo
 
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        users_repo, accounts_repo = _get_repos()
         api_key = None
         
         # 1. Check x-api-key Header ONLY

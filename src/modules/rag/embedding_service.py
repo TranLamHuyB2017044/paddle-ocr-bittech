@@ -1,6 +1,6 @@
 from fastembed import TextEmbedding
 from typing import List
-import src.config as config
+import src.core.config as config
 
 class EmbeddingService:
     def __init__(self, model_name: str = config.EMBEDDING_MODEL):

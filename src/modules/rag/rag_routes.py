@@ -275,7 +275,7 @@ def upload_to_workspace(workspace_id):
         if len(list(current_docs)) >= MAX_DOCUMENTS_PER_WORKSPACE:
              return jsonify({"statusCode": 400, "message": f"Workspace đã đạt giới hạn {MAX_DOCUMENTS_PER_WORKSPACE} tài liệu"}), 400
 
-        from src.utils.file_utils import save_uploaded_file_list
+        from src.shared.utils.file_utils import save_uploaded_file_list
         saved_paths = save_uploaded_file_list(files)
         
         if not saved_paths:
@@ -303,7 +303,7 @@ def upload_to_workspace(workspace_id):
             
             # Enqueue Background Task
             # retry=Retry(max=3) # Optional: RQ retry logic
-            from src.utils.redis_client import publish_event
+            from src.shared.utils.redis_client import publish_event
             publish_event(g.user_id, "document_status", {
                 "document_id": doc_id,
                 "status": DocStatus.UPLOADED,
@@ -606,7 +606,7 @@ def reindex_document(document_id):
         # 5. Cập nhật status READY
         documents_repo.update_status(document_id, "ready", total_chunks=total_chunks)
 
-        from src.utils.redis_client import publish_event
+        from src.shared.utils.redis_client import publish_event
         publish_event(g.user_id, "document_status", {
             "document_id": document_id,
             "status": "ready",
@@ -651,7 +651,7 @@ def upload_text_to_workspace(workspace_id):
       4. Trả về document_id
     """
     try:
-        from src.config import DocStatus
+        from src.core.config import DocStatus
 
         # 1. Verify workspace ownership
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
@@ -692,7 +692,7 @@ def upload_text_to_workspace(workspace_id):
         # 5. Cập nhật status READY
         documents_repo.update_status(doc_id, DocStatus.READY, total_chunks=total_chunks)
 
-        from src.utils.redis_client import publish_event
+        from src.shared.utils.redis_client import publish_event
         publish_event(g.user_id, "document_status", {
             "document_id": doc_id,
             "status": DocStatus.READY,
@@ -730,7 +730,7 @@ def update_document_text(document_id):
       4. Index lại với nội dung mới
     """
     try:
-        from src.config import DocStatus
+        from src.core.config import DocStatus
 
         # 1. Verify document ownership
         doc = documents_repo.find_by_id(document_id)
@@ -773,7 +773,7 @@ def update_document_text(document_id):
         # 7. Cập nhật status READY
         documents_repo.update_status(document_id, DocStatus.READY, total_chunks=total_chunks)
 
-        from src.utils.redis_client import publish_event
+        from src.shared.utils.redis_client import publish_event
         publish_event(g.user_id, "document_status", {
             "document_id": document_id,
             "status": DocStatus.READY,
@@ -818,8 +818,8 @@ def replace_document_file(workspace_id, document_id):
       5. Enqueue process_document_task để xử lý bất đồng bộ
     """
     try:
-        from src.config import DocStatus
-        from src.utils.file_utils import save_uploaded_file_list
+        from src.core.config import DocStatus
+        from src.shared.utils.file_utils import save_uploaded_file_list
 
         # 1. Verify workspace ownership
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
@@ -895,7 +895,7 @@ def replace_document_file(workspace_id, document_id):
             job_timeout='10m'
         )
 
-        from src.utils.redis_client import publish_event
+        from src.shared.utils.redis_client import publish_event
         publish_event(g.user_id, "document_status", {
             "document_id": document_id,
             "status": DocStatus.UPLOADED,
@@ -932,7 +932,7 @@ def reindex_all_documents(workspace_id):
       5. Trả về tổng kết
     """
     try:
-        from src.config import DocStatus
+        from src.core.config import DocStatus
 
         # 1. Verify workspace ownership
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)

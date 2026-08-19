@@ -89,7 +89,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                     if needs_ocr:
                         Log.info(f"[Worker] PDF page {idx+1} needs OCR (text len: {len(page_text)}, images: {has_images})")
                         try:
-                            from src.config import root_dir
+                            from src.core.config import root_dir
                             abs_temp_dir = os.path.join(root_dir, "uploads/temp")
                             os.makedirs(abs_temp_dir, exist_ok=True)
                             
@@ -536,9 +536,9 @@ def process_tts_task(tts_id, text, voice_sample_path=None, voice_name=None):
     Background task to process text-to-speech generation on the worker.
     """
     from src.modules.tts.services import tts_service
-    from src.utils.redis_client import redis_conn
-    from src.config import FILES_API_URL, FILES_API_UPLOAD_ENDPOINT, FILES_API_SYSTEM_ID, FILES_API_USER_ID, FILES_API_ALIAS, FILES_API_KEY
-    from src.utils.logger import Log
+    from src.shared.utils.redis_client import redis_conn
+    from src.core.config import FILES_API_URL, FILES_API_UPLOAD_ENDPOINT, FILES_API_SYSTEM_ID, FILES_API_USER_ID, FILES_API_ALIAS, FILES_API_KEY
+    from src.shared.utils.logger import Log
     import json
     import requests
     import os

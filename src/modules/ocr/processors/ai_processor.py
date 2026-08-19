@@ -4,7 +4,7 @@ from flask import jsonify
 from src.shared.utils.logger import Log
 from src.shared.services.log_service import log_service
 from src.shared.utils.cloudinary_utils import cloudinary_service
-from src.shared.repositories.users_repository import users_repo
+from src.modules.auth.repositories.users_repository import users_repo
 from src.shared.extractors.openai_extractor import openai_extractor
 from src.shared.utils.background_tasks import run_background_upload_and_log
 from src.modules.ocr.utils.post_cleaner import PostCleaner

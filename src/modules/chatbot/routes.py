@@ -22,7 +22,6 @@ from src.shared.utils.auth_middleware import require_auth
 from src.shared.utils.logger import Log
 from src.shared.utils.rate_limit import limiter
 from src.shared.utils.redis_client import rag_queue
-from src.shared.tasks.document_tasks import process_document_task
 from src.modules.ocr.models.schemas import ChatbotUpdateRequest
 import src.core.config as config
 from src.core.config import (

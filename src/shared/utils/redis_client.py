@@ -36,5 +36,5 @@ def publish_event(user_id, event_type, data):
         payload = json.dumps(message, default=json_serial)
         redis_conn.publish(channel, payload)
     except Exception as e:
-        from src.utils.logger import Log
+        from src.shared.utils.logger import Log
         Log.error(f"[Redis] Failed to publish event: {e}")
