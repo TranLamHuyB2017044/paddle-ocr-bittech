@@ -1,4 +1,5 @@
 
+from typing import Any, Optional, cast
 import os
 import json
 import google.auth.transport.requests
@@ -124,7 +125,7 @@ class OAuthService:
             has_drive = drive_scope in current_scopes and sheet_scope in current_scopes
             
             # Attach dynamic attribute to be used by caller
-            credentials.has_drive_permissions = has_drive
+            setattr(credentials, "has_drive_permissions", has_drive)
             Log.info(f"[OAuth] 📂 Drive Permissions Granted: {has_drive}")
             
             return credentials
@@ -137,7 +138,7 @@ class OAuthService:
     def get_user_info(self, credentials):
         """Fetches user profile info using the credentials."""
         try:
-            service = build('oauth2', 'v2', credentials=credentials)
+            service: Any = build('oauth2', 'v2', credentials=credentials)
             user_info = service.userinfo().get().execute()
             return user_info
         except Exception as e:
@@ -149,7 +150,7 @@ class OAuthService:
         try:
             # Create simple credentials with just the token
             creds = Credentials(token=token)
-            service = build('oauth2', 'v2', credentials=creds)
+            service: Any = build('oauth2', 'v2', credentials=creds)
             user_info = service.userinfo().get().execute()
             return user_info
         except Exception as e:
@@ -166,8 +167,8 @@ class OAuthService:
         sheet_name = config["sheet_name"]
         
         try:
-            service = build('drive', 'v3', credentials=credentials)
-            sheets_service = build('sheets', 'v4', credentials=credentials)
+            service: Any = build('drive', 'v3', credentials=credentials)
+            sheets_service: Any = build('sheets', 'v4', credentials=credentials)
 
             # 1. Search for existing file
             query = f"name = '{sheet_name}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
@@ -254,7 +255,7 @@ class OAuthService:
     def append_data(self, credentials, spreadsheet_id, data, doc_type):
         """Appends a row of data using user credentials."""
         try:
-            service = build('sheets', 'v4', credentials=credentials)
+            service: Any = build('sheets', 'v4', credentials=credentials)
             
             # Log keys for debugging
             Log.info(f"[OAuth] 🔍 Received Data Keys for {doc_type}: {list(data.keys())}")

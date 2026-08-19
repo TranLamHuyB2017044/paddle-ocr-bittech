@@ -5,17 +5,18 @@ Logs crawl events to console and appends structured entries to logs/crawl.json.l
 import os
 import json
 import threading
+from typing import Optional, Any
 from src.shared.utils.logger import Log
 
 _log_lock = threading.Lock()
 
 
-def log_crawl(url: str, status: str, duration_ms: float = None, error: str = None):
+def log_crawl(url: str, status: str, duration_ms: Optional[float] = None, error: Optional[str] = None):
     """
     Log crawl result in structured JSON format.
     Appends to logs/crawl.json.log.
     """
-    log_data = {
+    log_data: dict[str, Any] = {
         "url": url,
         "status": status.upper()
     }

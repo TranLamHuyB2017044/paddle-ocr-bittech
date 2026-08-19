@@ -18,7 +18,7 @@ class ChatHistoryRepository(BaseRepository):
             "sources": sources or [],
             "provider": provider,
             "customer_info": customer_info or {},
-            "timestamp": datetime.utcnow()
+            "timestamp": datetime.now()
         }
         return self.create(message)
 
