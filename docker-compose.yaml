@@ -39,7 +39,8 @@ services:
   worker:
     build: .
     container_name: paddle-ocr-worker
-    command: python run_worker.py
+    user: "1000:1000"
+    command: python src/core/run_worker.py
     
     restart: unless-stopped
     depends_on:
@@ -52,10 +53,10 @@ services:
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0  
     volumes:
-      - ./uploads:/app/uploads                     
-      - ./logs:/app/logs  
+      - uploads-data:/app/uploads                     
+      - logs-data:/app/logs  
       - ./storage:/app/storage:ro                  
-      - ./src/hand_writting:/app/src/hand_writting
+      - ./src/modules/ocr/hand_writting:/app/src/modules/ocr/hand_writting
     security_opt:
       - no-new-privileges:true                     
     deploy:
@@ -70,6 +71,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: paddle-ocr-app
+    user: "1000:1000"
    
     restart: unless-stopped
     depends_on:
@@ -80,10 +82,10 @@ services:
     ports:
       - "${API_BIND_IP:-127.0.0.1:}9000:8080" 
     volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
+      - uploads-data:/app/uploads
+      - logs-data:/app/logs
       - ./storage:/app/storage:ro
-      - ./src/hand_writting:/app/src/hand_writting
+      - ./src/modules/ocr/hand_writting:/app/src/modules/ocr/hand_writting
     env_file:
       - .env
     environment:
@@ -117,4 +119,8 @@ networks:
 # ============================================================
 volumes:
   redis-data:
+    driver: local
+  uploads-data:
+    driver: local
+  logs-data:
     driver: local

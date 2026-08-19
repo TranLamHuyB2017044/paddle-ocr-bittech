@@ -3,7 +3,12 @@
   "venvPath": ".",
   "venv": "venv",
   "include": ["src", "."],
-  "extraPaths": ["src"],
+  "extraPaths": [
+    "src",
+    "src/core",
+    "src/shared",
+    "src/modules"
+  ],
   "ignore": [
     "**/__pycache__",
     "venv",

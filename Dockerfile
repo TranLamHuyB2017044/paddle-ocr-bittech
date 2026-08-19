@@ -18,7 +18,6 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip "setuptools<70.0.0" wheel
 
 # 2. Cài đặt Torch & Torchvision CPU-only ĐẦU TIÊN (để tối ưu cache)
-# Lệnh này cài bản CPU (~250MB) thay vì bản GPU (~2.5GB)
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # 3. Cài đặt các thư viện còn lại trong requirements
@@ -39,7 +38,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
 # Cài đặt các thư viện hệ thống tối thiểu cần cho OpenCV và OCR chạy trên CPU
-# libgomp1 rất quan trọng cho việc tăng tốc xử lý onnxruntime trên CPU
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -49,20 +47,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy môi trường venv đã build từ stage 1 (giúp image cuối rất nhẹ)
+# Copy môi trường venv đã build từ stage 1
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy mã nguồn và public folder
 COPY src ./src
 COPY public ./public
 COPY app.py .
-COPY run_worker.py .
-COPY gunicorn.conf.py .
-COPY .licensekek ./.licensekek
 
-# Đảm bảo các model đã được "bake" vào image
-# (Các file model sẽ được copy cùng với src)
-# Thiết lập thư mục và user bảo mật (không chạy app bằng quyền root)
+# Thiết lập thư mục và user bảo mật
 RUN mkdir -p uploads logs storage && \
     useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
@@ -72,7 +65,7 @@ USER appuser
 # Pre-download ResNet18 weights to appuser's torch cache directory
 RUN python -c "import torchvision.models as m; m.resnet18(weights=m.ResNet18_Weights.DEFAULT)"
 
-# Bake photo models vào image để request đầu tiên không phụ thuộc network runtime.
+# Bake photo models vào image
 RUN python -c "from rembg import new_session; new_session('modnet'); from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_sc', allowed_modules=['detection'], providers=['CPUExecutionProvider'])"
 
 EXPOSE ${PORT}
@@ -82,7 +75,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:${PORT}/ || exit 1
 
 CMD ["gunicorn", \
-     "--config", "gunicorn.conf.py", \
+     "--config", "src/core/config/gunicorn.conf.py", \
      "--bind", "0.0.0.0:8080", \
      "--workers", "2", \
      "--threads", "4", \
