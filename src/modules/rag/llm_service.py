@@ -1,6 +1,6 @@
-from src.extractors.openai_extractor import openai_extractor
-from src.extractors.gemini_extractor import gemini_extractor
-from src.utils.logger import Log
+from src.shared.extractors.openai_extractor import openai_extractor
+from src.shared.extractors.gemini_extractor import gemini_extractor
+from src.shared.utils.logger import Log
 from google.genai import types
 
 class LLMService:

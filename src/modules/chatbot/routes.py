@@ -12,19 +12,18 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, g, send_from_directory, current_app
 from pydantic import ValidationError
 
-from src.shared.repositories.chatbot_repository import chatbot_repo
-from src.shared.repositories.workspaces_repository import workspaces_repo
-from src.shared.repositories.documents_repository import documents_repo
-from src.shared.repositories.chat_history_repository import chat_history_repo
-from src.shared.repositories.users_repository import users_repo
-from src.shared.repositories.accounts_repository import accounts_repo
+from src.modules.chatbot.repositories import chatbot_repo, chat_history_repo
+from src.modules.auth.repositories.workspaces_repository import workspaces_repo
+from src.modules.ocr.repositories.documents_repository import documents_repo
+from src.modules.auth.repositories.users_repository import users_repo
+from src.modules.auth.repositories.accounts_repository import accounts_repo
 from src.shared.services.subscription_service import subscription_service
 from src.shared.utils.auth_middleware import require_auth
 from src.shared.utils.logger import Log
 from src.shared.utils.rate_limit import limiter
 from src.shared.utils.redis_client import rag_queue
 from src.shared.tasks.document_tasks import process_document_task
-from src.shared.models.schemas import ChatbotUpdateRequest
+from src.modules.ocr.models.schemas import ChatbotUpdateRequest
 import src.core.config as config
 from src.core.config import (
     MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE,

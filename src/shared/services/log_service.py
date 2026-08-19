@@ -1,5 +1,5 @@
-from src.repositories.extraction_logs_repository import extraction_logs_repo
-from src.repositories.documents_repository import documents_repo
+from src.modules.ocr.repositories.extraction_logs_repository import extraction_logs_repo
+from src.modules.ocr.repositories.documents_repository import documents_repo
 import os
 
 class LogService:

@@ -6,20 +6,20 @@ import os
 import time
 import json
 from flask import Blueprint, request, jsonify, g
-from src.utils.auth_middleware import require_auth
-from src.utils.logger import Log
-from src.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
-from src.utils.rate_limit import get_limiter
-from src.utils.file_utils import save_uploaded_files, save_uploaded_file_list
-from src.utils.redis_client import redis_conn, rag_queue, publish_event
-from src.repositories.documents_repository import documents_repo
-from src.repositories.file_storage_repository import file_storage_repo
-from src.repositories.audit_log_repository import audit_log_repo, AuditEvent
-from src.repositories.accounts_repository import accounts_repo
-from src.utils.cloudinary_utils import cloudinary_service
-from src.config import MAX_OCR_FILE_SIZE, DocStatus
-from src.services.subscription_service import subscription_service
-from src.tasks.document_tasks import process_detection_task, process_structure_detection_task
+from src.shared.utils.auth_middleware import require_auth
+from src.shared.utils.logger import Log
+from src.shared.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
+from src.shared.utils.rate_limit import get_limiter
+from src.shared.utils.file_utils import save_uploaded_files, save_uploaded_file_list
+from src.shared.utils.redis_client import redis_conn, rag_queue, publish_event
+from src.modules.ocr.repositories.documents_repository import documents_repo
+from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
+from src.modules.auth.repositories.audit_log_repository import audit_log_repo, AuditEvent
+from src.modules.auth.repositories.accounts_repository import accounts_repo
+from src.shared.utils.cloudinary_utils import cloudinary_service
+from src.core.config import MAX_OCR_FILE_SIZE, DocStatus
+from src.shared.services.subscription_service import subscription_service
+from src.shared.tasks.document_tasks import process_detection_task, process_structure_detection_task
 
 file_bp = Blueprint("file_bp", __name__)
 limiter = get_limiter()

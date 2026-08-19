@@ -1,4 +1,4 @@
-from src.database.base_repository import BaseRepository
+from src.core.database.base_repository import BaseRepository
 from datetime import datetime
 
 class SubscriptionLogsRepository(BaseRepository):

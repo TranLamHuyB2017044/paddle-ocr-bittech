@@ -7,7 +7,7 @@ from src.shared.utils.cloudinary_utils import cloudinary_service
 from src.shared.repositories.users_repository import users_repo
 from src.shared.extractors.openai_extractor import openai_extractor
 from src.shared.utils.background_tasks import run_background_upload_and_log
-from src.shared.utils.post_cleaner import PostCleaner
+from src.modules.ocr.utils.post_cleaner import PostCleaner
 from src.shared.extractors.gemini_extractor import gemini_extractor
 from src.core.config import VISION_LLM_COST
 

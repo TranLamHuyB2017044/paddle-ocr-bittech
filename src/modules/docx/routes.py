@@ -20,19 +20,17 @@ from src.shared.utils.logger import Log
 from src.shared.utils.rate_limit import get_limiter, limiter
 from src.shared.utils.file_utils import validate_image_file
 from src.shared.utils.security import hash_token
-from src.shared.services.auth_service_mongo import auth_service
-from src.shared.services.oauth_service import oauth_service, DRIVE_SCOPES
-from src.shared.services.token_service import token_service
+from src.modules.auth.services import auth_service, oauth_service, token_service, DRIVE_SCOPES
 from src.shared.services.email_service import email_service
 from src.shared.services.subscription_service import subscription_service
-from src.shared.repositories.users_repository import users_repo
-from src.shared.repositories.accounts_repository import accounts_repo
-from src.shared.repositories.documents_repository import documents_repo
+from src.modules.auth.repositories.users_repository import users_repo
+from src.modules.auth.repositories.accounts_repository import accounts_repo
+from src.modules.ocr.repositories.documents_repository import documents_repo
 from src.shared.repositories.subscription_logs_repository import sub_logs_repo
-from src.shared.repositories.extraction_logs_repository import extraction_logs_repo
-from src.shared.repositories.extraction_reports_repository import extraction_reports_repo
-from src.shared.repositories.corrections_repository import corrections_repo
-from src.shared.repositories.chatbot_repository import chatbot_repo
+from src.modules.ocr.repositories.extraction_logs_repository import extraction_logs_repo
+from src.modules.ocr.repositories.extraction_reports_repository import extraction_reports_repo
+from src.modules.ocr.repositories.corrections_repository import corrections_repo
+from src.modules.chatbot.repositories.chatbot_repository import chatbot_repo
 from src.shared.extractors.openai_extractor import openai_extractor
 import src.core.config as config
 from src.core.config import PLANS_CONFIG, ALLOWED_IMAGE_EXTENSIONS

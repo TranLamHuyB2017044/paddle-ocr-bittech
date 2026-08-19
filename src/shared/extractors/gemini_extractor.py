@@ -7,9 +7,9 @@ from typing import Optional, List, Union
 from google import genai
 from google.genai import types
 
-from src.config import GEMINI_API_KEY, GEMINI_MODEL
-from src.utils.logger import Log
-from src.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis
+from src.core.config import GEMINI_API_KEY, GEMINI_MODEL
+from src.shared.utils.logger import Log
+from src.modules.ocr.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis
 from .openai_extractor import openai_extractor
 
 # Map doc_type string to Pydantic model

@@ -14,8 +14,8 @@ Xử lý bất đồng bộ sau khi OCR hoàn thành:
 """
 import threading
 import os
-from src.utils.logger import Log
-from src.utils.cloudinary_utils import cloudinary_service
+from src.shared.utils.logger import Log
+from src.shared.utils.cloudinary_utils import cloudinary_service
 
 
 def _should_store_file(user_id: str | None, doc_id: str | None) -> tuple[bool, dict]:
@@ -35,8 +35,8 @@ def _should_store_file(user_id: str | None, doc_id: str | None) -> tuple[bool, d
         return False, context
 
     try:
-        from src.repositories.users_repository import users_repo
-        from src.repositories.documents_repository import documents_repo
+        from src.modules.auth.repositories.users_repository import users_repo
+        from src.modules.ocr.repositories.documents_repository import documents_repo
 
         user = users_repo.find_by_id(user_id)
         if not user:
@@ -53,7 +53,7 @@ def _should_store_file(user_id: str | None, doc_id: str | None) -> tuple[bool, d
 
                 # Check workspace setting
                 if ws_id:
-                    from src.repositories.workspaces_repository import workspaces_repo
+                    from src.modules.auth.repositories.workspaces_repository import workspaces_repo
                     ws = workspaces_repo.find_by_id(str(ws_id))
                     if ws and ws.get("allow_source_file_storage", False):
                         context["retention_days"] = ws.get("file_retention_days", 7)
@@ -105,7 +105,7 @@ def run_background_upload_and_log(
                         folder="ocr_source_images",
                     )
                     if result:
-                        from src.repositories.file_storage_repository import file_storage_repo
+                        from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
                         file_storage_repo.save_file_metadata(
                             document_id=str(document_id) if document_id else "",
                             owner_user_id=str(user_id),
@@ -123,7 +123,7 @@ def run_background_upload_and_log(
                         Log.debug(f"[BG-TASK] 🚫 Storage flag off, skip: {original_name}")
 
             # ── Log to DB ─────────────────────────────────────────────────────
-            from src.services.log_service import log_service
+            from src.shared.services.log_service import log_service
             log_service.save_logs(
                 user_id, doc_type, file_paths, info,
                 metadata=metadata, document_id=document_id

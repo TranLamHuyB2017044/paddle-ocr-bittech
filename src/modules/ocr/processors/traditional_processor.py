@@ -5,12 +5,12 @@ from src.shared.utils.logger import Log
 from src.shared.services.log_service import log_service
 from src.shared.utils.cloudinary_utils import cloudinary_service
 from src.shared.repositories.users_repository import users_repo
-from src.shared.utils.smart_config import get_smart_config
-from src.shared.utils.smart_spatial_extractor import SmartSpatialExtractor
-from src.shared.utils.ocr_utils import filter_useless_lines
-from src.shared.utils.text_cleaner import clean_text_lines
+from src.modules.ocr.utils.smart_config import get_smart_config
+from src.modules.ocr.utils.smart_spatial_extractor import SmartSpatialExtractor
+from src.modules.ocr.utils.ocr_utils import filter_useless_lines
+from src.modules.ocr.utils.text_cleaner import clean_text_lines
 from src.shared.utils.background_tasks import run_background_upload_and_log
-from src.shared.utils.post_cleaner import PostCleaner
+from src.modules.ocr.utils.post_cleaner import PostCleaner
 
 def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user_id=None, file_paths=None, document_id=None):
     request_start = timer_info["start"]

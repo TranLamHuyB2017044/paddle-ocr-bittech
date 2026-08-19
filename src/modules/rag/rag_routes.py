@@ -1,18 +1,18 @@
 from flask import Blueprint, request, jsonify, g
 import os
 from src.shared.utils.auth_middleware import require_auth
-from src.shared.repositories.workspaces_repository import workspaces_repo
-from src.shared.repositories.chat_history_repository import chat_history_repo
-from src.shared.repositories.documents_repository import documents_repo
-from src.shared.repositories.extraction_logs_repository import extraction_logs_repo
+from src.modules.auth.repositories.workspaces_repository import workspaces_repo
+from src.modules.chatbot.repositories.chat_history_repository import chat_history_repo
+from src.modules.ocr.repositories.documents_repository import documents_repo
+from src.modules.ocr.repositories.extraction_logs_repository import extraction_logs_repo
 from src.modules.rag.rag_service import rag_service
 from src.modules.rag.qdrant_service import qdrant_service
 from src.shared.utils.redis_client import rag_queue
 from src.shared.tasks.document_tasks import process_document_task
 from src.shared.utils.logger import Log
-from src.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus
-from src.services.subscription_service import subscription_service
-from src.repositories.accounts_repository import accounts_repo
+from src.core.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus
+from src.shared.services.subscription_service import subscription_service
+from src.modules.auth.repositories.accounts_repository import accounts_repo
 
 rag_bp = Blueprint('rag_bp', __name__)
 

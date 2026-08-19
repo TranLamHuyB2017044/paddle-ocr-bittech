@@ -1,14 +1,14 @@
 import os
 import traceback
 import time
-from ..repositories.documents_repository import documents_repo
-from ..repositories.users_repository import users_repo
-from ..utils.ocr_utils import ocr_extract, preprocess_for_ocr, ocr_structure_extract, smart_menu_ocr_extract
+from src.modules.ocr.repositories.documents_repository import documents_repo
+from src.modules.auth.repositories.users_repository import users_repo
+from src.modules.ocr.utils.ocr_utils import ocr_extract, preprocess_for_ocr, ocr_structure_extract, smart_menu_ocr_extract
 from ..utils.pdf_utils import extract_text_from_pdf, get_pdf_pages_as_images, extract_page_text_with_tables
 from ..utils.word_utils import extract_text_from_word
 from ..utils.logger import Log
 from ..utils.background_tasks import run_background_upload_and_log
-from ..utils.post_cleaner import PostCleaner
+from src.modules.ocr.utils.post_cleaner import PostCleaner
 from src.modules.ocr.processors.ai_processor import process_with_openai
 from src.modules.ocr.processors.traditional_processor import process_traditional
 from src.modules.rag.rag_service import rag_service
@@ -535,7 +535,7 @@ def process_tts_task(tts_id, text, voice_sample_path=None, voice_name=None):
     """
     Background task to process text-to-speech generation on the worker.
     """
-    from src.services.tts_service import tts_service
+    from src.modules.tts.services import tts_service
     from src.utils.redis_client import redis_conn
     from src.config import FILES_API_URL, FILES_API_UPLOAD_ENDPOINT, FILES_API_SYSTEM_ID, FILES_API_USER_ID, FILES_API_ALIAS, FILES_API_KEY
     from src.utils.logger import Log

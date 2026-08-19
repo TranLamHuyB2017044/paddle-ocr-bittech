@@ -81,7 +81,7 @@ class ModelLoader:
 
         # Face analyzer cũng nằm trên synchronous photo route nên preload cùng lúc.
         try:
-            from src.shared.utils.image_processing import get_face_analyzer
+            from src.modules.image_processing.image_utils import get_face_analyzer
             face_analyzer = get_face_analyzer()
         except Exception as e:
             face_analyzer = None

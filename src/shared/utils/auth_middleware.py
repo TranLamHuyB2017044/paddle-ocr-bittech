@@ -1,10 +1,9 @@
 from functools import wraps
 from flask import request, jsonify, g
-from src.utils.security import decode_access_token
-from src.repositories.users_repository import users_repo
-from src.repositories.accounts_repository import accounts_repo
-from src.utils.security import hash_token
-from src.utils.logger import Log
+from src.shared.utils.security import decode_access_token, hash_token
+from src.modules.auth.repositories.users_repository import users_repo
+from src.modules.auth.repositories.accounts_repository import accounts_repo
+from src.shared.utils.logger import Log
 
 def require_auth(f):
     @wraps(f)

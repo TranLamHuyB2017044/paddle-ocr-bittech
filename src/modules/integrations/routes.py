@@ -8,9 +8,9 @@ from flask import Blueprint, request, jsonify
 
 from src.shared.utils.rate_limit import limiter
 from src.shared.utils.ssrf_protection import is_safe_url
-from src.shared.utils.crawl_logger import log_crawl
-from src.shared.services.crawler_service import crawler_service
-from src.shared.repositories.articles_repository import articles_repo
+from src.modules.integrations.utils.crawl_logger import log_crawl
+from src.modules.integrations.services import crawler_service
+from src.modules.integrations.repositories.articles_repository import articles_repo
 from src.shared.utils.logger import Log
 from src.shared.utils.auth_middleware import require_auth
 

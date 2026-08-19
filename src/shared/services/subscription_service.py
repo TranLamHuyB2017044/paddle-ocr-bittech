@@ -1,8 +1,8 @@
 from datetime import datetime
-from src.repositories.accounts_repository import accounts_repo
-from src.repositories.users_repository import users_repo
-from src.config import PLANS_CONFIG
-from src.utils.logger import Log
+from src.modules.auth.repositories.accounts_repository import accounts_repo
+from src.modules.auth.repositories.users_repository import users_repo
+from src.core.config import PLANS_CONFIG
+from src.shared.utils.logger import Log
 
 class SubscriptionService:
     @staticmethod

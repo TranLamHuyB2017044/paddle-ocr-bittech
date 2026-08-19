@@ -20,7 +20,7 @@ from src.core.config import (
 )
 from src.shared.models.model_loader import model_loader
 from src.shared.utils.cloudinary_utils import cloudinary_service
-from src.shared.utils.image_processing import (
+from src.modules.image_processing.image_utils import (
     PHOTO_SIZES,
     BG_COLORS,
     normalize_input,
@@ -62,7 +62,7 @@ def ensure_photo_storage_ready() -> None:
 
 
 def _safe_path_component(value: str) -> str:
-    return "".join(ch for ch in str(value) if ch.isalnum() or ch in ("-", "_"))[:80] or "unknown"
+    return "".join(ch for ch in value if ch.isalnum() or ch in ("-", "_"))[:80] or "unknown"
 
 
 def persist_photo_preview(
@@ -76,7 +76,7 @@ def persist_photo_preview(
     original_filename: str,
 ) -> dict:
     """Upload ảnh preview private lên Cloudinary và lưu metadata retention 30 ngày."""
-    from src.shared.repositories.file_storage_repository import file_storage_repo
+    from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
 
     ensure_photo_storage_ready()
     buffer = io.BytesIO()
@@ -142,7 +142,7 @@ def persist_photo_preview(
 
 def _delete_persisted_asset(asset: dict) -> None:
     """Best-effort rollback nếu upload asset thứ hai của một item thất bại."""
-    from src.shared.repositories.file_storage_repository import file_storage_repo
+    from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
 
     public_id = asset.get("public_id")
     record_id = asset.get("record_id")
@@ -529,7 +529,7 @@ def clear_session_data(session_id: str, owner_user_id: str) -> dict:
     if not session_id or len(session_id) < 3 or session_id == "all":
         return {"success": False, "deleted": 0, "failed": 0}
 
-    from src.shared.repositories.file_storage_repository import file_storage_repo
+    from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
 
     records = file_storage_repo.find_by_document_and_owner(
         _photo_document_id(session_id),

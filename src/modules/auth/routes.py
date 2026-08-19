@@ -12,18 +12,21 @@ from flask import Blueprint, request, jsonify, g
 import cloudinary
 import cloudinary.uploader
 
-from src.shared.services.oauth_service import oauth_service
-from src.shared.services.token_service import token_service
-from src.shared.services.auth_service_mongo import auth_service
-from src.shared.services.multi_connect_service import (
-    call_client_register_post, call_system_connections_get,
-    call_revoke_api_key, call_auth_token, upload_document
+from src.modules.auth.services import (
+    oauth_service,
+    token_service,
+    auth_service,
+    call_client_register_post,
+    call_system_connections_get,
+    call_revoke_api_key,
+    call_auth_token,
+    upload_document,
 )
-from src.shared.repositories.users_repository import users_repo
-from src.shared.repositories.auth_service_repository import auth_service_repo
-from src.shared.repositories.licenses_repository import licenses_repo
-from src.shared.models.user import User
-from src.shared.models.auth_service import AuthService
+from src.modules.auth.repositories.users_repository import users_repo
+from src.modules.auth.repositories.auth_service_repository import auth_service_repo
+from src.modules.auth.repositories.licenses_repository import licenses_repo
+from src.modules.auth.models.user import User
+from src.modules.auth.models.auth_service import AuthService
 from src.shared.utils.auth_middleware import require_auth, require_role
 from src.shared.utils.logger import Log
 
@@ -97,7 +100,7 @@ def google_drive_connect():
         if not auth_code:
             return jsonify({"statusCode": 400, "message": "Missing auth code"}), 400
 
-        from src.shared.services.oauth_service import DRIVE_SCOPES
+        from src.modules.auth.services.oauth_service import DRIVE_SCOPES
         credentials = oauth_service.exchange_code_for_credentials(auth_code, redirect_uri, scopes=DRIVE_SCOPES)
         user_info = oauth_service.get_user_info(credentials)
         email = user_info.get('email')
@@ -356,7 +359,7 @@ def admin_register_license():
         if not label or not expired_at:
             return jsonify({"statusCode": 400, "message": "label và expired_at là bắt buộc."}), 400
         
-        from src.shared.services.auth_sdk_service import auth_sdk_service
+        from src.modules.auth.services.auth_sdk_service import auth_sdk_service
         result = auth_sdk_service.register_license(label=label, expired_at=expired_at, notes=notes)
         return jsonify({"statusCode": 200, "message": "Đăng ký license thành công.", "data": result}), 200
     except Exception as e:
@@ -369,7 +372,7 @@ def admin_register_license():
 @require_role(0)
 def admin_verify_license():
     try:
-        from src.shared.services.auth_sdk_service import auth_sdk_service
+        from src.modules.auth.services.auth_sdk_service import auth_sdk_service
         result = auth_sdk_service.verify_license()
         return jsonify({"statusCode": 200, "message": "Xác thực và kích hoạt license thành công.", "data": result}), 200
     except Exception as e:

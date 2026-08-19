@@ -2,7 +2,7 @@ import os
 import subprocess
 import shutil
 import platform
-from src.utils.logger import Log
+from src.shared.utils.logger import Log
 
 try:
     import docx

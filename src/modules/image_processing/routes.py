@@ -16,7 +16,7 @@ from src.modules.image_processing.services import (
     BatchValidationError,
     PhotoStorageError,
 )
-from src.shared.utils.image_processing import (
+from src.modules.image_processing.image_utils import (
     calculate_face_crop_box,
     detect_face,
     get_face_landmarks,

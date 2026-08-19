@@ -15,11 +15,11 @@ Hoặc thêm vào run_worker.py:
 """
 import os
 import time
-from src.utils.logger import Log
-from src.utils.cloudinary_utils import cloudinary_service
-from src.repositories.file_storage_repository import file_storage_repo
-from src.repositories.audit_log_repository import audit_log_repo, AuditEvent
-from src.config import TTS_FILE_RETENTION_HOURS, UPLOAD_FOLDER
+from src.shared.utils.logger import Log
+from src.shared.utils.cloudinary_utils import cloudinary_service
+from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
+from src.modules.auth.repositories.audit_log_repository import audit_log_repo, AuditEvent
+from src.core.config import TTS_FILE_RETENTION_HOURS, UPLOAD_FOLDER
 
 
 def run_tts_cleanup() -> dict:
