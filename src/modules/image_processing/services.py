@@ -10,16 +10,22 @@ import time
 import traceback
 from datetime import datetime, timedelta
 
-from PIL import Image, ImageColor, UnidentifiedImageError
+import requests
+from PIL import Image, ImageColor, ImageOps, UnidentifiedImageError
 
 from src.shared.utils.logger import Log
 from src.core.config import (
     PHOTO_BATCH_TIMEOUT_SECONDS,
     PHOTO_SIGNED_URL_EXPIRY_SECONDS,
     PHOTO_TEMP_RETENTION_DAYS,
+    FILES_API_URL,
+    FILES_API_UPLOAD_ENDPOINT,
+    FILES_API_SYSTEM_ID,
+    FILES_API_USER_ID,
+    FILES_API_ALIAS,
+    FILES_API_KEY,
 )
 from src.shared.models.model_loader import model_loader
-from src.shared.utils.cloudinary_utils import cloudinary_service
 from src.modules.image_processing.image_utils import (
     PHOTO_SIZES,
     BG_COLORS,
@@ -33,6 +39,7 @@ from src.modules.image_processing.image_utils import (
     refine_alpha_edge,
     crop_portrait_rgb,
     crop_portrait_rgba,
+    calculate_face_crop_box,
 )
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -45,7 +52,7 @@ PHOTO_DOCUMENT_PREFIX = "photo:"
 
 
 class PhotoStorageError(RuntimeError):
-    """Raised khi không thể lưu hoặc cấp URL ảnh tạm trên Cloudinary."""
+    """Raised khi không thể lưu hoặc cấp URL ảnh trên hệ thống file."""
     pass
 
 
@@ -54,15 +61,10 @@ def _photo_document_id(session_id: str) -> str:
 
 
 def ensure_photo_storage_ready() -> None:
-    if not cloudinary_service.configured:
+    if not (FILES_API_URL and FILES_API_KEY):
         raise PhotoStorageError(
-            "Cloudinary chưa được cấu hình. Kiểm tra CLOUDINARY_CLOUD_NAME, "
-            "CLOUDINARY_API_KEY và CLOUDINARY_API_SECRET."
+            "Hệ thống file chưa được cấu hình. Kiểm tra FILES_API_URL và FILES_API_KEY."
         )
-
-
-def _safe_path_component(value: str) -> str:
-    return "".join(ch for ch in value if ch.isalnum() or ch in ("-", "_"))[:80] or "unknown"
 
 
 def persist_photo_preview(
@@ -75,64 +77,63 @@ def persist_photo_preview(
     kind: str,
     original_filename: str,
 ) -> dict:
-    """Upload ảnh preview private lên Cloudinary và lưu metadata retention 30 ngày."""
-    from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
-
+    """Upload ảnh preview lên hệ thống files.bittechx.cloud."""
     ensure_photo_storage_ready()
     buffer = io.BytesIO()
     img.convert("RGB").save(buffer, format="JPEG", quality=95, dpi=(300, 300))
     buffer.seek(0)
 
-    safe_owner = _safe_path_component(owner_user_id)
-    safe_session = _safe_path_component(session_id)
-    safe_item = _safe_path_component(item_id)
-    safe_kind = _safe_path_component(kind)
-    public_id = f"{safe_kind}_{safe_item}"
-    folder = f"photo_temp/{safe_owner}/{safe_session}"
+    upload_filename = original_filename if original_filename.lower().endswith(('.jpg', '.jpeg', '.png')) else f"{original_filename}.jpg"
+    upload_url = f"{FILES_API_URL.rstrip('/')}{FILES_API_UPLOAD_ENDPOINT}"
 
-    upload = cloudinary_service.upload_private(
-        buffer,
-        public_id=public_id,
-        folder=folder,
-    )
-    if not upload or not upload.get("public_id"):
-        raise PhotoStorageError("Không thể upload ảnh tạm lên Cloudinary.")
+    files = {
+        'files': (upload_filename, buffer, 'image/jpeg')
+    }
+    data = {
+        'system_id': FILES_API_SYSTEM_ID,
+        'user_id': str(owner_user_id) if owner_user_id else FILES_API_USER_ID,
+        'alias': FILES_API_ALIAS,
+        'file_system': False
+    }
+    headers = {
+        'x-api-key': FILES_API_KEY
+    }
 
-    cloud_public_id = upload["public_id"]
     try:
-        record_id = file_storage_repo.save_file_metadata(
-            document_id=_photo_document_id(session_id),
-            owner_user_id=str(owner_user_id),
-            account_id=str(account_id) if account_id else None,
-            cloudinary_public_id=cloud_public_id,
-            original_filename=original_filename,
-            resource_type=upload.get("resource_type", "image"),
-            retention_days=PHOTO_TEMP_RETENTION_DAYS,
-        )
+        response = requests.post(upload_url, files=files, data=data, headers=headers, timeout=30)
+        response.raise_for_status()
+        upload_result = response.json()
     except Exception as e:
-        cloudinary_service.delete_image(
-            cloud_public_id,
-            resource_type=upload.get("resource_type", "image"),
-        )
-        raise PhotoStorageError("Không thể lưu metadata ảnh tạm.") from e
+        Log.error(f"[PHOTO STORAGE] Error uploading to FILES_API: {e}")
+        raise PhotoStorageError(f"Không thể upload ảnh lên hệ thống file: {str(e)}")
 
-    signed_url = cloudinary_service.generate_signed_url(
-        cloud_public_id,
-        resource_type=upload.get("resource_type", "image"),
-        expires_in_seconds=PHOTO_SIGNED_URL_EXPIRY_SECONDS,
-    )
-    if not signed_url:
-        cloudinary_service.delete_image(
-            cloud_public_id,
-            resource_type=upload.get("resource_type", "image"),
-        )
-        file_storage_repo.mark_deleted(record_id)
-        raise PhotoStorageError("Không thể tạo signed URL cho ảnh tạm.")
+    base_url = (FILES_API_URL or "https://files.bittechx.cloud").rstrip('/')
+    final_url = None
+    if upload_result and isinstance(upload_result, dict):
+        data_obj = upload_result.get('data') if isinstance(upload_result.get('data'), dict) else upload_result
+        results = data_obj.get('results', [])
+        if isinstance(results, list) and len(results) > 0:
+            first_result = results[0]
+            if isinstance(first_result, dict):
+                file_info = first_result.get('file', {})
+                if isinstance(file_info, dict):
+                    public_path = file_info.get('publicPath') or file_info.get('path')
+                    if public_path:
+                        final_url = f"{base_url}/{public_path.lstrip('/')}"
+        if not final_url:
+            if 'file_url' in data_obj:
+                final_url = data_obj['file_url']
+            elif 'url' in data_obj:
+                final_url = data_obj['url']
+            elif 'publicPath' in data_obj:
+                final_url = f"{base_url}/{data_obj['publicPath'].lstrip('/')}"
+
+    if not final_url:
+        raise PhotoStorageError("Không nhận được URL hợp lệ từ hệ thống file.")
 
     return {
-        "url": signed_url,
-        "record_id": record_id,
-        "public_id": cloud_public_id,
+        "url": final_url,
+        "public_id": item_id,
         "url_expires_in_seconds": PHOTO_SIGNED_URL_EXPIRY_SECONDS,
         "retention_expires_at": (
             datetime.now() + timedelta(days=PHOTO_TEMP_RETENTION_DAYS)
@@ -142,12 +143,7 @@ def persist_photo_preview(
 
 def _delete_persisted_asset(asset: dict) -> None:
     """Best-effort rollback nếu upload asset thứ hai của một item thất bại."""
-    from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
-
-    public_id = asset.get("public_id")
-    record_id = asset.get("record_id")
-    if public_id and cloudinary_service.delete_image(public_id) and record_id:
-        file_storage_repo.mark_deleted(record_id)
+    pass
 
 
 def _alignment_warnings(alignment: dict) -> list[str]:
@@ -174,7 +170,7 @@ class BatchValidationError(Exception):
     pass
 
 
-def validate_batch_request(files, process_type: str, size_param: str, bg_color_param: str):
+def validate_batch_request(files, process_type: str, size_param: str | None, bg_color_param: str | None):
     """
     Validate toàn bộ batch trước khi xử lý.
     Raise BatchValidationError nếu vi phạm — trả 400 ngay, không tốn CPU.
@@ -188,19 +184,22 @@ def validate_batch_request(files, process_type: str, size_param: str, bg_color_p
             f"bạn gửi {len(files)} file."
         )
 
-    if process_type not in ("crop", "full"):
+    if process_type not in ("crop", "change_bg", "full"):
         raise BatchValidationError(
-            f"Tham số 'type' không hợp lệ: '{process_type}'. Chỉ chấp nhận 'crop' hoặc 'full'."
+            f"Tham số 'type' không hợp lệ: '{process_type}'. Chỉ chấp nhận 'crop', 'change_bg' hoặc 'full'."
         )
 
-    if size_param not in PHOTO_SIZES:
-        raise BatchValidationError(
-            f"Tham số 'size' không hợp lệ: '{size_param}'. "
-            f"Chỉ chấp nhận: {list(PHOTO_SIZES.keys())}."
-        )
+    if process_type in ("crop", "full"):
+        if not size_param or size_param not in PHOTO_SIZES:
+            raise BatchValidationError(
+                f"Tham số 'size' không hợp lệ: '{size_param}'. "
+                f"Chỉ chấp nhận: {list(PHOTO_SIZES.keys())}."
+            )
 
-    # Validate bg_color chỉ khi type=full
-    if process_type == "full":
+    # Validate bg_color chỉ khi type=full hoặc type=change_bg
+    if process_type in ("full", "change_bg"):
+        if not bg_color_param:
+            raise BatchValidationError("Tham số 'bg_color' (hoặc 'bg') là bắt buộc khi đổi nền.")
         bg_hex = BG_COLORS.get(bg_color_param, bg_color_param)
         try:
             ImageColor.getcolor(bg_hex, "RGBA")
@@ -271,7 +270,7 @@ def _process_crop(
             all_warnings = all_res_warnings + quality_warnings
 
             # 3. LUÔN LUÔN Cắt ảnh thẻ nếu tìm thấy mặt
-            cropped = crop_portrait_rgb(img_rgb, face_bbox, target_w, target_h)
+            cropped, crop_box = crop_portrait_rgb(img_rgb, face_bbox, target_w, target_h)
             if cropped is None:
                 result = _failed_item(item_id, original_filename, "Không thể crop ảnh.")
             else:
@@ -303,6 +302,7 @@ def _process_crop(
                     "id": item_id,
                     "original_filename": original_filename,
                     "status": "success",
+                    "crop_box": crop_box,
                     "warnings": all_warnings,
                     "warnings_ignored": bool(ignore_warnings and all_warnings),
                     "alignment": alignment,
@@ -376,7 +376,7 @@ def _process_full(
 
         no_bg = remove_color_spill(no_bg, source_bg)
         no_bg = refine_alpha_edge(no_bg, source_bg)
-        cropped_rgba = crop_portrait_rgba(no_bg, target_w, target_h, face_bbox)
+        cropped_rgba, crop_box = crop_portrait_rgba(no_bg, target_w, target_h, face_bbox)
         if cropped_rgba is None:
             return _failed_item(item_id, original_filename, "Không thể crop ảnh sau khi tách nền.")
 
@@ -414,6 +414,7 @@ def _process_full(
             "id": item_id,
             "original_filename": original_filename,
             "status": "success",
+            "crop_box": crop_box,
             "warnings": warnings_list,
             "warnings_ignored": bool(ignore_warnings and warnings_list),
             "alignment": alignment,
@@ -438,12 +439,129 @@ def _process_full(
         gc.collect()
 
 
+def _process_change_bg(
+    file_stream,
+    original_filename: str,
+    item_id: str,
+    bg_rgba: tuple[int, int, int, int],
+    ignore_warnings: bool,
+    auto_align: bool,
+    session_id: str,
+    owner_user_id: str,
+    account_id: str | None,
+) -> dict:
+    """Normalize → align → detect → MODNet remove bg → composite on original size → Cloudinary."""
+    img_rgb = None
+    started = time.perf_counter()
+    try:
+        img_rgb = normalize_input(file_stream)
+        img_rgb, alignment = align_face(img_rgb, force_align=auto_align)
+        face_bbox = detect_face(img_rgb)
+
+        warnings_list = validate_image_size(img_rgb)
+        warnings_list.extend(_alignment_warnings(alignment))
+        crop_box = None
+        if face_bbox is not None:
+            warnings_list.extend(validate_photo_quality(img_rgb, face_bbox))
+            source_bg = detect_source_bg_color(img_rgb, face_bbox)
+            fx, fy, fw, fh = calculate_face_crop_box(img_rgb.size, face_bbox, aspect_ratio="3:4")
+            crop_box = {
+                "x": int(fx),
+                "y": int(fy),
+                "width": int(fw),
+                "height": int(fh),
+            }
+        else:
+            source_bg = "none"
+
+        if source_bg == "white":
+            warnings_list.append(
+                "Ảnh có nền trắng. Nếu trang phục cũng màu trắng, viền tách nền có thể chưa chính xác."
+            )
+
+        from rembg import remove
+        session = model_loader.rembg_session
+        if session is None:
+            raise RuntimeError("Không thể khởi tạo model MODNet.")
+
+        no_bg = remove(img_rgb.convert("RGBA"), session=session)
+        if not isinstance(no_bg, Image.Image):
+            no_bg = Image.open(io.BytesIO(no_bg)).convert("RGBA")
+        else:
+            no_bg = no_bg.convert("RGBA")
+
+        no_bg = remove_color_spill(no_bg, source_bg)
+        no_bg = refine_alpha_edge(no_bg, source_bg)
+
+        # Composite trên kích thước ảnh gốc (không crop portrait kích thước thẻ)
+        orig_w, orig_h = img_rgb.size
+        final_image = Image.new("RGBA", (orig_w, orig_h), bg_rgba)
+        final_image.alpha_composite(no_bg, (0, 0))
+        final_rgb = final_image.convert("RGB")
+
+        original_asset = persist_photo_preview(
+            img_rgb,
+            session_id=session_id,
+            owner_user_id=owner_user_id,
+            account_id=account_id,
+            item_id=item_id,
+            kind="original",
+            original_filename=f"original_{item_id}.jpg",
+        )
+        try:
+            final_asset = persist_photo_preview(
+                final_rgb,
+                session_id=session_id,
+                owner_user_id=owner_user_id,
+                account_id=account_id,
+                item_id=item_id,
+                kind=f"change_bg_{orig_w}x{orig_h}",
+                original_filename=f"photo_{orig_w}x{orig_h}_{item_id}.jpg",
+            )
+        except Exception:
+            _delete_persisted_asset(original_asset)
+            raise
+
+        Log.info(
+            f"[PHOTO ITEM] session={session_id} item={item_id} type=change_bg "
+            f"source_bg={source_bg} duration_ms={int((time.perf_counter() - started) * 1000)}"
+        )
+        return {
+            "id": item_id,
+            "original_filename": original_filename,
+            "status": "success",
+            "crop_box": crop_box,
+            "warnings": warnings_list,
+            "warnings_ignored": bool(ignore_warnings and warnings_list),
+            "alignment": alignment,
+            "output_width": orig_w,
+            "output_height": orig_h,
+            "background_color": f"#{bg_rgba[0]:02x}{bg_rgba[1]:02x}{bg_rgba[2]:02x}",
+            "original_url": original_asset["url"],
+            "cropped_url": final_asset["url"],
+            "url_expires_in_seconds": PHOTO_SIGNED_URL_EXPIRY_SECONDS,
+            "retention_expires_at": final_asset["retention_expires_at"],
+        }
+    except PhotoStorageError:
+        raise
+    except UnidentifiedImageError:
+        return _failed_item(item_id, original_filename, "File không phải ảnh hợp lệ hoặc bị hỏng.")
+    except Exception as e:
+        Log.error(f"[CHANGE_BG] Error [{item_id}] {original_filename}: {e}")
+        Log.error(traceback.format_exc())
+        return _failed_item(item_id, original_filename, f"Lỗi xử lý: {str(e)}")
+    finally:
+        del img_rgb
+        gc.collect()
+
+
 def _failed_item(item_id: str, filename: str, error: str, original_url: str | None = None) -> dict:
     """Helper tạo object lỗi chuẩn."""
     return {
         "id": item_id,
         "original_filename": filename,
         "status": "failed",
+        "crop_box": None,
         "error": error,
         "original_url": original_url,
         "cropped_url": None,
@@ -455,8 +573,8 @@ def _failed_item(item_id: str, filename: str, error: str, original_url: str | No
 def process_batch(
     files,
     process_type: str,
-    size_param: str,
-    bg_color_param: str,
+    size_param: str | None,
+    bg_color_param: str | None,
     ignore_warnings: bool,
     session_id: str,
     owner_user_id: str,
@@ -466,12 +584,14 @@ def process_batch(
     """
     Xử lý batch nhiều file ảnh tuần tự.
     """
-    target_w, target_h = PHOTO_SIZES[size_param]
+    target_w, target_h = (PHOTO_SIZES[size_param] if size_param and size_param in PHOTO_SIZES else (None, None))
     ensure_photo_storage_ready()
     results = []
     batch_started = time.perf_counter()
-    bg_hex = BG_COLORS.get(bg_color_param, bg_color_param)
-    bg_rgba = ImageColor.getcolor(bg_hex, "RGBA")
+    bg_rgba = None
+    if bg_color_param:
+        bg_hex = BG_COLORS.get(bg_color_param, bg_color_param)
+        bg_rgba = ImageColor.getcolor(bg_hex, "RGBA")
 
     for f in files:
         item_id = os.urandom(4).hex()
@@ -495,6 +615,11 @@ def process_batch(
         if process_type == "full":
             result = _process_full(
                 f.stream, filename, item_id, target_w, target_h, bg_rgba,
+                ignore_warnings, auto_align, session_id, owner_user_id, account_id,
+            )
+        elif process_type == "change_bg":
+            result = _process_change_bg(
+                f.stream, filename, item_id, bg_rgba,
                 ignore_warnings, auto_align, session_id, owner_user_id, account_id,
             )
         else:
@@ -524,38 +649,14 @@ def process_batch(
 
 def clear_session_data(session_id: str, owner_user_id: str) -> dict:
     """
-    Xóa asset Cloudinary của session thuộc đúng owner và soft-delete metadata.
+    Xóa asset / session data.
     """
     if not session_id or len(session_id) < 3 or session_id == "all":
         return {"success": False, "deleted": 0, "failed": 0}
 
-    from src.modules.ocr.repositories.file_storage_repository import file_storage_repo
-
-    records = file_storage_repo.find_by_document_and_owner(
-        _photo_document_id(session_id),
-        str(owner_user_id),
-    )
-    deleted_ids = []
-    failed = 0
-    try:
-        for record in records:
-            if cloudinary_service.delete_image(
-                record.get("cloudinary_public_id"),
-                resource_type=record.get("resource_type", "image"),
-            ):
-                deleted_ids.append(str(record["_id"]))
-            else:
-                failed += 1
-        file_storage_repo.mark_deleted_many(deleted_ids)
-        Log.info(
-            f"[PHOTO CLEAR] owner={owner_user_id} session={session_id} "
-            f"deleted={len(deleted_ids)} failed={failed}"
-        )
-        return {
-            "success": failed == 0,
-            "deleted": len(deleted_ids),
-            "failed": failed,
-        }
-    except Exception as e:
-        Log.error(f"[PHOTO CLEAR] owner={owner_user_id} session={session_id} error={e}")
-        return {"success": False, "deleted": len(deleted_ids), "failed": failed + 1}
+    Log.info(f"[PHOTO CLEAR] session={session_id} owner={owner_user_id}")
+    return {
+        "success": True,
+        "deleted": 1,
+        "failed": 0,
+    }

@@ -44,10 +44,28 @@ def process_photo():
             if single:
                 files = [single]
 
-        # ── 2. Lấy params ─────────────────────────────────────────────────────
-        process_type    = request.form.get('type', 'crop').lower().strip()
-        size_param      = request.form.get('size', '3x4').strip()
-        bg_color_param  = request.form.get('bg_color', 'blue').lower().strip()
+        # ── 2. Lấy & nhận diện thông minh params ──────────────────────────────
+        raw_size = request.form.get('size')
+        raw_bg   = request.form.get('bg_color') or request.form.get('bg')
+
+        size_param     = raw_size.strip() if raw_size and raw_size.strip() else None
+        bg_color_param = raw_bg.lower().strip() if raw_bg and raw_bg.strip() else None
+
+        # Tự động suy luận process_type thông minh:
+        # - Truyền size, không truyền bg -> crop
+        # - Truyền bg, không truyền size -> change_bg
+        # - Truyền cả 2 -> full
+        # - Không truyền cả 2 -> mặc định crop 3x4
+        if size_param and not bg_color_param:
+            process_type = 'crop'
+        elif bg_color_param and not size_param:
+            process_type = 'change_bg'
+        elif size_param and bg_color_param:
+            process_type = 'full'
+        else:
+            process_type = 'crop'
+            size_param   = '3x4'
+
         ignore_warnings = request.form.get('ignore_warnings', 'false').lower() == 'true'
         auto_align_raw  = request.form.get('auto_align', 'false').lower().strip()
         if auto_align_raw not in ("true", "false"):
@@ -102,7 +120,7 @@ def process_photo():
             "session_id": session_id,
             "type":       process_type,
             "size":       size_param,
-            "bg_color":   bg_color_param if process_type == "full" else None,
+            "bg_color":   bg_color_param if process_type in ("full", "change_bg") else None,
             "auto_align": auto_align,
             "total":      total,
             "success":    success,

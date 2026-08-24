@@ -364,7 +364,7 @@ def calculate_face_crop_box(
     aspect_ratio: str,
     center_x: float | None = None,
 ) -> tuple[int, int, int, int]:
-    """Tạo crop box nằm trong ảnh và luôn giữ đúng tỷ lệ yêu cầu."""
+    """Tạo crop box chuẩn ảnh thẻ căn từ đỉnh đầu xuống ngang ngực và 2 bên vai."""
     ratio_map = {"1:1": 1.0, "3:4": 3 / 4, "4:6": 2 / 3, "2:3": 2 / 3}
     if aspect_ratio not in ratio_map:
         raise ValueError("aspect_ratio chỉ chấp nhận 1:1, 3:4, 4:6 hoặc 2:3.")
@@ -374,24 +374,48 @@ def calculate_face_crop_box(
     ratio = ratio_map[aspect_ratio]
     cx = float(center_x if center_x is not None else fx + fw / 2)
 
-    # Đủ rộng cho vai và đủ cao cho đầu/ngực, sau đó ép theo target ratio.
-    crop_w = max(fw * 2.5, fh * 2.8 * ratio)
-    if aspect_ratio == "3:4":
-        crop_w = max(img_w * 0.2, min(img_w * 0.95, crop_w))
-    max_w = min(float(img_w), float(img_h) * ratio)
-    crop_w = min(crop_w, max_w)
+    # Chiều cao ảnh thẻ chuẩn: 2.7 lần chiều cao mặt (lấy đầu, cổ, vai và ngang ngực)
+    crop_h = fh * 2.7
+    crop_w = crop_h * ratio
 
-    final_w = max(1, int(crop_w))
-    final_h = max(1, int(round(final_w / ratio)))
-    if final_h > img_h:
-        final_h = img_h
-        final_w = max(1, int(round(final_h * ratio)))
+    # Đảm bảo đủ chiều rộng cho 2 bên vai (tối thiểu 2.2 lần fw)
+    min_crop_w = fw * 2.2
+    if crop_w < min_crop_w:
+        crop_w = min_crop_w
+        crop_h = crop_w / ratio
 
-    # Chừa khoảng trống ~30% chiều cao mặt phía trên bbox.
+    # Giới hạn kích thước không vượt quá kích thước ảnh
+    max_h = float(img_h)
+    max_w = max_h * ratio
+    if max_w > img_w:
+        max_w = float(img_w)
+        max_h = max_w / ratio
+
+    if crop_h > max_h or crop_w > max_w:
+        crop_h = max_h
+        crop_w = max_w
+
+    final_w = max(1, int(round(crop_w)))
+    final_h = max(1, int(round(crop_h)))
+
+    # Vị trí Y: Neo theo đỉnh đầu + headroom (~12% chiều cao ảnh)
+    top_head = fy - fh * 0.25
+    head_room = final_h * 0.12
+    final_y = int(round(top_head - head_room))
+
+    # Boundary checks: không để tràn ra ngoài viền trên/dưới
+    if final_y < 0:
+        final_y = 0
+    if final_y + final_h > img_h:
+        final_y = max(0, img_h - final_h)
+
+    # Vị trí X: Căn giữa theo tâm mặt
     final_x = int(round(cx - final_w / 2))
-    final_y = int(round(fy - fh * 0.30))
-    final_x = max(0, min(final_x, img_w - final_w))
-    final_y = max(0, min(final_y, img_h - final_h))
+    if final_x < 0:
+        final_x = 0
+    if final_x + final_w > img_w:
+        final_x = max(0, img_w - final_w)
+
     return final_x, final_y, final_w, final_h
 
 
@@ -447,91 +471,100 @@ def crop_portrait_rgb(
     face_bbox: tuple[int, int, int, int],
     target_w: int, 
     target_h: int
-) -> Image.Image | None:
+) -> tuple[Image.Image, dict] | tuple[None, None]:
     """
     [TYPE=CROP] Crop chuẩn ảnh thẻ trực tiếp từ ảnh RGB gốc.
-    Ưu tiên: 
-    1. Giữ tỉ lệ target_w/target_h.
-    2. Cân đối mặt (chiếm ~40-45% chiều cao).
-    3. Không bao giờ thêm padding (luôn nằm trong ảnh gốc).
-    4. Ưu tiên lấy sát đáy (vì đây là ảnh chụp lại từ ảnh thẻ vật lý).
+    Neo chặt theo khuôn mặt & đỉnh đầu, lấy xuống ngang ngực và 2 bên vai.
     """
     if face_bbox is None:
-        return None
+        return None, None
 
     img_w, img_h = img_rgb.size
     fx, fy, fw, fh = face_bbox
     ratio = target_w / target_h
 
-    # 0. Xác định biên giới hạn (Effective Bounds)
-    # Nếu phát hiện nền xanh/trắng, ta sẽ crop trong vùng đó thay vì toàn bộ ảnh
+    # 0. Xác định biên giới hạn (nếu ảnh chụp lại từ phôi ảnh thẻ có nền xanh/trắng)
     bg_color = detect_source_bg_color(img_rgb, face_bbox)
     bg_res = get_background_region_bbox(img_rgb, bg_color)
     
     if isinstance(bg_res, Image.Image):
-        # Nếu bg_res là Image, nghĩa là đã được perspective transform (làm phẳng)
-        # Ta cập nhật lại img_rgb và tính toán lại các thông số
         img_rgb = bg_res
         img_w, img_h = img_rgb.size
-        # Sau khi làm phẳng, ta cần detect lại mặt trên ảnh mới
         new_bbox = detect_face(img_rgb)
-        if new_bbox is None: return None
+        if new_bbox is None:
+            return None, None
         fx, fy, fw, fh = new_bbox
         min_x, min_y, max_x, max_y = 0, 0, img_w, img_h
-        eff_w, eff_h = img_w, img_h
     elif bg_res:
-        # Nếu là tuple (bounding box thông thường)
         min_x, min_y, max_x, max_y = bg_res
-        eff_w = max_x - min_x
-        eff_h = max_y - min_y
     else:
         min_x, min_y, max_x, max_y = 0, 0, img_w, img_h
-        eff_w, eff_h = img_w, img_h
 
-    # 1. Nếu tỉ lệ hiện tại đã gần khớp (sai số < 3%), chỉ resize vùng đó
+    eff_w = max_x - min_x
+    eff_h = max_y - min_y
+
+    # 1. Nếu vùng nền đã đúng tỉ lệ sẵn (sai số < 3%), resize trực tiếp
     current_ratio = eff_w / eff_h
     if abs(current_ratio - ratio) / ratio < 0.03:
-        return img_rgb.crop((min_x, min_y, max_x, max_y)).resize((target_w, target_h), Image.Resampling.LANCZOS)
+        crop_box = {
+            "x": int(min_x),
+            "y": int(min_y),
+            "width": int(eff_w),
+            "height": int(eff_h),
+        }
+        return img_rgb.crop((min_x, min_y, max_x, max_y)).resize((target_w, target_h), Image.Resampling.LANCZOS), crop_box
 
-    # 2. Tính toán kích thước crop lớn nhất trong biên hiệu dụng
-    if current_ratio > ratio:
-        # Vùng nền quá rộng -> Lấy full chiều cao nền, cắt bớt 2 bên
-        crop_h = eff_h
-        crop_w = int(crop_h * ratio)
-    else:
-        # Vùng nền quá hẹp -> Lấy full chiều rộng nền, cắt bớt trên/dưới
-        crop_w = eff_w
+    # 2. Tính kích thước crop theo khuôn mặt (chiều cao ~2.7 lần chiều cao mặt)
+    crop_h = int(fh * 2.7)
+    crop_w = int(crop_h * ratio)
+
+    # Đảm bảo đủ chiều rộng cho 2 bên vai (tối thiểu 2.2 lần fw)
+    min_crop_w = int(fw * 2.2)
+    if crop_w < min_crop_w:
+        crop_w = min_crop_w
         crop_h = int(crop_w / ratio)
 
-    # 3. Định tâm theo mặt
+    # Giới hạn kích thước không vượt quá biên hiệu dụng
+    max_h = eff_h
+    max_w = int(max_h * ratio)
+    if max_w > eff_w:
+        max_w = eff_w
+        max_h = int(max_w / ratio)
+
+    if crop_h > max_h or crop_w > max_w:
+        crop_h = max_h
+        crop_w = max_w
+
+    # 3. Định vị Y: Neo theo đỉnh đầu + headroom
+    top_head = fy - int(fh * 0.25)
+    head_room = int(crop_h * 0.12)
+    y1 = top_head - head_room
+
+    # Giới hạn Y trong biên hiệu dụng [min_y, max_y]
+    if y1 < min_y:
+        y1 = min_y
+    if y1 + crop_h > max_y:
+        y1 = max(min_y, max_y - crop_h)
+    y2 = y1 + crop_h
+
+    # 4. Định vị X: Căn giữa theo tâm mặt
     cx = fx + fw // 2
     x1 = cx - crop_w // 2
-    x2 = x1 + crop_w
-
-    # Clamp X trong biên hiệu dụng
     if x1 < min_x:
-        x1, x2 = min_x, min_x + crop_w
-    elif x2 > max_x:
-        x2, x1 = max_x, max_x - crop_w
-
-    # 4. Định vị Y thông minh trong biên hiệu dụng
-    y2 = max_y
-    y1 = y2 - crop_h
-
-    # Bảo vệ đỉnh đầu (trong biên hiệu dụng)
-    min_y1 = max(min_y, fy - int(fh * 0.25)) 
-    if y1 > min_y1:
-        y1 = min_y1
-        y2 = y1 + crop_h
-
-    # Đảm bảo y2 không vượt quá max_y sau khi điều chỉnh
-    if y2 > max_y:
-        y2 = max_y
-        y1 = y2 - crop_h
+        x1 = min_x
+    if x1 + crop_w > max_x:
+        x1 = max(min_x, max_x - crop_w)
+    x2 = x1 + crop_w
 
     # 5. Cắt và resize
     cropped = img_rgb.crop((x1, y1, x2, y2))
-    return cropped.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    crop_box = {
+        "x": int(x1),
+        "y": int(y1),
+        "width": int(x2 - x1),
+        "height": int(y2 - y1),
+    }
+    return cropped.resize((target_w, target_h), Image.Resampling.LANCZOS), crop_box
 
 
 def crop_portrait_rgba(
@@ -539,66 +572,87 @@ def crop_portrait_rgba(
     target_w: int,
     target_h: int,
     face_bbox: tuple[int, int, int, int] | None = None,
-) -> Image.Image | None:
+) -> tuple[Image.Image, dict] | tuple[None, None]:
     """
     [TYPE=FULL] Crop chuẩn ảnh thẻ từ ảnh RGBA đã tách nền.
-    Dùng getbbox() để tìm viền người qua alpha channel.
-    Trả về Image RGBA đã resize hoặc None nếu không tìm thấy mặt.
+    Tự động thích ứng ôm trọn toàn bộ vai và mái tóc của người mẫu,
+    giữ đúng tỉ lệ ảnh thẻ target_w/target_h.
     """
     bbox = face_bbox or detect_face(no_bg_rgba)
     if bbox is None:
-        return None
+        return None, None
 
     x, y, fw, fh = bbox
     img_w, img_h = no_bg_rgba.size
     ratio = target_w / target_h
 
-    crop_h = int(fh / 0.45)
+    # 1. Chiều cao ảnh thẻ cơ sở: 2.7 lần chiều cao mặt
+    crop_h = int(fh * 2.7)
     crop_w = int(crop_h * ratio)
 
-    min_crop_w = int(fw * 2.5)
+    # Đảm bảo độ rộng tối thiểu cho 2 vai (ít nhất 2.2 lần bề rộng mặt)
+    min_crop_w = int(fw * 2.2)
     if crop_w < min_crop_w:
         crop_w = min_crop_w
         crop_h = int(crop_w / ratio)
 
-    cx = x + fw // 2
-    head_room = int(crop_h * 0.12)
-    y_top_head = y - int(fh * 0.25)
-    y1 = y_top_head - head_room
-    x1 = cx - crop_w // 2
-    x2 = x1 + crop_w
-    y2 = y1 + crop_h
-
-    # Auto-fit width bằng actual bbox (alpha channel)
+    # 2. Tự động phát hiện bề rộng thực tế của vai & tóc từ Alpha Mask
     actual_bbox = no_bg_rgba.getbbox()
     if actual_bbox:
         person_l, person_t, person_r, person_b = actual_bbox
         person_w = person_r - person_l
-        ideal_crop_w = int(person_w / 0.99)
-        max_w = int(fw * 4.5)
-        min_w = int(fw * 2.2)
-        ideal_crop_w = max(min_w, min(max_w, ideal_crop_w))
-        crop_w = ideal_crop_w
-        crop_h = int(crop_w / ratio)
-        x1 = cx - crop_w // 2
-        x2 = x1 + crop_w
-        y2 = person_b
-        y1 = y2 - crop_h
 
+        # Nếu vai hoặc tóc xoã rộng hơn crop_w cơ sở, mở rộng crop_w để bao trọn cả vai và tóc (+ 6% đệm thẩm mỹ)
+        shoulder_crop_w = int(person_w * 1.06)
+        max_allowed_w = int(fw * 4.5)  # Tránh mở quá rộng nếu có nhiều người
+        shoulder_crop_w = min(max_allowed_w, shoulder_crop_w)
+
+        if shoulder_crop_w > crop_w:
+            crop_w = shoulder_crop_w
+            crop_h = int(crop_w / ratio)
+
+        # Xác định đỉnh đầu thực tế từ tóc
+        if person_t < y:
+            top_head = person_t
+        else:
+            top_head = y - int(fh * 0.25)
+    else:
+        top_head = y - int(fh * 0.25)
+
+    # 3. Khoảng trống trên đỉnh đầu (Headroom: 12% chiều cao ảnh)
+    head_room = int(crop_h * 0.12)
+    y1 = top_head - head_room
+    y2 = y1 + crop_h
+
+    # 4. Định tâm theo mặt
+    cx = x + fw // 2
+    x1 = cx - crop_w // 2
+    x2 = x1 + crop_w
+
+    # 5. Xử lý padding nếu khung vượt ra ngoài viền ảnh (trong suốt)
     pad_l = max(0, -x1)
     pad_t = max(0, -y1)
     pad_r = max(0, x2 - img_w)
-    pad_b = 0
+    pad_b = max(0, y2 - img_h)
+
+    crop_box = {
+        "x": int(max(0, x1)),
+        "y": int(max(0, y1)),
+        "width": int(crop_w),
+        "height": int(crop_h),
+    }
 
     if any([pad_l, pad_t, pad_r, pad_b]):
         no_bg_rgba = ImageOps.expand(
             no_bg_rgba, border=(pad_l, pad_t, pad_r, pad_b), fill=(0, 0, 0, 0)
         )
-        x1 += pad_l; y1 += pad_t
-        x2 += pad_l; y2 += pad_t
+        x1 += pad_l
+        y1 += pad_t
+        x2 += pad_l
+        y2 += pad_t
 
     cropped = no_bg_rgba.crop((x1, y1, x2, y2))
-    return cropped.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    return cropped.resize((target_w, target_h), Image.Resampling.LANCZOS), crop_box
 
 
 # ─── Background Removal Helpers ───────────────────────────────────────────────
