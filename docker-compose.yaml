@@ -58,6 +58,10 @@ services:
       - ./src/hand_writting:/app/src/hand_writting
     security_opt:
       - no-new-privileges:true                     
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     deploy:
       resources:
         limits:
@@ -92,6 +96,10 @@ services:
       - PYTHONUNBUFFERED=1
     security_opt:
       - no-new-privileges:true 
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
