@@ -30,7 +30,7 @@ def stream_events():
         Log.info(f"[SSE] User {user_id} connected to event stream")
 
         # Gửi event connection ngay khi client kết nối thành công
-        yield f"data: {json.dumps({'type': 'connection', 'status': 'connected', 'user_id': user_id})}\n\n"
+        yield f"event: connection\ndata: {json.dumps({'event': 'connection', 'type': 'connection', 'status': 'connected', 'user_id': user_id})}\n\n"
 
         try:
             while True:
@@ -47,10 +47,13 @@ def stream_events():
                             event_name = payload.get('event', 'status_update')
                             event_data = payload.get('data', {})
 
-                            if isinstance(event_data, dict) and 'timestamp' not in event_data:
-                                event_data['timestamp'] = time.time()
+                            if isinstance(event_data, dict):
+                                if 'event' not in event_data:
+                                    event_data['event'] = event_name
+                                if 'timestamp' not in event_data:
+                                    event_data['timestamp'] = time.time()
 
-                            yield f"event: {event_name}\ndata: {json.dumps(event_data)}\n\n"
+                            yield f"event: {event_name}\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 
                         except Exception as e:
                             Log.error(f"[SSE] Parse error for user {user_id}: {e}")
@@ -62,7 +65,7 @@ def stream_events():
             Log.info(f"[SSE] User {user_id} disconnected from stream")
         except Exception as e:
             Log.error(f"[SSE] Stream error for user {user_id}: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'event': 'error', 'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
         finally:
             try:
                 pubsub.unsubscribe(channel)

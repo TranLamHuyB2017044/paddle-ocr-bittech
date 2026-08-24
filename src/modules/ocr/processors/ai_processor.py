@@ -89,8 +89,8 @@ def process_with_openai(raw_front, raw_back, timer_info, doc_type, user_id=None,
         info = extraction_result.get("data", {})
         metadata = extraction_result.get("metadata", {})
 
-        # --- FINAL CLEANUP (Normalization) ---
-        info = PostCleaner.clean(info, doc_type=doc_type)
+        # --- FINAL CLEANUP (Normalization & Date Validation) ---
+        info = PostCleaner.clean(info, doc_type=doc_type, raw_text=combined_text)
 
         total_time = time.time() - request_start
         

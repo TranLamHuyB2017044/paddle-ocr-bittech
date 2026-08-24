@@ -26,6 +26,9 @@ def publish_event(user_id, event_type, data):
             return str(obj)
         return str(obj) # Fallback
 
+    if isinstance(data, dict) and "event" not in data:
+        data["event"] = event_type
+
     channel = f"sse_user_{user_id}"
     message = {
         "event": event_type,

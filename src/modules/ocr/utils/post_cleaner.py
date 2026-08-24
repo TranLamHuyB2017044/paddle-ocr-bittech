@@ -116,7 +116,192 @@ class PostCleaner:
         return text
 
     @staticmethod
-    def clean(data, doc_type="idCard"):
+    def _is_valid_date(day: int, month: int, year: int, min_year: int = 1900, max_year: int = None) -> bool:
+        """
+        Kiểm tra tính hợp lệ của ngày, tháng, năm:
+        - Ngày: 1 <= day <= số ngày trong tháng (tối đa 31)
+        - Tháng: 1 <= month <= 12
+        - Năm: min_year <= year <= max_year (mặc định <= năm hiện tại)
+        """
+        if max_year is None:
+            max_year = datetime.now().year
+
+        if not (1 <= month <= 12):
+            return False
+        if not (min_year <= year <= max_year):
+            return False
+
+        # Kiểm tra số ngày trong tháng (có xét năm nhuận cho tháng 2)
+        is_leap = (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))
+        days_in_month = [0, 31, 29 if is_leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+        return 1 <= day <= days_in_month[month]
+
+    @staticmethod
+    def _extract_date_from_raw_text(raw_text, keywords=None, max_year=None) -> str | None:
+        """
+        Trích xuất ngày tháng từ raw text OCR dựa theo từ khóa ngữ cảnh.
+        """
+        if not raw_text:
+            return None
+
+        lines = []
+        if isinstance(raw_text, list):
+            for item in raw_text:
+                if isinstance(item, dict):
+                    lines.append(item.get("text", ""))
+                else:
+                    lines.append(str(item))
+        else:
+            lines = str(raw_text).split("\n")
+
+        full_text = "\n".join(lines)
+
+        # Regex tìm ngày tháng dạng DD/MM/YYYY hoặc DD-MM-YYYY hoặc DD.MM.YYYY
+        date_pattern = r"\b([0-3]?\d)[\/\-\.]([0-1]?\d)[\/\-\.]((?:19|20)\d{2})\b"
+
+        # 1. Tìm theo dòng ngay sau từ khóa
+        if keywords:
+            for idx, line in enumerate(lines):
+                line_lower = line.lower()
+                if any(kw.lower() in line_lower for kw in keywords):
+                    # Tìm trong chính dòng này
+                    matches = re.findall(date_pattern, line)
+                    for d_str, m_str, y_str in matches:
+                        d, m, y = int(d_str), int(m_str), int(y_str)
+                        if PostCleaner._is_valid_date(d, m, y, max_year=max_year):
+                            return f"{d:02d}/{m:02d}/{y:04d}"
+                    # Tìm ở 2 dòng tiếp theo
+                    for next_idx in range(idx + 1, min(len(lines), idx + 3)):
+                        matches = re.findall(date_pattern, lines[next_idx])
+                        for d_str, m_str, y_str in matches:
+                            d, m, y = int(d_str), int(m_str), int(y_str)
+                            if PostCleaner._is_valid_date(d, m, y, max_year=max_year):
+                                return f"{d:02d}/{m:02d}/{y:04d}"
+
+        # 2. Quét toàn bộ text tìm ngày hợp lệ đầu tiên
+        matches = re.findall(date_pattern, full_text)
+        for d_str, m_str, y_str in matches:
+            d, m, y = int(d_str), int(m_str), int(y_str)
+            if PostCleaner._is_valid_date(d, m, y, max_year=max_year):
+                return f"{d:02d}/{m:02d}/{y:04d}"
+
+        return None
+
+    @staticmethod
+    def _parse_and_validate_date(
+        date_str: str | None,
+        field_name: str = "dob",
+        doc_type: str = "idCard",
+        id_number: str | None = None,
+        raw_text=None
+    ) -> str | None:
+        """
+        Validate và tự động sửa ngày tháng:
+        - Đảm bảo ngày <= 31, tháng <= 12, năm sinh <= năm hiện tại.
+        - Khắc phục lỗi đảo vị trí ngày/tháng/năm do AI/OCR (ví dụ: 97/19/2011 -> 20/11/1997).
+        - Đối chiếu với 12 số CCCD (ký tự 4: thế kỷ, ký tự 5-6: năm sinh).
+        - Fallback tìm trong raw text OCR nếu input sai hoặc rỗng.
+        """
+        current_year = datetime.now().year
+        max_year = 2100 if field_name == "expiryDate" else current_year
+
+        expected_birth_year = None
+        if doc_type == "idCard" and id_number and len(id_number) == 12:
+            try:
+                century_code = int(id_number[3])
+                birth_yy = int(id_number[4:6])
+                century = 1900 if century_code in (0, 1) else 2000 if century_code in (2, 3) else 2100 if century_code in (4, 5) else 1900
+                expected_birth_year = century + birth_yy
+            except (ValueError, IndexError):
+                pass
+
+        # Keywords cho từng field
+        kw_map = {
+            "dob": ["sinh", "ngày sinh", "date of birth", "dob", "năm sinh"],
+            "expiryDate": ["hết hạn", "giá trị đến", "expiry", "valid until"],
+            "dateOfIssue": ["ngày cấp", "cấp ngày", "date of issue", "issue date"],
+            "dateOfBegining": ["trúng tuyển", "ngày bắt đầu", "date of beginning"],
+            "ngay_lap_phieu": ["ngày lập", "ngày", "date"],
+        }
+        field_keywords = kw_map.get(field_name, ["ngày"])
+
+        # Nếu date_str rỗng -> thử lấy từ raw_text
+        if not date_str or not str(date_str).strip() or str(date_str).lower() in ("null", "none"):
+            return PostCleaner._extract_date_from_raw_text(raw_text, field_keywords, max_year=max_year)
+
+        raw_val = str(date_str).strip()
+        # Chuẩn hóa separator
+        normalized_str = re.sub(r"[^\d\-\/\.]", "", raw_val)
+        parts = re.split(r"[\-\/\.]", normalized_str)
+        parts = [p for p in parts if p]
+
+        # Case 1: Đủ 3 phần ngày/tháng/năm
+        if len(parts) == 3:
+            try:
+                nums = [int(p) for p in parts]
+                d, m, y = nums[0], nums[1], nums[2]
+                
+                # Nếu y chỉ có 2 chữ số
+                if y < 100:
+                    if expected_birth_year and y == (expected_birth_year % 100):
+                        y = expected_birth_year
+                    else:
+                        y = 2000 + y if y <= (current_year % 100) else 1900 + y
+
+                # Kiểm tra xem có đúng định dạng DD/MM/YYYY chuẩn chưa
+                if PostCleaner._is_valid_date(d, m, y, max_year=max_year):
+                    # Nếu có expected_birth_year từ số CCCD và là trường dob nhưng năm bị lệch -> cần đối chiếu
+                    if field_name == "dob" and expected_birth_year and y != expected_birth_year:
+                        pass
+                    else:
+                        return f"{d:02d}/{m:02d}/{y:04d}"
+
+                # Nếu không hợp lệ (ví dụ: bị đảo ngược 97/19/2011 hoặc YYYY/MM/DD)
+                # Thử tất cả các hoán vị (permutations)
+                import itertools
+                valid_candidates = []
+                for p in itertools.permutations(nums):
+                    cand_d, cand_m, cand_y = p[0], p[1], p[2]
+                    if cand_y < 100:
+                        cand_y = 2000 + cand_y if cand_y <= (current_year % 100) else 1900 + cand_y
+                    if PostCleaner._is_valid_date(cand_d, cand_m, cand_y, max_year=max_year):
+                        score = 0
+                        if field_name == "dob" and expected_birth_year and cand_y == expected_birth_year:
+                            score += 10
+                        valid_candidates.append((score, f"{cand_d:02d}/{cand_m:02d}/{cand_y:04d}"))
+
+                if valid_candidates:
+                    valid_candidates.sort(key=lambda x: x[0], reverse=True)
+                    return valid_candidates[0][1]
+
+            except (ValueError, IndexError):
+                pass
+
+        # Case 2: Chuỗi 8 chữ số liên tiếp (DDMMYYYY hoặc YYYYMMDD)
+        digits_only = re.sub(r"\D", "", raw_val)
+        if len(digits_only) == 8:
+            try:
+                # Thử DDMMYYYY
+                d1, m1, y1 = int(digits_only[:2]), int(digits_only[2:4]), int(digits_only[4:])
+                if PostCleaner._is_valid_date(d1, m1, y1, max_year=max_year):
+                    return f"{d1:02d}/{m1:02d}/{y1:04d}"
+                # Thử YYYYMMDD
+                y2, m2, d2 = int(digits_only[:4]), int(digits_only[4:6]), int(digits_only[6:])
+                if PostCleaner._is_valid_date(d2, m2, y2, max_year=max_year):
+                    return f"{d2:02d}/{m2:02d}/{y2:04d}"
+            except (ValueError, IndexError):
+                pass
+
+        # Fallback: Tìm trong raw_text OCR
+        extracted_from_raw = PostCleaner._extract_date_from_raw_text(raw_text, field_keywords, max_year=max_year)
+        if extracted_from_raw:
+            return extracted_from_raw
+
+        return PostCleaner._format_date(raw_val)
+
+    @staticmethod
+    def clean(data, doc_type="idCard", raw_text=None):
         if not data: return {}
         
         cleaned_data = data.copy()
@@ -126,7 +311,8 @@ class PostCleaner:
             if field in cleaned_data and cleaned_data[field]:
                 cleaned_data[field] = PostCleaner._normalize_address_part(cleaned_data[field])
 
-        # 1. Clean ID Number (Xóa khoảng trắng, ký tự lại, Regex semantic CCCD/CMND/GPLX)
+        # 1. Clean ID Number (Xóa khoảng trắng, ký tự lạ, Regex semantic CCCD/CMND/GPLX)
+        clean_id = None
         if "idNumber" in cleaned_data and cleaned_data["idNumber"]:
             raw_id = str(cleaned_data["idNumber"]).replace(" ", "")
             
@@ -136,14 +322,12 @@ class PostCleaner:
                 # - 1 số kế: Thế kỷ & Giới tính (0-9)
                 # - 2 số kế: Năm sinh (00-99)
                 # - 6 số cuối: Ngẫu nhiên
-                # Regex CCCD chuẩn: (Mã tỉnh 001-096)(Thế kỷ 0-5)(Năm sinh 2 số)(Ngẫu nhiên 6 số) -> (0[0-8][0-9]|09[0-6])[0-5]\d{8}
-                # CMND cũ: 9 số bất kỳ
                 cccd_pattern = r"(?<!\d)((0[0-8][0-9]|09[0-6])[0-5]\d{8}|\d{9})(?!\d)"
                 match = re.search(cccd_pattern, raw_id)
                 if match:
                     clean_id = match.group(1)
                 else:
-                    # Fallback bóc tách 12 số (chấp nhận rủi ro sai OCR ở mã tỉnh/thế kỷ) hoặc 9 số
+                    # Fallback bóc tách 12 số hoặc 9 số
                     clean_id = re.sub(r"[^0-9]", "", raw_id)
                     match_fallback = re.search(r"(\d{12}|\d{9})", clean_id)
                     if match_fallback:
@@ -162,12 +346,45 @@ class PostCleaner:
                 clean_id = re.sub(r"[^0-9]", "", raw_id)
                 
             cleaned_data["idNumber"] = clean_id
-            
-        # 2. Clean Date Fields (Chuẩn hóa DD/MM/YYYY)
+
+        # 1.1 Tự động suy luận và đối chiếu dữ liệu cho CCCD 12 số (Giới tính, Quê quán)
+        if doc_type == "idCard" and clean_id and len(clean_id) == 12:
+            try:
+                century_code = int(clean_id[3])
+                # Tự động điền giới tính nếu bị thiếu hoặc null
+                if not cleaned_data.get("gender") or str(cleaned_data.get("gender")).lower() in ("null", "none"):
+                    cleaned_data["gender"] = "Nam" if century_code % 2 == 0 else "Nữ"
+
+                # Tự động điền quê quán từ 3 số đầu mã tỉnh nếu thiếu
+                if not cleaned_data.get("hometown") or str(cleaned_data.get("hometown")).lower() in ("null", "none"):
+                    prov_code = clean_id[:3]
+                    if prov_code in CCCD_PROVINCE_CODE_MAP:
+                        cleaned_data["hometown"] = CCCD_PROVINCE_CODE_MAP[prov_code]
+            except (ValueError, IndexError):
+                pass
+
+        # 2. Clean & Validate Date Fields (Chuẩn hóa DD/MM/YYYY, check logic ngày tháng năm)
         date_fields = ["dob", "expiryDate", "dateOfIssue", "dateOfBegining", "ngay_lap_phieu"]
         for field in date_fields:
-            if field in cleaned_data and cleaned_data[field]:
-                cleaned_data[field] = PostCleaner._format_date(str(cleaned_data[field]))
+            if field in cleaned_data and cleaned_data[field] is not None:
+                cleaned_data[field] = PostCleaner._parse_and_validate_date(
+                    cleaned_data[field],
+                    field_name=field,
+                    doc_type=doc_type,
+                    id_number=clean_id,
+                    raw_text=raw_text,
+                )
+            elif field in ("dob", "dateOfIssue") and (field not in cleaned_data or cleaned_data[field] is None):
+                # Thử tìm trong raw_text nếu AI trả về null
+                found_date = PostCleaner._parse_and_validate_date(
+                    None,
+                    field_name=field,
+                    doc_type=doc_type,
+                    id_number=clean_id,
+                    raw_text=raw_text,
+                )
+                if found_date:
+                    cleaned_data[field] = found_date
 
         # 3. Clean Name (Viết hoa chữ cái đầu mỗi từ, xóa ký tự đặc biệt)
         if "fullName" in cleaned_data and cleaned_data["fullName"]:

@@ -84,7 +84,7 @@ def process_traditional(raw_front, raw_back, timer_info, doc_type="idCard", user
         info_extracted = {**res_back, **res_front}
 
     # Final Post-Clean
-    info_extracted = PostCleaner.clean(info_extracted, doc_type=doc_type)
+    info_extracted = PostCleaner.clean(info_extracted, doc_type=doc_type, raw_text=clean_front + clean_back)
     
     total_time = time.time() - request_start
     if user_id: users_repo.increment_extraction_stats(user_id, doc_type)
