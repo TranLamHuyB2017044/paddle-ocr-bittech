@@ -278,6 +278,56 @@ class PostCleaner:
     
 
     @staticmethod
+    def repair_encoding(text: str) -> str:
+        """
+        Khôi phục chuỗi tiếng Việt bị lỗi bảng mã do thư viện quét QR (ZBar C library)
+        tự động đoán nhầm UTF-8 thành Shift-JIS / Big5 / GBK.
+        """
+        if not text or not isinstance(text, str):
+            return text
+
+        def has_mojibake(s: str) -> bool:
+            return any(
+                '\u4e00' <= c <= '\u9fff' or   # CJK Unified Ideographs
+                '\u3400' <= c <= '\u4dbf' or   # CJK Extension A
+                '\u3040' <= c <= '\u30ff' or   # Hiragana & Katakana
+                '\uff61' <= c <= '\uff9f'      # Halfwidth Katakana
+                for c in s
+            )
+
+        if not has_mojibake(text):
+            return text
+
+        # 1. Thử khôi phục toàn bộ chuỗi
+        for enc in ['shift_jis', 'cp932', 'shift_jis_2004', 'shift_jisx0213', 'big5', 'cp950', 'gbk', 'gb18030', 'latin1']:
+            try:
+                repaired = text.encode(enc).decode('utf-8')
+                if not has_mojibake(repaired):
+                    return repaired
+            except Exception:
+                pass
+
+        # 2. Thử khôi phục theo từng phân đoạn (nếu chuỗi có dấu |)
+        if '|' in text:
+            parts = text.split('|')
+            repaired_parts = []
+            for p in parts:
+                repaired_p = p
+                if has_mojibake(p):
+                    for enc in ['shift_jis', 'cp932', 'shift_jis_2004', 'shift_jisx0213', 'big5', 'cp950', 'gbk', 'gb18030', 'latin1']:
+                        try:
+                            temp = p.encode(enc).decode('utf-8')
+                            if not has_mojibake(temp):
+                                repaired_p = temp
+                                break
+                        except Exception:
+                            pass
+                repaired_parts.append(repaired_p)
+            return '|'.join(repaired_parts)
+
+        return text
+
+    @staticmethod
     def extract_cccd_manual(raw_text):
         """
         Trích xuất dữ liệu CCCD thủ công từ chuỗi định dạng:|
@@ -285,6 +335,9 @@ class PostCleaner:
         """
         if not raw_text: return None
         
+        # Tự động sửa lỗi bảng mã (nếu quét từ QR bị Shift-JIS/Big5)
+        raw_text = PostCleaner.repair_encoding(raw_text)
+
         # Split by | and filter empty parts logic
         parts = [p.strip() for p in raw_text.split('|') if p.strip()]
         
@@ -329,6 +382,8 @@ class PostCleaner:
         """
         if not raw_text: return None
         
+        raw_text = PostCleaner.repair_encoding(raw_text)
+
         # Tách theo dòng hoặc dấu |
         if "|" in raw_text:
             parts = [p.strip() for p in raw_text.split('|') if p.strip()]
@@ -408,17 +463,41 @@ class PostCleaner:
         Input: 01012000, 01-01-2000, 01/01/2000, 01.01.2000, 2026-06-08
         Output: 01/01/2000
         """
-        # Nếu là chuỗi số thuần túy 8 ký tự
+        if not date_str:
+            return date_str
+            
+        date_str = str(date_str).strip()
+
+        # Định dạng chuẩn ISO: YYYY-MM-DD hoặc YYYY/MM/DD
+        m_iso = re.match(r"^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$", date_str)
+        if m_iso:
+            y, m, d = m_iso.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+
+        # Định dạng chuẩn Việt Nam có separator: DD-MM-YYYY hoặc DD/MM/YYYY
+        m_dmy = re.match(r"^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})$", date_str)
+        if m_dmy:
+            d, m, y = m_dmy.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+
+        # Nếu là chuỗi số thuần túy 8 ký tự: DDMMYYYY hoặc YYYYMMDD
         s = re.sub(r"[^0-9]", "", date_str)
         if len(s) == 8:
-            try:
-                # Kiểm tra xem có bắt đầu bằng năm không (YYYYMMDD)
-                year_start = int(s[:4])
-                if 1900 <= year_start <= 2100:
-                    return f"{s[6:]}/{s[4:6]}/{s[:4]}"
-            except ValueError:
-                pass
-            return f"{s[:2]}/{s[2:4]}/{s[4:]}"
+            d1, m1, y1 = int(s[:2]), int(s[2:4]), int(s[4:])
+            y2, m2, d2 = int(s[:4]), int(s[4:6]), int(s[6:])
+            
+            valid_dmy = (1900 <= y1 <= 2100 and 1 <= m1 <= 12 and 1 <= d1 <= 31)
+            valid_ymd = (1900 <= y2 <= 2100 and 1 <= m2 <= 12 and 1 <= d2 <= 31)
+            
+            if valid_dmy and not valid_ymd:
+                return f"{d1:02d}/{m1:02d}/{y1}"
+            elif valid_ymd and not valid_dmy:
+                return f"{d2:02d}/{m2:02d}/{y2}"
+            elif valid_dmy and valid_ymd:
+                # Ưu tiên DDMMYYYY cho CCCD/giấy tờ Việt Nam
+                return f"{d1:02d}/{m1:02d}/{y1}"
+            else:
+                return f"{s[:2]}/{s[2:4]}/{s[4:]}"
             
         # Xóa ký tự lạ (chỉ giữ số và separator)
         date_str = re.sub(r"[^0-9\-\/\.]", "", date_str)
@@ -428,5 +507,6 @@ class PostCleaner:
 
     @staticmethod
     def _format_name(name_str):
+        name_str = PostCleaner.repair_encoding(name_str)
         name_str = re.sub(r"[;:\"'.,!@#$%^&*()+=]", "", name_str)
         return name_str.strip().title()
