@@ -212,7 +212,8 @@ def process_detection_task(doc_id, user_id, doc_type, file_paths, provider, raw_
                                     decoded = decode(thresh)
 
                             if decoded:
-                                qr_text = decoded[0].data.decode('utf-8')
+                                qr_text = decoded[0].data.decode('utf-8', errors='replace')
+                                qr_text = PostCleaner.repair_encoding(qr_text)
                                 if '|' in qr_text:
                                     Log.info(f"\n{'='*70}\n[Worker-Detect] 🚀 [THÀNH CÔNG] ĐÃ ĐỌC ĐƯỢC MÃ QR CCCD:\n{qr_text}\n{'='*70}\n")
                                     raw_text = qr_text

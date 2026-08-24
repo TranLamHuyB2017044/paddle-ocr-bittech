@@ -10,7 +10,8 @@ class QdrantService:
         if config.QDRANT_URL.startswith("http"):
             self.client = QdrantClient(
                 url=config.QDRANT_URL,
-                api_key=config.QDRANT_API_KEY
+                api_key=config.QDRANT_API_KEY,
+                check_compatibility=False
             )
         else:
             Log.info(f"[Qdrant] 📁 Using local storage mode at: {config.QDRANT_URL}")
@@ -18,6 +19,26 @@ class QdrantService:
             
         self.collection_name = config.RAG_COLLECTION_NAME
         self._ensure_collection()
+
+    def _ensure_payload_indexes(self):
+        """
+        Ensure necessary payload indexes exist for filtering and fast retrieval.
+        """
+        indexes = [
+            ("workspace_id", models.PayloadSchemaType.KEYWORD),
+            ("document_name", models.PayloadSchemaType.KEYWORD),
+            ("page_num", models.PayloadSchemaType.INTEGER),
+        ]
+        for field_name, field_schema in indexes:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field_name,
+                    field_schema=field_schema,
+                )
+                Log.info(f"[Qdrant] ✅ Ensured payload index for '{field_name}' exists")
+            except Exception as index_err:
+                Log.debug(f"[Qdrant] Payload index for '{field_name}': {index_err}")
 
     def _ensure_collection(self):
         """
@@ -33,16 +54,7 @@ class QdrantService:
             try:
                 self.client.get_collection(collection_name=self.collection_name)
                 Log.info(f"[Qdrant] ✅ Collection '{self.collection_name}' already exists")
-                # Ensure the workspace_id index exists even if the collection was already created
-                try:
-                    self.client.create_payload_index(
-                        collection_name=self.collection_name,
-                        field_name="workspace_id",
-                        field_schema=models.PayloadSchemaType.KEYWORD,
-                    )
-                    Log.info(f"[Qdrant] ✅ Ensured payload index for 'workspace_id' exists")
-                except Exception as index_err:
-                    Log.warning(f"[Qdrant] Warning ensuring payload index for 'workspace_id': {index_err}")
+                self._ensure_payload_indexes()
                 return
             except Exception:
                 # Collection doesn't exist, try to create it
@@ -51,13 +63,7 @@ class QdrantService:
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
                 )
-                
-                # Add index for workspace_id for faster filtering
-                self.client.create_payload_index(
-                    collection_name=self.collection_name,
-                    field_name="workspace_id",
-                    field_schema=models.PayloadSchemaType.KEYWORD,
-                )
+                self._ensure_payload_indexes()
                 Log.info(f"[Qdrant] ✅ Collection '{self.collection_name}' created successfully")
         except Exception as e:
             Log.error(f"[Qdrant] Error ensuring collection: {e}")

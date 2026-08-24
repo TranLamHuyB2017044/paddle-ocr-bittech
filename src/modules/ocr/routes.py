@@ -32,96 +32,11 @@ ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleD
 @file_bp.route('/uploads/<path:filename>', methods=['GET'])
 def serve_uploaded_file(filename):
     """
-    Serve file từ uploads/:
-      - File trong tts/: truy cập công khai
-      - File khác: kiểm soát quyền RBAC
+    Serve file từ uploads/: truy cập công khai (public).
     """
     from flask import send_from_directory, current_app
-    from src.shared.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
-    from src.shared.utils.security import hash_token
-    from src.modules.auth.repositories.users_repository import users_repo
 
     upload_folder = current_app.config.get("UPLOAD_FOLDER", "uploads")
-    
-    if filename.startswith('tts/'):
-        return send_from_directory(upload_folder, filename)
-    
-    api_key = request.headers.get("x-api-key")
-    if not api_key:
-        return jsonify({"statusCode": 401, "message": "Authentication required"}), 401
-    
-    user = None
-    if "." in api_key:
-        try:
-            clean_key = api_key[3:] if api_key.startswith("ak_") else api_key
-            access_key, plain_secret = clean_key.split(".", 1)
-            
-            user = users_repo.find_by_api_key_access(access_key)
-            if not user:
-                user = users_repo.find_by_api_key_access("ak_" + access_key)
-            
-            if user and user.get("api_key"):
-                stored_hash = user["api_key"]["hashed_secret"]
-                input_hash = hash_token(plain_secret)
-                if input_hash == stored_hash:
-                    g.user_id = str(user["_id"])
-                    g.user = user
-                else:
-                    user = None
-        except:
-            user = None
-    
-    if not user:
-        return jsonify({"statusCode": 401, "message": "Invalid API Key"}), 401
-    
-    actor_role = g.user.get('role', 2)
-    
-    if actor_role == ROLE_ADMIN:
-        storage_path_norm = f"uploads/{filename}"
-        doc = documents_repo.find_by_storage_path(storage_path_norm)
-        doc_id = str(doc["_id"]) if doc else filename
-        ctx = get_request_context()
-        audit_log_repo.log_event(
-            event_type=AuditEvent.ACCESS_DENIED,
-            actor_user_id=g.user_id,
-            actor_role=ROLE_ADMIN,
-            target_doc_id=doc_id,
-            target_file=filename,
-            reason="Admin must use /api/files/<doc_id>/admin-view (break-glass)",
-            **ctx,
-        )
-        return jsonify({
-            "statusCode": 403,
-            "message": "Admin không thể xem file trực tiếp. Hãy dùng /api/files/<doc_id>/admin-view và cung cấp lý do."
-        }), 403
-    
-    storage_path = f"{upload_folder}/{filename}"
-    doc = documents_repo.find_by_storage_path(storage_path)
-    if not doc:
-        storage_path_norm = f"uploads/{filename}"
-        doc = documents_repo.find_by_storage_path(storage_path_norm)
-    
-    if not doc:
-        return jsonify({"statusCode": 404, "message": "File không tìm thấy hoặc không thuộc tài liệu nào."}), 404
-    
-    if not doc.get("account_id") and g.user.get("account_id"):
-        doc["account_id"] = g.user.get("account_id")
-    
-    access = check_file_access(g.user, doc)
-    ctx = get_request_context()
-    
-    if not access.allowed:
-        audit_log_repo.log_event(
-            event_type=AuditEvent.ACCESS_DENIED,
-            actor_user_id=g.user_id,
-            actor_role=actor_role,
-            target_doc_id=str(doc["_id"]),
-            target_file=filename,
-            reason=access.reason,
-            **ctx,
-        )
-        return jsonify({"statusCode": 403, "message": access.reason}), 403
-    
     return send_from_directory(upload_folder, filename)
 
 

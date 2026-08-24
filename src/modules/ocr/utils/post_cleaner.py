@@ -199,12 +199,13 @@ class PostCleaner:
         """
         Validate và tự động sửa ngày tháng:
         - Đảm bảo ngày <= 31, tháng <= 12, năm sinh <= năm hiện tại.
-        - Khắc phục lỗi đảo vị trí ngày/tháng/năm do AI/OCR (ví dụ: 97/19/2011 -> 20/11/1997).
+        - Khắc phục lỗi đảo vị trí ngày/tháng/năm do AI/OCR (ví dụ: MM/DD/YYYY hoặc YYYY/MM/DD).
         - Đối chiếu với 12 số CCCD (ký tự 4: thế kỷ, ký tự 5-6: năm sinh).
         - Fallback tìm trong raw text OCR nếu input sai hoặc rỗng.
         """
         current_year = datetime.now().year
         max_year = 2100 if field_name == "expiryDate" else current_year
+        min_year = 1900
 
         expected_birth_year = None
         if doc_type == "idCard" and id_number and len(id_number) == 12:
@@ -236,62 +237,68 @@ class PostCleaner:
         parts = re.split(r"[\-\/\.]", normalized_str)
         parts = [p for p in parts if p]
 
+        d, m, y = None, None, None
+
         # Case 1: Đủ 3 phần ngày/tháng/năm
         if len(parts) == 3:
             try:
-                nums = [int(p) for p in parts]
-                d, m, y = nums[0], nums[1], nums[2]
+                p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
                 
-                # Nếu y chỉ có 2 chữ số
-                if y < 100:
-                    if expected_birth_year and y == (expected_birth_year % 100):
-                        y = expected_birth_year
-                    else:
-                        y = 2000 + y if y <= (current_year % 100) else 1900 + y
-
-                # Kiểm tra xem có đúng định dạng DD/MM/YYYY chuẩn chưa
-                if PostCleaner._is_valid_date(d, m, y, max_year=max_year):
-                    # Nếu có expected_birth_year từ số CCCD và là trường dob nhưng năm bị lệch -> cần đối chiếu
-                    if field_name == "dob" and expected_birth_year and y != expected_birth_year:
-                        pass
-                    else:
-                        return f"{d:02d}/{m:02d}/{y:04d}"
-
-                # Nếu không hợp lệ (ví dụ: bị đảo ngược 97/19/2011 hoặc YYYY/MM/DD)
-                # Thử tất cả các hoán vị (permutations)
-                import itertools
-                valid_candidates = []
-                for p in itertools.permutations(nums):
-                    cand_d, cand_m, cand_y = p[0], p[1], p[2]
-                    if cand_y < 100:
-                        cand_y = 2000 + cand_y if cand_y <= (current_year % 100) else 1900 + cand_y
-                    if PostCleaner._is_valid_date(cand_d, cand_m, cand_y, max_year=max_year):
-                        score = 0
-                        if field_name == "dob" and expected_birth_year and cand_y == expected_birth_year:
-                            score += 10
-                        valid_candidates.append((score, f"{cand_d:02d}/{cand_m:02d}/{cand_y:04d}"))
-
-                if valid_candidates:
-                    valid_candidates.sort(key=lambda x: x[0], reverse=True)
-                    return valid_candidates[0][1]
-
+                # Sub-case: YYYY-MM-DD
+                if p1 >= 1900:
+                    y, m, d = p1, p2, p3
+                # Sub-case: DD-MM-YYYY hoặc DD-MM-YY
+                else:
+                    d, m, y = p1, p2, p3
+                    if y < 100:
+                        if expected_birth_year and y == (expected_birth_year % 100):
+                            y = expected_birth_year
+                        else:
+                            y = 2000 + y if y <= (current_year % 100) else 1900 + y
             except (ValueError, IndexError):
                 pass
 
         # Case 2: Chuỗi 8 chữ số liên tiếp (DDMMYYYY hoặc YYYYMMDD)
-        digits_only = re.sub(r"\D", "", raw_val)
-        if len(digits_only) == 8:
+        elif len(parts) == 1 and len(parts[0]) == 8:
+            digits_only = parts[0]
             try:
-                # Thử DDMMYYYY
                 d1, m1, y1 = int(digits_only[:2]), int(digits_only[2:4]), int(digits_only[4:])
-                if PostCleaner._is_valid_date(d1, m1, y1, max_year=max_year):
-                    return f"{d1:02d}/{m1:02d}/{y1:04d}"
-                # Thử YYYYMMDD
                 y2, m2, d2 = int(digits_only[:4]), int(digits_only[4:6]), int(digits_only[6:])
-                if PostCleaner._is_valid_date(d2, m2, y2, max_year=max_year):
-                    return f"{d2:02d}/{m2:02d}/{y2:04d}"
+                
+                if PostCleaner._is_valid_date(d1, m1, y1, min_year=min_year, max_year=max_year):
+                    d, m, y = d1, m1, y1
+                elif PostCleaner._is_valid_date(d2, m2, y2, min_year=min_year, max_year=max_year):
+                    d, m, y = d2, m2, y2
+                else:
+                    d, m, y = d1, m1, y1
             except (ValueError, IndexError):
                 pass
+
+        # Nếu đã bóc tách được (d, m, y)
+        if d is not None and m is not None and y is not None:
+            # 1. Đối chiếu và sửa năm sinh theo số CCCD 12 số
+            if field_name == "dob" and expected_birth_year:
+                if y != expected_birth_year:
+                    y = expected_birth_year
+
+            # 2. Đảo ngược tháng và ngày nếu bị nhầm format MM/DD/YYYY (m > 12 và d <= 12)
+            if m > 12 and 1 <= d <= 12:
+                d, m = m, d
+
+            # 3. Giới hạn tháng trong khoảng [1, 12]
+            if m < 1: m = 1
+            if m > 12: m = 12
+
+            # 4. Kiểm tra năm nhuận và giới hạn số ngày trong tháng
+            is_leap = (y % 4 == 0 and (y % 100 != 0 or y % 400 == 0))
+            days_in_month = [0, 31, 29 if is_leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            max_d = days_in_month[m]
+            if d > max_d:
+                d = max_d
+            if d < 1:
+                d = 1
+
+            return f"{d:02d}/{m:02d}/{y:04d}"
 
         # Fallback: Tìm trong raw_text OCR
         extracted_from_raw = PostCleaner._extract_date_from_raw_text(raw_text, field_keywords, max_year=max_year)
@@ -495,6 +502,56 @@ class PostCleaner:
     
 
     @staticmethod
+    def repair_encoding(text: str) -> str:
+        """
+        Khôi phục chuỗi tiếng Việt bị lỗi bảng mã do thư viện quét QR (ZBar C library)
+        tự động đoán nhầm UTF-8 thành Shift-JIS / Big5 / GBK.
+        """
+        if not text or not isinstance(text, str):
+            return text
+
+        def has_mojibake(s: str) -> bool:
+            return any(
+                '\u4e00' <= c <= '\u9fff' or   # CJK Unified Ideographs
+                '\u3400' <= c <= '\u4dbf' or   # CJK Extension A
+                '\u3040' <= c <= '\u30ff' or   # Hiragana & Katakana
+                '\uff61' <= c <= '\uff9f'      # Halfwidth Katakana
+                for c in s
+            )
+
+        if not has_mojibake(text):
+            return text
+
+        # 1. Thử khôi phục toàn bộ chuỗi
+        for enc in ['shift_jis', 'cp932', 'shift_jis_2004', 'shift_jisx0213', 'big5', 'cp950', 'gbk', 'gb18030', 'latin1']:
+            try:
+                repaired = text.encode(enc).decode('utf-8')
+                if not has_mojibake(repaired):
+                    return repaired
+            except Exception:
+                pass
+
+        # 2. Thử khôi phục theo từng phân đoạn (nếu chuỗi có dấu |)
+        if '|' in text:
+            parts = text.split('|')
+            repaired_parts = []
+            for p in parts:
+                repaired_p = p
+                if has_mojibake(p):
+                    for enc in ['shift_jis', 'cp932', 'shift_jis_2004', 'shift_jisx0213', 'big5', 'cp950', 'gbk', 'gb18030', 'latin1']:
+                        try:
+                            temp = p.encode(enc).decode('utf-8')
+                            if not has_mojibake(temp):
+                                repaired_p = temp
+                                break
+                        except Exception:
+                            pass
+                repaired_parts.append(repaired_p)
+            return '|'.join(repaired_parts)
+
+        return text
+
+    @staticmethod
     def extract_cccd_manual(raw_text):
         """
         Trích xuất dữ liệu CCCD thủ công từ chuỗi định dạng:|
@@ -502,6 +559,9 @@ class PostCleaner:
         """
         if not raw_text: return None
         
+        # Tự động sửa lỗi bảng mã (nếu quét từ QR bị Shift-JIS/Big5)
+        raw_text = PostCleaner.repair_encoding(raw_text)
+
         # Split by | and filter empty parts logic
         parts = [p.strip() for p in raw_text.split('|') if p.strip()]
         
@@ -546,6 +606,8 @@ class PostCleaner:
         """
         if not raw_text: return None
         
+        raw_text = PostCleaner.repair_encoding(raw_text)
+
         # Tách theo dòng hoặc dấu |
         if "|" in raw_text:
             parts = [p.strip() for p in raw_text.split('|') if p.strip()]
@@ -625,17 +687,41 @@ class PostCleaner:
         Input: 01012000, 01-01-2000, 01/01/2000, 01.01.2000, 2026-06-08
         Output: 01/01/2000
         """
-        # Nếu là chuỗi số thuần túy 8 ký tự
+        if not date_str:
+            return date_str
+            
+        date_str = str(date_str).strip()
+
+        # Định dạng chuẩn ISO: YYYY-MM-DD hoặc YYYY/MM/DD
+        m_iso = re.match(r"^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$", date_str)
+        if m_iso:
+            y, m, d = m_iso.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+
+        # Định dạng chuẩn Việt Nam có separator: DD-MM-YYYY hoặc DD/MM/YYYY
+        m_dmy = re.match(r"^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})$", date_str)
+        if m_dmy:
+            d, m, y = m_dmy.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+
+        # Nếu là chuỗi số thuần túy 8 ký tự: DDMMYYYY hoặc YYYYMMDD
         s = re.sub(r"[^0-9]", "", date_str)
         if len(s) == 8:
-            try:
-                # Kiểm tra xem có bắt đầu bằng năm không (YYYYMMDD)
-                year_start = int(s[:4])
-                if 1900 <= year_start <= 2100:
-                    return f"{s[6:]}/{s[4:6]}/{s[:4]}"
-            except ValueError:
-                pass
-            return f"{s[:2]}/{s[2:4]}/{s[4:]}"
+            d1, m1, y1 = int(s[:2]), int(s[2:4]), int(s[4:])
+            y2, m2, d2 = int(s[:4]), int(s[4:6]), int(s[6:])
+            
+            valid_dmy = (1900 <= y1 <= 2100 and 1 <= m1 <= 12 and 1 <= d1 <= 31)
+            valid_ymd = (1900 <= y2 <= 2100 and 1 <= m2 <= 12 and 1 <= d2 <= 31)
+            
+            if valid_dmy and not valid_ymd:
+                return f"{d1:02d}/{m1:02d}/{y1}"
+            elif valid_ymd and not valid_dmy:
+                return f"{d2:02d}/{m2:02d}/{y2}"
+            elif valid_dmy and valid_ymd:
+                # Ưu tiên DDMMYYYY cho CCCD/giấy tờ Việt Nam
+                return f"{d1:02d}/{m1:02d}/{y1}"
+            else:
+                return f"{s[:2]}/{s[2:4]}/{s[4:]}"
             
         # Xóa ký tự lạ (chỉ giữ số và separator)
         date_str = re.sub(r"[^0-9\-\/\.]", "", date_str)
@@ -645,5 +731,6 @@ class PostCleaner:
 
     @staticmethod
     def _format_name(name_str):
+        name_str = PostCleaner.repair_encoding(name_str)
         name_str = re.sub(r"[;:\"'.,!@#$%^&*()+=]", "", name_str)
         return name_str.strip().title()
