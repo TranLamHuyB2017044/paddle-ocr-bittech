@@ -1,1 +1,0 @@
-from src.repositories.chatbot_repository import chatbot_repo
