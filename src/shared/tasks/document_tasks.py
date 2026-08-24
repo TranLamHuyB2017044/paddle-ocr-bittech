@@ -159,13 +159,28 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
             combined_raw_text = "\n\n".join(
                 str(item.get("text", "")) for item in structured_data if isinstance(item.get("text"), str) and str(item.get("text", "")).strip()
             )
-            total_chunks = rag_service.index_text(structured_data, workspace_id, original_filename)
+
+            # Tự động tạo tên tài liệu thông minh dựa trên nội dung trích xuất
+            from src.modules.rag.llm_service import llm_service
+            smart_title = llm_service.generate_title(combined_raw_text, fallback_filename=original_filename)
+            Log.info(f"[Worker] Smart title for RAG doc {doc_id}: '{smart_title}' (original: '{original_filename}')")
+
+            total_chunks = rag_service.index_text(structured_data, workspace_id, smart_title)
             documents_repo.update_status(
                 doc_id, DocStatus.READY,
                 total_chunks=total_chunks,
-                raw_text=combined_raw_text
+                raw_text=combined_raw_text,
+                filename=smart_title,
+                original_filename=original_filename
             )
-            publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.READY})
+            publish_event(user_id, "document_status", {
+                "document_id": doc_id,
+                "status": DocStatus.READY,
+                "filename": smart_title,
+                "original_filename": original_filename,
+                "workspace_id": workspace_id,
+                "total_chunks": total_chunks
+            })
         else:
             raise Exception("No text could be extracted")
 

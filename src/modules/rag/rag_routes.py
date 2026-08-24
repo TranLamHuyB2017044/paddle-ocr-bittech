@@ -665,8 +665,10 @@ def upload_text_to_workspace(workspace_id):
 
         if not text:
             return jsonify({"statusCode": 400, "message": "Trường 'text' là bắt buộc"}), 400
+        
         if not document_name:
-            return jsonify({"statusCode": 400, "message": "Trường 'document_name' là bắt buộc"}), 400
+            from src.modules.rag.llm_service import llm_service
+            document_name = llm_service.generate_title(text, fallback_filename="Văn bản mới")
 
         # Check document limit
         current_docs = list(documents_repo.find_by_workspace(workspace_id))

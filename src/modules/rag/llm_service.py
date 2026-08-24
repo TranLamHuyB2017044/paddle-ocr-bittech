@@ -73,4 +73,48 @@ class LLMService:
         Log.info(f"[LLM-OpenAI] ✅ Received answer ({len(answer)} chars)")
         return answer
 
+    def generate_title(self, raw_text: str, fallback_filename: str = "Tài liệu không tên") -> str:
+        """
+        Sinh tiêu đề ngắn gọn (< 10 từ) từ nội dung văn bản (bằng Gemini Flash / OpenAI).
+        Nếu lỗi hoặc text quá ngắn, trả về fallback_filename.
+        """
+        if not raw_text or len(raw_text.strip()) < 10:
+            return fallback_filename
+
+        sample_text = raw_text.strip()[:1500]
+        prompt = (
+            "Dựa vào đoạn trích nội dung văn bản sau, hãy đặt một tiêu đề ngắn gọn (dưới 10 từ) "
+            "thể hiện chính xác nội dung/chủ đề hoặc loại tài liệu (ví dụ: 'Hóa đơn tiền điện tháng 8/2026', "
+            "'Hợp đồng lao động Nguyễn Văn A', 'Báo cáo tài chính Quý 2/2026', 'Quy chế bảo mật thông tin').\n"
+            "Yêu cầu:\n"
+            "- Chỉ trả về DUY NHẤT chuỗi tiêu đề.\n"
+            "- KHÔNG kèm dấu ngoặc kép, dấu gạch đầu dòng, dấu chấm câu ở cuối hoặc từ giải thích thừa.\n"
+            "- Giữ nguyên ngôn ngữ chính của tài liệu (ưu tiên tiếng Việt nếu tài liệu bằng tiếng Việt).\n"
+            "- Tối đa 10 từ.\n\n"
+            f"Nội dung văn bản:\n{sample_text}"
+        )
+        system_instruction = "Bạn là chuyên gia trích xuất và đặt tiêu đề tài liệu ngắn gọn, súc tích."
+        
+        try:
+            import re
+            # Ưu tiên Gemini, fallback OpenAI
+            if gemini_extractor.is_configured and gemini_extractor.client:
+                answer = self._chat_gemini(prompt, system_instruction)
+            elif openai_extractor.client:
+                answer = self._chat_openai(prompt, system_instruction)
+            else:
+                answer = ""
+            
+            clean_title = answer.strip().strip('"\'`\n\r').replace('\n', ' ')
+            clean_title = re.sub(r'^[#*\-\s]+', '', clean_title)
+            clean_title = re.sub(r'[*_`]', '', clean_title).strip()
+            
+            if clean_title and len(clean_title) <= 120:
+                Log.info(f"[LLM-Title] ✅ Generated title: '{clean_title}' (fallback: '{fallback_filename}')")
+                return clean_title
+        except Exception as e:
+            Log.warning(f"[LLM-Title] ⚠️ Không thể sinh tiêu đề thông minh: {e}. Sử dụng fallback '{fallback_filename}'.")
+        
+        return fallback_filename
+
 llm_service = LLMService()
