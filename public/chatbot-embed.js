@@ -389,8 +389,8 @@
                 
                 if (response.status === 429) { // Too Many Requests (rate limit)
                     errorMsg = 'Bạn đã gửi quá nhiều tin nhắn! Vui lòng chờ một chút rồi thử lại nhé.';
-                } else if (response.status === 403 && 'quota' in resData.message?.toLowerCase()) {
-                    errorMsg = 'Tài khoản chủ shop đã hết lượt sử dụng! Vui lòng liên hệ chủ shop để biết thêm chi tiết.';
+                } else if (response.status === 403 && (resData.message || '').toLowerCase().includes('quota')) {
+                    errorMsg = 'Tài khoản chủ chatbot đã hết lượt sử dụng trong tháng! Vui lòng nâng cấp gói hoặc liên hệ quản trị viên.';
                 }
                 
                 appendMessage('bot', errorMsg);

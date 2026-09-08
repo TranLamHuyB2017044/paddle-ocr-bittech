@@ -168,13 +168,14 @@ def public_chat_with_chatbot(chatbot_id):
         if not account:
             return jsonify({"statusCode": 404, "message": "Account not found"}), 404
         
-        plan_key = account.get("plan", 0)
-        plan_cfg = PLANS_CONFIG.get(plan_key, {})
-        if not plan_cfg.get("is_unlimited", False):
-            max_requests = plan_cfg.get("max_requests_per_month", 0)
-            used_requests = account.get("used_requests", 0)
-            if used_requests + 1 > max_requests:
-                return jsonify({"statusCode": 403, "message": f"Quota exceeded: {used_requests}/{max_requests}"}), 403
+        # Temporarily bypass quota check for unlimited chatbot requests
+        # plan_key = account.get("plan", 0)
+        # plan_cfg = PLANS_CONFIG.get(plan_key, {})
+        # if not plan_cfg.get("is_unlimited", False):
+        #     max_requests = plan_cfg.get("max_requests_per_month", 0)
+        #     used_requests = account.get("used_requests", 0)
+        #     if used_requests + 1 > max_requests:
+        #         return jsonify({"statusCode": 403, "message": f"Quota exceeded: {used_requests}/{max_requests}"}), 403
         
         data = request.json or {}
         message = data.get("message")
