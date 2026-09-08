@@ -349,8 +349,12 @@ def create_chatbot():
         default_collect = False if domain == "ocop" else True
         collect_contact_info = parse_bool(raw_collect, default=default_collect)
 
+        ws_name = f"Workspace-{str(name).strip()}"
+        ws_id = workspaces_repo.create_workspace(ws_name, user_id=g.user_id, account_id=account_id)
+
         bot_id = chatbot_repo.create_chatbot(
             account_id=account_id,
+            workspace_id=ws_id,
             name=str(name).strip(),
             domain=domain,
             description=str(payload.get("description", "")).strip() or None,
@@ -362,10 +366,6 @@ def create_chatbot():
             workflow_webhook_url=str(payload.get("workflow_webhook_url", "")).strip() or None,
             collect_contact_info=collect_contact_info
         )
-
-        ws_name = f"Workspace-{str(name).strip()}"
-        ws_id = workspaces_repo.create_workspace(ws_name, user_id=g.user_id, account_id=account_id)
-        chatbot_repo.link_workspace(bot_id, ws_id)
 
         bot = chatbot_repo.find_by_id(bot_id)
         return jsonify({"statusCode": 201, "message": "Chatbot created successfully", "data": format_chatbot(bot)}), 201

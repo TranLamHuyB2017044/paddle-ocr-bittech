@@ -7,8 +7,27 @@ import secrets
 class ChatbotRepository(BaseRepository):
     def __init__(self):
         super().__init__("chatbots")
-        # Create unique index to ensure 1-1 relationship between workspace and chatbot
-        self.collection.create_index("workspace_id", unique=True, sparse=True)
+        # Ensure unique index on workspace_id only when it is an ObjectId (avoids null duplicate errors)
+        try:
+            indexes = self.collection.index_information()
+            if "workspace_id_1" in indexes:
+                idx_info = indexes["workspace_id_1"]
+                # If existing index does not have partialFilterExpression, recreate it
+                if "partialFilterExpression" not in idx_info:
+                    self.collection.drop_index("workspace_id_1")
+                    self.collection.create_index(
+                        "workspace_id",
+                        unique=True,
+                        partialFilterExpression={"workspace_id": {"$type": "objectId"}}
+                    )
+            else:
+                self.collection.create_index(
+                    "workspace_id",
+                    unique=True,
+                    partialFilterExpression={"workspace_id": {"$type": "objectId"}}
+                )
+        except Exception:
+            pass
     
     def generate_public_token(self) -> str:
         """Generate a secure public token for chatbot embed"""
@@ -33,13 +52,15 @@ class ChatbotRepository(BaseRepository):
             "telegram_chat_id": telegram_chat_id,
             "workflow_webhook_url": workflow_webhook_url,
             "collect_contact_info": collect_contact_info,
-            "workspace_id": ObjectId(workspace_id) if workspace_id else None,
             "public_token": self.generate_public_token(),
             "account_id": ObjectId(account_id),
             "is_active": True,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
+        # Only set workspace_id if present to avoid indexing null keys
+        if workspace_id:
+            chatbot["workspace_id"] = ObjectId(workspace_id)
         return self.create(chatbot)
 
     def link_workspace(self, chatbot_id: str, workspace_id: str) -> bool:
