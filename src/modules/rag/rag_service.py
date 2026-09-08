@@ -9,6 +9,7 @@ from src.modules.rag.llm_service import llm_service
 from src.shared.utils.logger import Log
 import src.core.config as config
 from qdrant_client.http import models
+from src.modules.chatbot.services.prompt_service import get_chatbot_prompt
 
 def clean_question(question: str) -> str:
     """
@@ -260,15 +261,15 @@ class RagService:
         return suggestions[:5]
 
     def chat_store(self, question: str, workspace_id: str, provider: str = "auto", 
-                   telegram_bot_token: str = None, telegram_chat_id: str = None, 
-                   chatbot_name: str = "Chatbot") -> Dict:
+                   telegram_bot_token: str | None = None, telegram_chat_id: str | None = None, 
+                   chatbot_name: str = "Chatbot", domain: str = "ecommerce") -> Dict:
         """
         Chat for store: no source citations, optimized for customer support.
         Sends Telegram notification if no information is found.
         """
         # 1. Clean and Embed question
         cleaned_q = clean_question(question)
-        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}'")
+        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}' (Domain: '{domain}')")
         question_vector = embedding_service.embed_text([cleaned_q])[0]
         
         # 2. Search Qdrant
@@ -321,25 +322,27 @@ class RagService:
         context = "\n\n".join(context_parts)
         
         # 3. Augment & Generate - NO SOURCE CITATIONS
-        # Strict system prompt to prevent hallucination
+        # Strict system prompt to prevent hallucination, configured per domain
+        domain_prompt = get_chatbot_prompt(domain)
         if len(results) == 0:
             # No context at all - force "no information"
             system_instruction = (
-                "Bạn là một trợ lý chatbot hỗ trợ khách hàng. "
-                "Hiện tại bạn KHÔNG CÓ NỘI DUNG TÀI LIỆU NÀO. "
+                f"{domain_prompt}\n\n"
+                "LƯU Ý QUAN TRỌNG: Hiện tại bạn KHÔNG TÌM THẤY thông tin tài liệu liên quan đến câu hỏi này. "
                 "BẠN CHỈ ĐƯỢC NÓI: 'Tôi không có thông tin về câu hỏi này. Vui lòng cung cấp thông tin liên hệ để nhân viên hỗ trợ bạn.' "
-                "TUYỆT ĐỘI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC. "
-                "KHÔNG ĐỀ CẬP ĐẾN Bittech. "
+                "TUYỆT ĐỘI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC NGOÀI THỰC TẾ. "
+                "KHÔNG ĐỀ CẬP ĐẾN Bittech."
             )
         else:
             system_instruction = (
-                "Bạn là một trợ lý chatbot hỗ trợ khách hàng chuyên nghiệp. "
-                "CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG TÀI LIỆU được cung cấp bên dưới. "
-                "Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó. "
-                "Giữ văn phong thân thiện, lịch sự và ngắn gọn. "
-                "KHÔNG tự bịa ra câu trả lời. "
-                "KHÔNG trả lời liên quan tới Bittech. "
-                "CHỈ trả lời dựa trên nội dung tài liệu được cung cấp."
+                f"{domain_prompt}\n\n"
+                "QUY TẮC BẮT BUỘC:\n"
+                "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG TÀI LIỆU được cung cấp bên dưới.\n"
+                "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó.\n"
+                "- Giữ văn phong phù hợp với vai trò được giao, thân thiện, lịch sự và ngắn gọn.\n"
+                "- KHÔNG tự bịa ra câu trả lời.\n"
+                "- KHÔNG trả lời liên quan tới Bittech.\n"
+                "- CHỈ trả lời dựa trên nội dung tài liệu được cung cấp."
             )
         
         prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI CỦA KHÁCH HÀNG: {question}"

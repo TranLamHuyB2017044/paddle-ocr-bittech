@@ -37,6 +37,16 @@ customer_contact_info = {}
 last_question_before_contact = {}
 
 
+def parse_bool(value, default=True):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in ("true", "1", "yes")
+
+
 def format_chatbot(bot):
     if not bot:
         return None
@@ -49,11 +59,13 @@ def format_chatbot(bot):
     if isinstance(bot.get("updated_at"), datetime):
         bot["updated_at"] = bot["updated_at"].isoformat()
     bot["color"] = bot.get("color", 0)
+    bot["domain"] = bot.get("domain", "ecommerce")
     bot["greeting"] = bot.get("greeting", None)
     bot["telegram_bot_token"] = bot.get("telegram_bot_token", None)
     bot["telegram_chat_id"] = bot.get("telegram_chat_id", None)
     bot["workflow_webhook_url"] = bot.get("workflow_webhook_url", None)
-    bot["collect_contact_info"] = bot.get("collect_contact_info", True)
+    default_collect = False if bot.get("domain") == "ocop" else True
+    bot["collect_contact_info"] = bot.get("collect_contact_info", default_collect)
     return bot
 
 
@@ -127,10 +139,11 @@ def get_public_chatbot_details(chatbot_id):
             "description": chatbot.get("description"),
             "avatar_url": chatbot.get("avatar_url"),
             "color": chatbot.get("color", 0),
+            "domain": chatbot.get("domain", "ecommerce"),
             "greeting": chatbot.get("greeting"),
             "workspace_id": str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None,
             "workflow_webhook_url": chatbot.get("workflow_webhook_url"),
-            "collect_contact_info": chatbot.get("collect_contact_info", True)
+            "collect_contact_info": chatbot.get("collect_contact_info", False if chatbot.get("domain") == "ocop" else True)
         }
         return jsonify({"statusCode": 200, "data": formatted})
     except Exception as e:
@@ -170,43 +183,55 @@ def public_chat_with_chatbot(chatbot_id):
         if not message:
             return jsonify({"statusCode": 400, "message": "Message is required"}), 400
         
+        domain = chatbot.get("domain", "ecommerce")
+        collect_contact = chatbot.get("collect_contact_info", False if domain == "ocop" else True)
         result = {"answer": "", "provider": "echo"}
         is_contact_info_reply = False
         
-        if session_id in waiting_for_contact and waiting_for_contact[session_id]:
-            info = extract_contact_info(message)
-            if info.get("name") and info.get("phone"):
-                is_contact_info_reply = True
-                customer_contact_info[session_id] = info
-                waiting_for_contact[session_id] = False
-                
-                confirmation_text = f"Tôi đã liên hệ nhân viên, họ sẽ liên hệ lại sau!\nHọ tên: {info['name']}\nSĐT: {info['phone']}"
-                result["answer"] = confirmation_text
-                
-                if chatbot.get("telegram_bot_token") and chatbot.get("telegram_chat_id"):
-                    try:
-                        from src.shared.services.telegram_service import send_telegram_message, format_customer_question_notification
-                        original_question = last_question_before_contact.get(session_id, "Không có câu hỏi trước đó")
-                        full_message = format_customer_question_notification(original_question, chatbot.get("name", "Chatbot"))
-                        full_message += f"\n\n🔑 Session ID: {session_id}\n\n📞 Thông tin liên hệ:\nHọ tên: {info['name']}\nSĐT: {info['phone']}"
-                        send_telegram_message(chatbot["telegram_bot_token"], chatbot["telegram_chat_id"], full_message)
-                    except Exception as e:
-                        Log.error(f"[Public Chat] Telegram send error: {e}")
+        # Check if the message contains contact info (only if collect_contact is enabled for this bot)
+        info = extract_contact_info(message) if collect_contact else {}
+        if info.get("name") and info.get("phone"):
+            is_contact_info_reply = True
+            customer_contact_info[session_id] = info
+            waiting_for_contact[session_id] = False
+            
+            confirmation_text = f"Tôi đã tiếp nhận thông tin và chuyển đến nhân viên phụ trách, họ sẽ liên hệ lại sớm nhất!\nHọ tên: {info['name']}\nSĐT: {info['phone']}"
+            result["answer"] = confirmation_text
+            
+            if chatbot.get("telegram_bot_token") and chatbot.get("telegram_chat_id"):
+                try:
+                    from src.shared.services.telegram_service import send_telegram_message, format_customer_question_notification
+                    original_question = last_question_before_contact.get(session_id, "Không có câu hỏi trước đó")
+                    full_message = format_customer_question_notification(original_question, chatbot.get("name", "Chatbot"))
+                    full_message += f"\n\n🏷️ Lĩnh vực: {domain.upper()}\n🔑 Session ID: {session_id}\n\n📞 Thông tin liên hệ:\nHọ tên: {info['name']}\nSĐT: {info['phone']}"
+                    send_telegram_message(chatbot["telegram_bot_token"], chatbot["telegram_chat_id"], full_message)
+                except Exception as e:
+                    Log.error(f"[Public Chat] Telegram send error: {e}")
+        elif collect_contact and session_id in waiting_for_contact and waiting_for_contact[session_id]:
+            # For bots collecting contact info, provide validation guidance when input was incomplete
+            errors = analyze_contact_info_error(message)
+            if errors:
+                result["answer"] = "Thông tin chưa đúng định dạng! Lỗi:\n- " + "\n- ".join(errors)
             else:
-                errors = analyze_contact_info_error(message)
-                if errors:
-                    result["answer"] = "Thông tin chưa đúng định dạng! Lỗi:\n- " + "\n- ".join(errors)
-                else:
-                    result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
-                result["answer"] += "\n\nVí dụ đúng: Tôi tên là Nguyễn Văn A - sđt 0912345678"
+                result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
+            result["answer"] += "\n\nVí dụ đúng: Tôi tên là Nguyễn Văn A - sđt 0912345678"
         else:
+            if session_id in waiting_for_contact:
+                waiting_for_contact[session_id] = False
+
             question_lower = message.lower().strip()
             if any(q in question_lower for q in ["bạn là ai", "bạn là ai?", "bạn là ai ?"]):
-                result["answer"] = "Tôi là chatbot chăm sóc khách hàng!"
+                if domain == "ocop":
+                    result["answer"] = "Tôi là trợ lý ảo hỗ trợ quy trình chấm điểm và hướng dẫn sử dụng phần mềm OCOP!"
+                elif domain == "customer_support":
+                    result["answer"] = "Tôi là trợ lý hỗ trợ kỹ thuật và chăm sóc khách hàng!"
+                elif domain == "ecommerce":
+                    result["answer"] = "Tôi là chatbot tư vấn và chăm sóc khách hàng!"
+                else:
+                    result["answer"] = f"Tôi là {chatbot.get('name', 'trợ lý ảo')}!"
             else:
-                contact_request_keywords = ["liên hệ nhân viên", "hãy liên hệ", "nhân viên hỗ trợ", "liên hệ với nhân viên", "gọi nhân viên"]
+                contact_request_keywords = ["liên hệ nhân viên", "hãy liên hệ", "nhân viên hỗ trợ", "liên hệ với nhân viên", "gọi nhân viên", "mua sỉ", "làm đại lý"]
                 is_contact_request = any(keyword.lower() in message.lower() for keyword in contact_request_keywords)
-                collect_contact = chatbot.get("collect_contact_info", True)
                 
                 if chatbot.get("workspace_id") and not (is_contact_request and collect_contact):
                     from src.modules.rag.rag_service import rag_service
@@ -215,7 +240,8 @@ def public_chat_with_chatbot(chatbot_id):
                         workspace_id=str(chatbot["workspace_id"]),
                         telegram_bot_token=None,
                         telegram_chat_id=None,
-                        chatbot_name=chatbot.get("name", "Chatbot")
+                        chatbot_name=chatbot.get("name", "Chatbot"),
+                        domain=domain
                     )
                     
                     no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
@@ -227,7 +253,7 @@ def public_chat_with_chatbot(chatbot_id):
                         last_question_before_contact[session_id] = message
                 else:
                     if is_contact_request and collect_contact:
-                        result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ nhân viên: Tôi tên là [tên] - sđt [số điện thoại]"
+                        result["answer"] = "Vui lòng cung cấp thông tin theo định dạng để liên hệ hỗ trợ: Tôi tên là [tên] - sđt [số điện thoại]"
                         waiting_for_contact[session_id] = True
                         last_question_before_contact[session_id] = message
                     else:
@@ -247,7 +273,8 @@ def public_chat_with_chatbot(chatbot_id):
             customer_info=customer_contact_info.get(session_id, {})
         )
         
-        return jsonify({"statusCode": 200, "data": {**result, "sessionId": session_id, "waitingForContact": waiting_for_contact.get(session_id, False)}})
+        waiting_state = waiting_for_contact.get(session_id, False) if collect_contact else False
+        return jsonify({"statusCode": 200, "data": {**result, "sessionId": session_id, "waitingForContact": waiting_state}})
     except Exception as e:
         Log.error(f"[Public Chat] Error: {e}")
         return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
@@ -305,27 +332,38 @@ def get_embed_script_n8n():
 @limiter.limit("30 per minute")
 def create_chatbot():
     try:
-        name = request.form.get("name")
-        if not name or not name.strip():
+        payload = request.get_json(silent=True) or request.form.to_dict() or {}
+        name = payload.get("name")
+        if not name or not str(name).strip():
             return jsonify({"statusCode": 400, "message": "Field 'name' is required"}), 400
 
         user = g.user
         account_id = user.get("account_id")
+        domain = str(payload.get("domain", "ecommerce")).strip().lower()
 
-        bot_id, public_token, embed_code = chatbot_repo.create_chatbot(
+        # Check if collect_contact_info is explicitly specified for this chatbot (supports any domain/type)
+        raw_collect = payload.get("collect_contact_info")
+        if raw_collect is None:
+            raw_collect = payload.get("collect_contact")
+        
+        default_collect = False if domain == "ocop" else True
+        collect_contact_info = parse_bool(raw_collect, default=default_collect)
+
+        bot_id = chatbot_repo.create_chatbot(
             account_id=account_id,
-            name=name.strip(),
-            description=request.form.get("description", "").strip() or None,
-            avatar_url=request.form.get("avatar_url", "").strip() or None,
-            greeting=request.form.get("greeting", "").strip() or None,
-            color=int(request.form.get("color", 0)),
-            telegram_bot_token=request.form.get("telegram_bot_token", "").strip() or None,
-            telegram_chat_id=request.form.get("telegram_chat_id", "").strip() or None,
-            workflow_webhook_url=request.form.get("workflow_webhook_url", "").strip() or None,
-            collect_contact_info=request.form.get("collect_contact_info", "true").lower() == "true"
+            name=str(name).strip(),
+            domain=domain,
+            description=str(payload.get("description", "")).strip() or None,
+            avatar_url=str(payload.get("avatar_url", "")).strip() or None,
+            greeting=str(payload.get("greeting", "")).strip() or None,
+            color=int(payload.get("color", 0)),
+            telegram_bot_token=str(payload.get("telegram_bot_token", "")).strip() or None,
+            telegram_chat_id=str(payload.get("telegram_chat_id", "")).strip() or None,
+            workflow_webhook_url=str(payload.get("workflow_webhook_url", "")).strip() or None,
+            collect_contact_info=collect_contact_info
         )
 
-        ws_name = f"Workspace-{name.strip()}"
+        ws_name = f"Workspace-{str(name).strip()}"
         ws_id = workspaces_repo.create_workspace(ws_name, user_id=g.user_id, account_id=account_id)
         chatbot_repo.link_workspace(bot_id, ws_id)
 
@@ -371,9 +409,14 @@ def update_chatbot_user(chatbot_id):
 
         data = request.json or {}
         update_data = {}
-        for k in ["name", "description", "avatar_url", "greeting", "color", "telegram_bot_token", "telegram_chat_id", "workflow_webhook_url", "collect_contact_info"]:
+        for k in ["name", "description", "avatar_url", "greeting", "color", "telegram_bot_token", "telegram_chat_id", "workflow_webhook_url", "domain"]:
             if k in data:
                 update_data[k] = data[k]
+
+        if "collect_contact_info" in data:
+            update_data["collect_contact_info"] = parse_bool(data["collect_contact_info"])
+        elif "collect_contact" in data:
+            update_data["collect_contact_info"] = parse_bool(data["collect_contact"])
 
         success = chatbot_repo.update_chatbot(chatbot_id, update_data)
         if success:

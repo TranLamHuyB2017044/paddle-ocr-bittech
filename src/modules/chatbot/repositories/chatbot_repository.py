@@ -14,7 +14,7 @@ class ChatbotRepository(BaseRepository):
         """Generate a secure public token for chatbot embed"""
         return f"cb_{secrets.token_urlsafe(32)}"
     
-    def create_chatbot(self, name: str, account_id: str, workspace_id: Optional[str] = None, description: Optional[str] = None, avatar_url: Optional[str] = None, color: int = 0, greeting: Optional[str] = None, telegram_bot_token: Optional[str] = None, telegram_chat_id: Optional[str] = None, workflow_webhook_url: Optional[str] = None, collect_contact_info: bool = True) -> str:
+    def create_chatbot(self, name: str, account_id: str, workspace_id: Optional[str] = None, description: Optional[str] = None, avatar_url: Optional[str] = None, color: int = 0, greeting: Optional[str] = None, telegram_bot_token: Optional[str] = None, telegram_chat_id: Optional[str] = None, workflow_webhook_url: Optional[str] = None, collect_contact_info: bool = True, domain: str = "ecommerce") -> str:
         """Create a new chatbot and return its string ID"""
         # If workspace_id is provided, check if it's already used by another chatbot
         if workspace_id:
@@ -27,6 +27,7 @@ class ChatbotRepository(BaseRepository):
             "description": description,
             "avatar_url": avatar_url,
             "color": color,
+            "domain": domain,
             "greeting": greeting,
             "telegram_bot_token": telegram_bot_token,
             "telegram_chat_id": telegram_chat_id,
@@ -40,6 +41,19 @@ class ChatbotRepository(BaseRepository):
             "updated_at": datetime.now(timezone.utc)
         }
         return self.create(chatbot)
+
+    def link_workspace(self, chatbot_id: str, workspace_id: str) -> bool:
+        """Link a workspace to a chatbot"""
+        return self.update(chatbot_id, {"workspace_id": ObjectId(workspace_id)})
+
+    def update_chatbot(self, chatbot_id: str, update_data: dict) -> bool:
+        """Update chatbot information"""
+        update_data["updated_at"] = datetime.now(timezone.utc)
+        return self.update(chatbot_id, update_data)
+
+    def delete_chatbot(self, chatbot_id: str) -> bool:
+        """Delete chatbot by ID"""
+        return self.delete(chatbot_id)
     
     def find_by_public_token(self, public_token: str):
         """Find active chatbot by public token"""
@@ -58,6 +72,7 @@ class ChatbotRepository(BaseRepository):
             chatbot["id"] = str(chatbot["_id"])
             del chatbot["_id"]
             chatbot["account_id"] = str(chatbot["account_id"])
+            chatbot["domain"] = chatbot.get("domain", "ecommerce")
             if chatbot.get("workspace_id"):
                 chatbot["workspace_id"] = str(chatbot["workspace_id"])
         
@@ -76,6 +91,7 @@ class ChatbotRepository(BaseRepository):
         chatbot["id"] = str(chatbot["_id"])
         del chatbot["_id"]
         chatbot["account_id"] = str(chatbot["account_id"])
+        chatbot["domain"] = chatbot.get("domain", "ecommerce")
         if chatbot.get("workspace_id"):
             chatbot["workspace_id"] = str(chatbot["workspace_id"])
         
@@ -89,6 +105,7 @@ class ChatbotRepository(BaseRepository):
             chatbot["id"] = str(chatbot["_id"])
             del chatbot["_id"]
             chatbot["account_id"] = str(chatbot["account_id"])
+            chatbot["domain"] = chatbot.get("domain", "ecommerce")
             if chatbot.get("workspace_id"):
                 chatbot["workspace_id"] = str(chatbot["workspace_id"])
         
@@ -122,6 +139,7 @@ class ChatbotRepository(BaseRepository):
             chatbot["id"] = str(chatbot["_id"])
             del chatbot["_id"]
             chatbot["account_id"] = str(chatbot["account_id"])
+            chatbot["domain"] = chatbot.get("domain", "ecommerce")
             if chatbot.get("workspace_id"):
                 chatbot["workspace_id"] = str(chatbot["workspace_id"])
         

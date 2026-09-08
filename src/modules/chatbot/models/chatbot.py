@@ -1,8 +1,15 @@
+from enum import Enum
 from pydantic import BaseModel, Field, BeforeValidator
 from typing import Optional, Annotated
 from datetime import datetime
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
+
+class ChatbotDomain(str, Enum):
+    ECOMMERCE = "ecommerce"
+    OCOP = "ocop"
+    CUSTOMER_SUPPORT = "customer_support"
+    GENERAL = "general"
 
 class Chatbot(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
@@ -10,6 +17,7 @@ class Chatbot(BaseModel):
     description: Optional[str] = None
     avatar_url: Optional[str] = None
     color: int = 0  # ChatbotColor.DEFAULT
+    domain: ChatbotDomain = Field(default=ChatbotDomain.ECOMMERCE)
     greeting: Optional[str] = None
     workspace_id: Optional[PyObjectId] = None
     public_token: str
@@ -24,3 +32,5 @@ class Chatbot(BaseModel):
     
     class Config:
         populate_by_name = True
+        use_enum_values = True
+
