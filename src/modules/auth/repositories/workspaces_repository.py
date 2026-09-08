@@ -7,7 +7,7 @@ class WorkspacesRepository(BaseRepository):
     def __init__(self):
         super().__init__("workspaces")
 
-    def create_workspace(self, name, user_id, description=""):
+    def create_workspace(self, name, user_id, description="", account_id=None):
         # Convert user_id to ObjectId if it's a string
         uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
         
@@ -18,6 +18,8 @@ class WorkspacesRepository(BaseRepository):
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
+        if account_id:
+            workspace["account_id"] = ObjectId(account_id) if isinstance(account_id, str) else account_id
         return self.create(workspace)
 
     def find_by_user(self, user_id):
