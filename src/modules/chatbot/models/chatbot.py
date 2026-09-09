@@ -10,6 +10,7 @@ class ChatbotDomain(str, Enum):
     OCOP = "ocop"
     CUSTOMER_SUPPORT = "customer_support"
     GENERAL = "general"
+    ADMINISTRATIVE_DOC = "administrative_doc"
 
 class Chatbot(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)

@@ -64,7 +64,7 @@ def format_chatbot(bot):
     bot["telegram_bot_token"] = bot.get("telegram_bot_token", None)
     bot["telegram_chat_id"] = bot.get("telegram_chat_id", None)
     bot["workflow_webhook_url"] = bot.get("workflow_webhook_url", None)
-    default_collect = False if bot.get("domain") == "ocop" else True
+    default_collect = False if bot.get("domain") in ("ocop", "administrative_doc") else True
     bot["collect_contact_info"] = bot.get("collect_contact_info", default_collect)
     return bot
 
@@ -143,7 +143,7 @@ def get_public_chatbot_details(chatbot_id):
             "greeting": chatbot.get("greeting"),
             "workspace_id": str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None,
             "workflow_webhook_url": chatbot.get("workflow_webhook_url"),
-            "collect_contact_info": chatbot.get("collect_contact_info", False if chatbot.get("domain") == "ocop" else True)
+            "collect_contact_info": chatbot.get("collect_contact_info", False if chatbot.get("domain") in ("ocop", "administrative_doc") else True)
         }
         return jsonify({"statusCode": 200, "data": formatted})
     except Exception as e:
@@ -185,7 +185,7 @@ def public_chat_with_chatbot(chatbot_id):
             return jsonify({"statusCode": 400, "message": "Message is required"}), 400
         
         domain = chatbot.get("domain", "ecommerce")
-        collect_contact = chatbot.get("collect_contact_info", False if domain == "ocop" else True)
+        collect_contact = chatbot.get("collect_contact_info", False if domain in ("ocop", "administrative_doc") else True)
         result = {"answer": "", "provider": "echo"}
         is_contact_info_reply = False
         
@@ -228,6 +228,8 @@ def public_chat_with_chatbot(chatbot_id):
                     result["answer"] = "Tôi là trợ lý hỗ trợ kỹ thuật và chăm sóc khách hàng!"
                 elif domain == "ecommerce":
                     result["answer"] = "Tôi là chatbot tư vấn và chăm sóc khách hàng!"
+                elif domain == "administrative_doc":
+                    result["answer"] = "Tôi là trợ lý tư vấn tài liệu và văn bản hành chính, hỗ trợ tra cứu quy định, thủ tục và căn cứ pháp lý!"
                 else:
                     result["answer"] = f"Tôi là {chatbot.get('name', 'trợ lý ảo')}!"
             else:
@@ -297,7 +299,8 @@ def get_public_chatbot_suggestions(chatbot_id):
             return jsonify({"statusCode": 200, "data": {"suggestions": []}})
         
         from src.modules.rag.rag_service import rag_service
-        suggestions = rag_service.suggest_questions(str(chatbot["workspace_id"]))
+        domain = chatbot.get("domain", "ecommerce")
+        suggestions = rag_service.suggest_questions(str(chatbot["workspace_id"]), domain=domain)
         return jsonify({"statusCode": 200, "data": {"suggestions": suggestions}})
     except Exception as e:
         Log.error(f"[Public Suggestions] Error: {e}")
@@ -347,8 +350,12 @@ def create_chatbot():
         if raw_collect is None:
             raw_collect = payload.get("collect_contact")
         
-        default_collect = False if domain == "ocop" else True
+        default_collect = False if domain in ("ocop", "administrative_doc") else True
         collect_contact_info = parse_bool(raw_collect, default=default_collect)
+
+        greeting_input = str(payload.get("greeting", "")).strip() or None
+        if not greeting_input and domain == "administrative_doc":
+            greeting_input = "Xin chào! Tôi là trợ lý tư vấn tài liệu và văn bản hành chính. Tôi có thể hỗ trợ bạn tra cứu quy định, thủ tục, hồ sơ và thời hạn giải quyết theo các văn bản đã ban hành."
 
         ws_name = f"Workspace-{str(name).strip()}"
         ws_id = workspaces_repo.create_workspace(ws_name, user_id=g.user_id, account_id=account_id)
@@ -360,7 +367,7 @@ def create_chatbot():
             domain=domain,
             description=str(payload.get("description", "")).strip() or None,
             avatar_url=str(payload.get("avatar_url", "")).strip() or None,
-            greeting=str(payload.get("greeting", "")).strip() or None,
+            greeting=greeting_input,
             color=int(payload.get("color", 0)),
             telegram_bot_token=str(payload.get("telegram_bot_token", "")).strip() or None,
             telegram_chat_id=str(payload.get("telegram_chat_id", "")).strip() or None,

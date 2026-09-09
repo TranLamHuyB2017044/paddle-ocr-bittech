@@ -87,7 +87,7 @@ class ChatHistoryRepository(BaseRepository):
     def get_top_keywords(self, workspace_id, period="day", top_n=10):
         wid = ObjectId(workspace_id) if isinstance(workspace_id, str) else workspace_id
         
-        now = datetime.utcnow()
+        now = datetime.now()
         if period == "day":
             start_date = now - timedelta(days=1)
         elif period == "week":

@@ -155,5 +155,5 @@ class ChatbotUpdateRequest(BaseModel):
     telegram_chat_id: Optional[str] = Field(None, description="Chat ID của Telegram để nhận thông báo")
     workflow_webhook_url: Optional[str] = Field(None, description="URL webhook cho workflow (n8n)")
     collect_contact_info: Optional[bool] = Field(None, description="Thu thập thông tin liên hệ của khách hàng khi không tìm thấy kết quả")
-    domain: Optional[str] = Field(None, description="Lĩnh vực hoạt động của chatbot (ecommerce, ocop, customer_support, general)")
+    domain: Optional[str] = Field(None, description="Lĩnh vực hoạt động của chatbot (ecommerce, ocop, customer_support, general, administrative_doc)")
 

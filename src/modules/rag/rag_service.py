@@ -222,7 +222,7 @@ class RagService:
             "sources": sources
         }
 
-    def suggest_questions(self, workspace_id: str) -> List[str]:
+    def suggest_questions(self, workspace_id: str, domain: str = "general") -> List[str]:
         """
         Suggest potential questions based on randomly sampled context from workspace.
         """
@@ -246,16 +246,25 @@ class RagService:
         
         context = "\n".join([p.payload["text"] for p in points])[:2000]
         
-        prompt = (
-            f"Dựa trên nội dung sau đây, hãy gợi ý 3 câu hỏi ngắn gọn mà người dùng có thể muốn hỏi "
-            f"để tìm hiểu thông tin từ tài liệu này. QUY TẮC: Chỉ gợi ý các câu hỏi mà câu trả lời chi tiết "
-            f"của nó có thể được tìm thấy trực tiếp trong đoạn nội dung được cung cấp bên dưới (không gợi ý câu hỏi "
-            f"nếu nội dung chỉ đề cập lướt qua tên tiêu đề hoặc từ khóa mà không giải thích chi tiết).\n"
-            f"Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng.\n\n"
-            f"NỘI DUNG:\n{context}"
-        )
-        
-        suggestion_text, _ = llm_service.chat(prompt, "Bạn là trợ lý gợi ý câu hỏi.")
+        if domain == "administrative_doc":
+            prompt = (
+                f"Dựa trên nội dung văn bản hành chính sau đây, hãy gợi ý 3 câu hỏi ngắn gọn, thiết thực mà người dân hoặc cán bộ có thể muốn hỏi "
+                f"(ví dụ về thành phần hồ sơ, điều kiện áp dụng, trình tự thực hiện, thẩm quyền hoặc thời hạn giải quyết). "
+                f"QUY TẮC: Chỉ gợi ý các câu hỏi mà câu trả lời chi tiết của nó có thể được tìm thấy trực tiếp trong đoạn nội dung được cung cấp bên dưới.\n"
+                f"Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng.\n\n"
+                f"NỘI DUNG:\n{context}"
+            )
+            suggestion_text, _ = llm_service.chat(prompt, "Bạn là chuyên viên hành chính gợi ý câu hỏi tra cứu thủ tục.")
+        else:
+            prompt = (
+                f"Dựa trên nội dung sau đây, hãy gợi ý 3 câu hỏi ngắn gọn mà người dùng có thể muốn hỏi "
+                f"để tìm hiểu thông tin từ tài liệu này. QUY TẮC: Chỉ gợi ý các câu hỏi mà câu trả lời chi tiết "
+                f"của nó có thể được tìm thấy trực tiếp trong đoạn nội dung được cung cấp bên dưới (không gợi ý câu hỏi "
+                f"nếu nội dung chỉ đề cập lướt qua tên tiêu đề hoặc từ khóa mà không giải thích chi tiết).\n"
+                f"Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng.\n\n"
+                f"NỘI DUNG:\n{context}"
+            )
+            suggestion_text, _ = llm_service.chat(prompt, "Bạn là trợ lý gợi ý câu hỏi.")
         # Simple parsing (split by newline and clean)
         suggestions = [s.strip('- ').strip() for s in suggestion_text.split('\n') if s.strip()]
         return suggestions[:5]
@@ -321,31 +330,52 @@ class RagService:
         
         context = "\n\n".join(context_parts)
         
-        # 3. Augment & Generate - NO SOURCE CITATIONS
+        # 3. Augment & Generate
         # Strict system prompt to prevent hallucination, configured per domain
         domain_prompt = get_chatbot_prompt(domain)
         if len(results) == 0:
-            # No context at all - force "no information"
-            system_instruction = (
-                f"{domain_prompt}\n\n"
-                "LƯU Ý QUAN TRỌNG: Hiện tại bạn KHÔNG TÌM THẤY thông tin tài liệu liên quan đến câu hỏi này. "
-                "BẠN CHỈ ĐƯỢC NÓI: 'Tôi không có thông tin về câu hỏi này. Vui lòng cung cấp thông tin liên hệ để nhân viên hỗ trợ bạn.' "
-                "TUYỆT ĐỘI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC NGOÀI THỰC TẾ. "
-                "KHÔNG ĐỀ CẬP ĐẾN Bittech."
-            )
+            if domain == "administrative_doc":
+                system_instruction = (
+                    f"{domain_prompt}\n\n"
+                    "LƯU Ý QUAN TRỌNG: Hiện tại bạn KHÔNG TÌM THẤY thông tin quy định hoặc văn bản liên quan đến câu hỏi này. "
+                    "BẠN CHỈ ĐƯỢC NÓI: 'Nội dung này chưa được quy định hoặc chưa có trong tài liệu văn bản được cung cấp. Vui lòng liên hệ cơ quan ban hành hoặc Bộ phận Một cửa có thẩm quyền để được giải đáp chính thức.' "
+                    "TUYỆT ĐỐI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC NGOÀI TÀI LIỆU ĐÃ CÓ. "
+                    "KHÔNG ĐỀ CẬP ĐẾN Bittech."
+                )
+            else:
+                # No context at all - force "no information"
+                system_instruction = (
+                    f"{domain_prompt}\n\n"
+                    "LƯU Ý QUAN TRỌNG: Hiện tại bạn KHÔNG TÌM THẤY thông tin tài liệu liên quan đến câu hỏi này. "
+                    "BẠN CHỈ ĐƯỢC NÓI: 'Tôi không có thông tin về câu hỏi này. Vui lòng cung cấp thông tin liên hệ để nhân viên hỗ trợ bạn.' "
+                    "TUYỆT ĐỘI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC NGOÀI THỰC TẾ. "
+                    "KHÔNG ĐỀ CẬP ĐẾN Bittech."
+                )
         else:
-            system_instruction = (
-                f"{domain_prompt}\n\n"
-                "QUY TẮC BẮT BUỘC:\n"
-                "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG TÀI LIỆU được cung cấp bên dưới.\n"
-                "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó.\n"
-                "- Giữ văn phong phù hợp với vai trò được giao, thân thiện, lịch sự và ngắn gọn.\n"
-                "- KHÔNG tự bịa ra câu trả lời.\n"
-                "- KHÔNG trả lời liên quan tới Bittech.\n"
-                "- CHỈ trả lời dựa trên nội dung tài liệu được cung cấp."
-            )
+            if domain == "administrative_doc":
+                system_instruction = (
+                    f"{domain_prompt}\n\n"
+                    "QUY TẮC BẮT BUỘC:\n"
+                    "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN HÀNH CHÍNH được cung cấp bên dưới.\n"
+                    "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có trong nội dung.\n"
+                    "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa được quy định trong tài liệu được cung cấp.\n"
+                    "- Giữ văn phong chuẩn mực hành chính, rõ ràng, khách quan và chính xác.\n"
+                    "- KHÔNG tự bịa ra câu trả lời hay điều khoản không tồn tại.\n"
+                    "- KHÔNG trả lời liên quan tới Bittech."
+                )
+            else:
+                system_instruction = (
+                    f"{domain_prompt}\n\n"
+                    "QUY TẮC BẮT BUỘC:\n"
+                    "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG TÀI LIỆU được cung cấp bên dưới.\n"
+                    "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó.\n"
+                    "- Giữ văn phong phù hợp với vai trò được giao, thân thiện, lịch sự và ngắn gọn.\n"
+                    "- KHÔNG tự bịa ra câu trả lời.\n"
+                    "- KHÔNG trả lời liên quan tới Bittech.\n"
+                    "- CHỈ trả lời dựa trên nội dung tài liệu được cung cấp."
+                )
         
-        prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI CỦA KHÁCH HÀNG: {question}"
+        prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI: {question}"
         
         answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
         
