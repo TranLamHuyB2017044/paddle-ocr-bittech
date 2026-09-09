@@ -2,10 +2,10 @@
  * Chatbot Embed Script - Premium Responsive Version
  * Usage: <script src="http://your-domain/chatbot-embed.js" data-chatbot-id="YOUR_ID" data-public-token="YOUR_TOKEN"></script>
  */
-(function() {
+(function () {
     // Get config from script tag
     const scriptTag = document.currentScript || document.querySelector('script[src*="chatbot-embed.js"]');
-    
+
     // Auto-detect API Base URL based on script src
     let autoApiUrl = window.location.origin;
     if (scriptTag && scriptTag.src) {
@@ -19,7 +19,7 @@
 
     // Create a unique localStorage key based on chatbotId
     const STORAGE_KEY = `chatbot_session_${scriptTag?.getAttribute('data-chatbot-id') || ''}`;
-    
+
     const CONFIG = {
         chatbotId: scriptTag?.getAttribute('data-chatbot-id') || '',
         publicToken: scriptTag?.getAttribute('data-public-token') || '',
@@ -33,10 +33,10 @@
         suggestions: [],
         sessionId: localStorage.getItem(STORAGE_KEY) || null
     };
-    
+
     let input, sendBtn, messagesDiv;
     let isSending = false; // Prevent duplicate requests
-    
+
     // Helper function to ensure URL is absolute
     function ensureAbsoluteUrl(url, baseUrl) {
         if (!url) return baseUrl + '/chatbot_logo.jpeg';
@@ -63,13 +63,13 @@
             return url + separator + 't=' + timestamp;
         }
     }
-    
+
     // Default avatar URL (chatbot_logo.jpeg) - use API base URL
     const defaultAvatarUrl = CONFIG.apiBaseUrl + '/chatbot_logo.jpeg';
-    
+
     // Ensure avatar URL is absolute
     CONFIG.avatarUrl = ensureAbsoluteUrl(CONFIG.avatarUrl, CONFIG.apiBaseUrl);
-    
+
 
     if (!CONFIG.chatbotId || !CONFIG.publicToken) {
         console.warn('[Chatbot Embed] Missing data-chatbot-id or data-public-token attributes.');
@@ -84,7 +84,7 @@
         const container = document.createElement('div');
         container.id = 'chatbot-bubble-container';
         container.className = `cb-pos-${CONFIG.position}`;
-        
+
         // Always use avatar URL (default or custom) with cache-busting
         const avatarWithCacheBusting = addCacheBusting(CONFIG.avatarUrl);
         const avatarHtml = `<img src="${avatarWithCacheBusting}" class="cb-header-avatar" alt="Avatar" onerror="this.style.display='none'; this.parentElement.querySelector('.cb-header-avatar-fallback').style.display='flex';">
@@ -138,24 +138,24 @@
                 </div>
             </div>
         `;
-        
+
         document.body.appendChild(container);
-        
+
         // Initialize variables
         input = document.getElementById('chatbot-input');
         sendBtn = document.getElementById('chatbot-send-btn');
         messagesDiv = document.getElementById('chatbot-messages');
-        
+
         // Auto-resize textarea
         function autoResizeTextarea() {
             input.style.height = 'auto';
             input.style.height = Math.min(input.scrollHeight, 120) + 'px';
         }
         input.addEventListener('input', autoResizeTextarea);
-        
+
         // Fetch Chatbot customization from DB to override values
         fetchChatbotDetails();
-        
+
         addStyles();
         addEventListeners();
     }
@@ -181,12 +181,12 @@
                     'x-public-token': CONFIG.publicToken
                 }
             });
-            
+
             if (response.ok) {
                 const resData = await response.json();
                 if (resData.statusCode === 200 && resData.data) {
                     const botData = resData.data;
-                    
+
                     // Update CONFIG with bot data
                     if (botData.name) CONFIG.botName = botData.name;
                     // Use default avatar if botData.avatar_url is empty, null, or undefined
@@ -201,11 +201,11 @@
                     if (botData.workflow_webhook_url) {
                         CONFIG.workflowWebhookUrl = botData.workflow_webhook_url;
                     }
-                    
+
                     // Update the greeting message
                     const messagesDiv = document.getElementById('chatbot-messages');
                     const greetingMessage = botData.greeting || 'Xin chào! Tôi có thể giúp gì cho bạn hôm nay?';
-                    
+
                     // Replace the default greeting if it exists
                     const botMessages = messagesDiv.querySelectorAll('.cb-message-wrapper.bot');
                     if (botMessages.length > 0) {
@@ -214,19 +214,19 @@
                             firstBotMessage.textContent = greetingMessage;
                         }
                     }
-                    
+
                     // Update header title
                     const headerTitle = document.querySelector('.cb-header-title');
                     if (headerTitle) {
                         headerTitle.textContent = CONFIG.botName;
                     }
-                    
+
                     // Update avatar (use default if needed) with cache-busting
                     const headerAvatar = document.querySelector('.cb-header-avatar');
                     if (headerAvatar) {
                         headerAvatar.src = addCacheBusting(CONFIG.avatarUrl);
                         // Show fallback if image fails to load
-                        headerAvatar.onerror = function() {
+                        headerAvatar.onerror = function () {
                             this.style.display = 'none';
                             const fallback = this.parentElement.querySelector('.cb-header-avatar-fallback');
                             if (fallback) {
@@ -234,10 +234,10 @@
                             }
                         };
                     }
-                    
+
                     // Re-apply styles with new theme color
                     reapplyStyles();
-                    
+
                     // Fetch suggestions
                     fetchSuggestions();
                 }
@@ -256,7 +256,7 @@
                     'x-public-token': CONFIG.publicToken
                 }
             });
-            
+
             if (response.ok) {
                 const resData = await response.json();
                 if (resData.statusCode === 200 && resData.data && resData.data.suggestions) {
@@ -278,24 +278,24 @@
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
     }
-    
+
     function renderSuggestions() {
         if (!messagesDiv || CONFIG.suggestions.length === 0) return;
-        
+
         // Check if suggestions already rendered
         if (document.querySelector('.cb-suggestions-container')) return;
-        
+
         const suggestionsContainer = document.createElement('div');
         suggestionsContainer.className = 'cb-suggestions-container';
-        
+
         const suggestionsTitle = document.createElement('div');
         suggestionsTitle.className = 'cb-suggestions-title';
         suggestionsTitle.textContent = 'Câu hỏi gợi ý:';
         suggestionsContainer.appendChild(suggestionsTitle);
-        
+
         const suggestionsList = document.createElement('div');
         suggestionsList.className = 'cb-suggestions-list';
-        
+
         CONFIG.suggestions.forEach(suggestion => {
             const suggestionBtn = document.createElement('button');
             suggestionBtn.className = 'cb-suggestion-btn';
@@ -321,12 +321,12 @@
             });
             suggestionsList.appendChild(suggestionBtn);
         });
-        
+
         suggestionsContainer.appendChild(suggestionsList);
         messagesDiv.appendChild(suggestionsContainer);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
-    
+
     async function sendMessage() {
         const message = input.value.trim();
         if (!message || isSending) return; // Prevent sending empty or duplicate
@@ -357,11 +357,11 @@
                     public_token: CONFIG.publicToken,
                     message: message,
                     sessionId: CONFIG.sessionId
-                  }
+                }
                 : {
                     message: message,
                     sessionId: CONFIG.sessionId
-                  };
+                };
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
@@ -370,12 +370,12 @@
                 },
                 body: JSON.stringify(requestBody)
             });
-            
+
             // Remove typing indicator
             typingIndicator.remove();
 
             const resData = await response.json();
-            
+
             if (response.ok && resData.statusCode === 200) {
                 // Store the session ID for subsequent messages and save to localStorage
                 if (resData.data.sessionId) {
@@ -386,13 +386,13 @@
             } else {
                 // Handle specific errors
                 let errorMsg = resData.message || 'Xin lỗi, tôi đã gặp sự cố khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.';
-                
+
                 if (response.status === 429) { // Too Many Requests (rate limit)
                     errorMsg = 'Bạn đã gửi quá nhiều tin nhắn! Vui lòng chờ một chút rồi thử lại nhé.';
                 } else if (response.status === 403 && (resData.message || '').toLowerCase().includes('quota')) {
                     errorMsg = 'Tài khoản chủ chatbot đã hết lượt sử dụng trong tháng! Vui lòng nâng cấp gói hoặc liên hệ quản trị viên.';
                 }
-                
+
                 appendMessage('bot', errorMsg);
             }
         } catch (error) {
@@ -413,7 +413,7 @@
     function appendMessage(sender, text) {
         const wrapper = document.createElement('div');
         wrapper.className = `cb-message-wrapper ${sender}`;
-        
+
         // Format markdown-like elements (simple bold and line breaks)
         let formattedText = escapeHTML(text)
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -422,7 +422,7 @@
         const messageDiv = document.createElement('div');
         messageDiv.className = 'cb-message';
         messageDiv.innerHTML = formattedText;
-        
+
         if (sender === 'user') {
             messageDiv.style.background = CONFIG.themeColor;
         }
@@ -451,7 +451,7 @@
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
         return wrapper;
     }
-    
+
     function reapplyStyles() {
         // Update all dynamic style elements that use CONFIG.themeColor
         const trigger = document.getElementById('chatbot-trigger-bubble');
@@ -461,7 +461,7 @@
         const poweredByLink = document.querySelector('.cb-powered-by a');
         const input = document.getElementById('chatbot-input');
         const suggestionBtns = document.querySelectorAll('.cb-suggestion-btn');
-        
+
         if (trigger) {
             trigger.style.setProperty('background', `linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)})`, 'important');
         }
@@ -489,7 +489,7 @@
                 btn.style.borderColor = '#e2e8f0';
             });
         });
-        
+
         // Update input focus styles by updating the style element
         const existingStyles = document.querySelector('#chatbot-dynamic-styles');
         if (existingStyles) {
@@ -980,7 +980,7 @@
 
         trigger.addEventListener('click', toggleChat);
         closeBtn.addEventListener('click', toggleChat);
-        
+
         sendBtn.addEventListener('click', sendMessage);
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -993,7 +993,7 @@
     // Helper functions for dynamic theme colors
     function darkenColor(hex, percent) {
         hex = hex.replace(/^\s*#|\s*$/g, '');
-        if(hex.length == 3) hex = hex.replace(/(.)/g, '$1$1');
+        if (hex.length == 3) hex = hex.replace(/(.)/g, '$1$1');
         let r = parseInt(hex.substr(0, 2), 16),
             g = parseInt(hex.substr(2, 2), 16),
             b = parseInt(hex.substr(4, 2), 16);
@@ -1007,7 +1007,7 @@
 
     function rgbaColor(hex, alpha) {
         hex = hex.replace(/^\s*#|\s*$/g, '');
-        if(hex.length == 3) hex = hex.replace(/(.)/g, '$1$1');
+        if (hex.length == 3) hex = hex.replace(/(.)/g, '$1$1');
         let r = parseInt(hex.substr(0, 2), 16),
             g = parseInt(hex.substr(2, 2), 16),
             b = parseInt(hex.substr(4, 2), 16);

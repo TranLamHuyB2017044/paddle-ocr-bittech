@@ -23,6 +23,7 @@ class DocTypeStats(BaseModel):
     vehicleDocuments: int = 0
     vehicle: int = 0
     menu: int = 0
+    administrativeDocument: int = 0
 
 class UserStats(BaseModel):
     total_extractions: int = 0

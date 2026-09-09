@@ -26,7 +26,7 @@ limiter = get_limiter()
 
 # Thời gian signed URL hợp lệ (giây)
 SIGNED_URL_EXPIRY_SEC = 15 * 60  # 15 phút
-ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'document', 'vehicleDocuments', 'menu'}
+ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'vehicleDocuments', 'menu', 'administrativeDocument'}
 
 
 @file_bp.route('/uploads/<path:filename>', methods=['GET'])
@@ -50,7 +50,7 @@ def validate_request_params(req):
     doc_type = req.form.get("type")
     
     if not doc_type:
-        return None, jsonify({"statusCode": 400, "message": "Missing 'type' parameter. Required one of: idCard, driverLicense, invoice, document"}), 400
+        return None, jsonify({"statusCode": 400, "message": f"Missing 'type' parameter. Required one of: {sorted(list(ALLOWED_DOC_TYPES))}"}), 400
  
     if doc_type not in ALLOWED_DOC_TYPES:
         return None, jsonify({"statusCode": 400, "message": f"Loại giấy tờ không hợp lệ. Cho phép: {ALLOWED_DOC_TYPES}"}), 400

@@ -1,5 +1,35 @@
+from enum import Enum
 from typing import Optional, Union, List
 from pydantic import BaseModel, Field
+
+class PriorityEnum(str, Enum):
+    THUONG = "THUONG"
+    KHAN = "KHAN"
+    THUONG_KHAN = "THUONG_KHAN"
+    HOA_TOC = "HOA_TOC"
+
+class SecurityEnum(str, Enum):
+    THUONG = "THUONG"
+    MAT = "MAT"
+    TOI_MAT = "TOI_MAT"
+    TUYET_MAT = "TUYET_MAT"
+
+class AdministrativeDocument(BaseModel):
+    documentNo: Optional[str] = Field(None, description="Số/ký hiệu văn bản (Ví dụ: 123/UBND-VP)")
+    senderOrg: Optional[str] = Field(None, description="Tên cơ quan / đơn vị ban hành văn bản")
+    senderCode: Optional[str] = Field(None, description="Mã định danh cơ quan gửi (nếu có)")
+    title: Optional[str] = Field(None, description="Trích yếu nội dung văn bản (phần V/v...)")
+    issueDate: Optional[str] = Field(None, description="Ngày ban hành văn bản theo định dạng DD/MM/YYYY")
+    receiveDate: Optional[str] = Field(None, description="Ngày nhận văn bản theo định dạng DD/MM/YYYY")
+    deadline: Optional[str] = Field(None, description="Hạn xử lý văn bản theo định dạng DD/MM/YYYY (nếu có trong nội dung)")
+    priority: PriorityEnum = Field(default=PriorityEnum.THUONG, description="Độ khẩn của văn bản")
+    security: SecurityEnum = Field(default=SecurityEnum.THUONG, description="Độ mật của văn bản")
+    category: Optional[str] = Field(None, description="Gợi ý lĩnh vực văn bản (ví dụ: Đất đai, Tài chính, Pháp chế,...)")
+    requireReply: bool = Field(default=False, description="Có yêu cầu đơn vị nhận báo cáo / trả lời hay không")
+    meetingAt: Optional[str] = Field(None, description="Thời gian họp nếu là Giấy mời (Định dạng DD-MM-YYYY HH:mm:ss)")
+    note: Optional[str] = Field(None, description="Ghi chú thêm từ văn bản")
+
+IncomingDocumentExtractResult = AdministrativeDocument
 
 class BusinessRegistration(BaseModel):
     taxCode: Optional[str] = Field(description="Mã số doanh nghiệp")
@@ -84,23 +114,7 @@ class VehicleDocument(BaseModel):
     route: Optional[str] = Field(description="Tuyến hoạt động")
     teacherName: Optional[str] = Field(description="Tên giáo viên")
 
-class Document(BaseModel):
-    title: Optional[str] = Field(description="Tiêu đề tài liệu")
-    summary: Optional[str] = Field(description="Tóm tắt nội dung")
-    
-    # Business Registration Fields (Optional)
-    taxCode: Optional[str] = Field(description="Mã số doanh nghiệp (nếu là giấy đăng ký kinh doanh)")
-    companyNameVi: Optional[str] = Field(description="Tên công ty tiếng Việt")
-    address: Optional[str] = Field(description="Địa chỉ trụ sở chính")
-    phone: Optional[str] = Field(description="SĐT")
-    email: Optional[str] = Field(description="Email")
-    representativeName: Optional[str] = Field(description="Người đại diện pháp luật")
-    representativeResidence: Optional[str] = Field(description="Địa chỉ thường trú người đại diện")
-    representativeContact: Optional[str] = Field(description="Địa chỉ liên lạc người đại diện")
-
-    keywords: List[str] = Field(default_factory=list, description="Từ khóa chính")
-    dates: List[str] = Field(default_factory=list, description="Các mốc thời gian")
-    entities: List[str] = Field(default_factory=list, description="Các thực thể (người, tổ chức)")
+Document = AdministrativeDocument
 
 class MenuItem(BaseModel):
     category: Optional[str] = Field(description="Tên danh mục món ăn, có thể null")

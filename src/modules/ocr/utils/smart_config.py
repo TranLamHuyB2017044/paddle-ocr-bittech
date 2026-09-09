@@ -231,14 +231,52 @@ VEHICLE_DOC_CONFIG = {
 }
 
 
+# ==================== ADMINISTRATIVE DOCUMENT CONFIG ====================
+ADMINISTRATIVE_DOC_CONFIG = {
+    "documentNo": {
+        "keywords": ["số:", "số", "ký hiệu", "số/ký hiệu"],
+        "keywords_threshold": 0.8,
+        "extraction_mode": "auto"
+    },
+    "senderOrg": {
+        "keywords": ["ủy ban nhân dân", "ubnd", "bộ", "sở", "cục", "ban"],
+        "keywords_threshold": 0.7,
+        "extraction_mode": "auto"
+    },
+    "title": {
+        "keywords": ["v/v", "về việc", "trích yếu"],
+        "keywords_threshold": 0.8,
+        "extraction_mode": "auto"
+    },
+    "issueDate": {
+        "keywords": ["ngày", "tháng", "năm"],
+        "keywords_threshold": 0.7,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "extraction_mode": "auto"
+    },
+    "receiveDate": {
+        "keywords": ["ngày đến", "đến ngày", "ngày nhận"],
+        "keywords_threshold": 0.7,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "extraction_mode": "auto"
+    },
+    "deadline": {
+        "keywords": ["hạn xử lý", "trước ngày", "thời hạn"],
+        "keywords_threshold": 0.7,
+        "value_regex": r"\d{2}[-/]\d{2}[-/]\d{4}",
+        "extraction_mode": "auto"
+    }
+}
+
+
 # ==================== CONFIG REGISTRY ====================
 CONFIG_MAP = {
     "idCard": CCCD_CONFIG,
     "driverLicense": DRIVER_LICENSE_CONFIG,
     "invoice": INVOICE_CONFIG,
-    "document": DOCUMENT_CONFIG,
+    "administrativeDocument": ADMINISTRATIVE_DOC_CONFIG,
     "vehicleDocuments": VEHICLE_DOC_CONFIG,
-    "menu": {"business_name": {"keywords": ["thực đơn", "menu"], "extraction_mode": "auto"}}
+    "menu": {"business_name": {"keywords": ["thực đơn", "menu"], "extraction_mode": "auto"}},
 }
 
 def get_smart_config(doc_type):

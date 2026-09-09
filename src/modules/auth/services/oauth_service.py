@@ -48,6 +48,11 @@ class OAuthService:
                 "headers": ["Tên quán", "Thông tin chung", "Danh sách món ăn", "Created At"],
                 "fields": ["business_name", "business_info", "menu_items"]
             },
+            "administrativeDocument": {
+                "sheet_name": "van_ban_den_data",
+                "headers": ["Số/Ký hiệu", "Cơ quan ban hành", "Mã cơ quan", "Trích yếu", "Ngày ban hành", "Ngày nhận", "Hạn xử lý", "Độ khẩn", "Độ mật", "Lĩnh vực", "Yêu cầu phúc đáp", "Thời gian họp", "Ghi chú", "Created At"],
+                "fields": ["documentNo", "senderOrg", "senderCode", "title", "issueDate", "receiveDate", "deadline", "priority", "security", "category", "requireReply", "meetingAt", "note"]
+            },
             "default": {
                 "sheet_name": "ocr_data",
                 "headers": ["Raw Data", "Created At"],

@@ -6,14 +6,14 @@ from typing import Optional
 from openai import OpenAI
 from src.core.config import OPENAI_API_KEY
 from src.shared.utils.logger import Log
-from src.modules.ocr.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis
+from src.modules.ocr.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis, AdministrativeDocument
 
 # Map doc_type string to Pydantic model
 SCHEMA_MAP = {
     "idCard": IdCard,
     "driverLicense": DriverLicense,
     "invoice": Invoice,
-    "document": Document,
+    "administrativeDocument": AdministrativeDocument,
     "vehicleDocuments": VehicleDocument,
     "menu": RestaurantMenu,
     "message_analysis": MessageAnalysis,
@@ -66,8 +66,12 @@ class OpenAIExtractor:
         if not prompt_template: 
             return {"data": {}, "metadata": {"error": "prompt_not_found"}}
         
-        prompt = f"{prompt_template}\n\nINPUT DATA (OCR TEXT):\n{text_block}"
         response_schema = SCHEMA_MAP.get(doc_type)
+        if not response_schema:
+            Log.error(f"[OPENAI] ❌ Schema not found for doc_type: {doc_type}")
+            return {"data": {}, "metadata": {"error": "schema_not_found"}}
+
+        prompt = f"{prompt_template}\n\nINPUT DATA (OCR TEXT):\n{text_block}"
 
         Log.info(f"[OPENAI] 🚀 Key Extraction for {doc_type}...")
         try:
@@ -118,6 +122,10 @@ class OpenAIExtractor:
             return {"data": {}, "metadata": {"error": "no_valid_images"}}
 
         response_schema = SCHEMA_MAP.get(doc_type)
+        if not response_schema:
+            Log.error(f"[OPENAI-VLM] ❌ Schema not found for doc_type: {doc_type}")
+            return {"data": {}, "metadata": {"error": "schema_not_found"}}
+
         Log.info(f"[OPENAI-VLM] 👁️ Vision Extraction cho {doc_type} với {len(image_paths)} ảnh...")
         
         try:
@@ -199,7 +207,8 @@ class OpenAIExtractor:
                 response_format={"type": "json_object"},
                 temperature=0,
             )
-            data = json.loads(response.choices[0].message.content)
+            raw_content = response.choices[0].message.content or "{}"
+            data = json.loads(raw_content)
             return {"data": data, "metadata": {"source": "openai"}}
         except Exception as e:
             Log.error(f"[OPENAI] ❌ Message analysis error: {e}")

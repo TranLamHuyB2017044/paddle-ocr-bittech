@@ -62,9 +62,10 @@ def get_user_stats():
             "idCard": doc_type_stats.get("idCard", 0),
             "driverLicense": doc_type_stats.get("driverLicense", 0),
             "invoice": doc_type_stats.get("invoice", 0),
-            "document": doc_type_stats.get("document", 0),
+            "administrativeDocument": doc_type_stats.get("administrativeDocument", 0) + doc_type_stats.get("document", 0),
             "vehicleDocuments": doc_type_stats.get("vehicleDocuments", 0) + doc_type_stats.get("vehicle_documents", 0),
-            "vehicle": doc_type_stats.get("vehicleDocuments", 0) + doc_type_stats.get("vehicle_documents", 0)
+            "vehicle": doc_type_stats.get("vehicleDocuments", 0) + doc_type_stats.get("vehicle_documents", 0),
+            "menu": doc_type_stats.get("menu", 0),
         }
         
         today_extractions = extraction_logs_repo.count_today_by_user(user_id)

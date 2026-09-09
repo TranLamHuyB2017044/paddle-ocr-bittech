@@ -371,7 +371,7 @@ class PostCleaner:
                 pass
 
         # 2. Clean & Validate Date Fields (Chuẩn hóa DD/MM/YYYY, check logic ngày tháng năm)
-        date_fields = ["dob", "expiryDate", "dateOfIssue", "dateOfBegining", "ngay_lap_phieu"]
+        date_fields = ["dob", "expiryDate", "dateOfIssue", "dateOfBegining", "ngay_lap_phieu", "issueDate", "receiveDate", "deadline"]
         for field in date_fields:
             if field in cleaned_data and cleaned_data[field] is not None:
                 cleaned_data[field] = PostCleaner._parse_and_validate_date(
@@ -458,6 +458,28 @@ class PostCleaner:
                     if typo in title:
                         cleaned_data["ten_hoa_don"] = fixed
                         break
+        
+        # 4.1 Clean & Standardize Administrative Document (Văn Bản Hành Chính)
+        if doc_type == "administrativeDocument":
+            valid_priorities = {"THUONG", "KHAN", "THUONG_KHAN", "HOA_TOC"}
+            p = str(cleaned_data.get("priority", "")).upper()
+            cleaned_data["priority"] = p if p in valid_priorities else "THUONG"
+
+            valid_securities = {"THUONG", "MAT", "TOI_MAT", "TUYET_MAT"}
+            sec = str(cleaned_data.get("security", "")).upper()
+            cleaned_data["security"] = sec if sec in valid_securities else "THUONG"
+
+            if "requireReply" in cleaned_data:
+                rr = cleaned_data["requireReply"]
+                if isinstance(rr, str):
+                    cleaned_data["requireReply"] = rr.lower() in ("true", "1", "yes")
+                else:
+                    cleaned_data["requireReply"] = bool(rr)
+            else:
+                cleaned_data["requireReply"] = False
+
+            if "meetingAt" in cleaned_data and cleaned_data["meetingAt"]:
+                cleaned_data["meetingAt"] = PostCleaner._format_datetime(cleaned_data["meetingAt"])
              
         # 5. Reorder Keys (Quan trọng để JSON đẹp và đúng thứ tự Schema)
         
@@ -474,11 +496,14 @@ class PostCleaner:
             "invoice": [
                 "so_hoa_don", "ngay_lap_phieu", "tong_so_tien", "noi_dung_hoa_don"
             ],
-            "document": [
-                "title", "summary", "keywords", "dates", "entities"
-            ],
             "menu": [
                 "business_name", "business_info", "menu_items"
+            ],
+            "administrativeDocument": [
+                "documentNo", "senderOrg", "senderCode", "title",
+                "issueDate", "receiveDate", "deadline",
+                "priority", "security", "category",
+                "requireReply", "meetingAt", "note"
             ]
         }
         
@@ -734,3 +759,29 @@ class PostCleaner:
         name_str = PostCleaner.repair_encoding(name_str)
         name_str = re.sub(r"[;:\"'.,!@#$%^&*()+=]", "", name_str)
         return name_str.strip().title()
+
+    @staticmethod
+    def _format_datetime(dt_str):
+        """
+        Input: 2024-09-15T08:30:00, 2024-09-15 08:30:00, 15/09/2024 08:30, 15-09-2024 08:30:00, etc.
+        Output: DD-MM-YYYY HH:mm:ss
+        """
+        if not dt_str or not isinstance(dt_str, str):
+            return dt_str
+            
+        s = dt_str.strip().replace('T', ' ').replace('Z', '')
+        # Match YYYY-MM-DD HH:MM:SS or YYYY/MM/DD HH:MM:SS
+        m_ymd = re.match(r"^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?", s)
+        if m_ymd:
+            y, m, d, hh, mm, ss = m_ymd.groups()
+            ss = ss or "00"
+            return f"{int(d):02d}-{int(m):02d}-{int(y):04d} {int(hh):02d}:{int(mm):02d}:{int(ss):02d}"
+            
+        # Match DD-MM-YYYY HH:MM:SS or DD/MM/YYYY HH:MM:SS
+        m_dmy = re.match(r"^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?", s)
+        if m_dmy:
+            d, m, y, hh, mm, ss = m_dmy.groups()
+            ss = ss or "00"
+            return f"{int(d):02d}-{int(m):02d}-{int(y):04d} {int(hh):02d}:{int(mm):02d}:{int(ss):02d}"
+            
+        return dt_str
