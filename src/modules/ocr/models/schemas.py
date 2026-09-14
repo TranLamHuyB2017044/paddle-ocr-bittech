@@ -157,3 +157,18 @@ class ChatbotUpdateRequest(BaseModel):
     collect_contact_info: Optional[bool] = Field(None, description="Thu thập thông tin liên hệ của khách hàng khi không tìm thấy kết quả")
     domain: Optional[str] = Field(None, description="Lĩnh vực hoạt động của chatbot (ecommerce, ocop, customer_support, general, administrative_doc)")
 
+# --- Schemas for Production Survey Form (Nông nghiệp, Chăn nuôi, Thủy sản) ---
+class SurveyItem(BaseModel):
+    category: Optional[str] = Field(None, description="Nhóm sản xuất: trongTrot, chanNuoi, thuySan, khac")
+    name: Optional[str] = Field(None, description="Tên cây trồng, vật nuôi hoặc thủy sản")
+    yieldAmount: Optional[str] = Field(None, description="Sản lượng, năng suất hoặc quy mô kèm đơn vị tính (ví dụ: 5 tấn, 10 con)")
+    frequency: Optional[str] = Field(None, description="Tần suất hoặc chu kỳ sản xuất (ví dụ: 1 vụ/năm, 2 vụ/năm, 1 lứa/năm)")
+    isHighTech: Optional[bool] = Field(default=False, description="Có áp dụng công nghệ cao hay không")
+
+class SurveyForm(BaseModel):
+    fullName: Optional[str] = Field(None, description="Họ và tên nông dân / chủ hộ")
+    phone: Optional[str] = Field(None, description="Số điện thoại liên lạc")
+    hamlet: Optional[str] = Field(None, description="Thôn / Ấp / Bản / Khóm / Tổ")
+    address: Optional[str] = Field(None, description="Địa chỉ chi tiết")
+    items: List[SurveyItem] = Field(default_factory=list, description="Danh sách các mô hình nông nghiệp, chăn nuôi, thủy sản")
+

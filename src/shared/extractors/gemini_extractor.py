@@ -9,7 +9,7 @@ from google.genai import types
 
 from src.core.config import GEMINI_API_KEY, GEMINI_MODEL
 from src.shared.utils.logger import Log
-from src.modules.ocr.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis, AdministrativeDocument
+from src.modules.ocr.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis, AdministrativeDocument, SurveyForm
 from .openai_extractor import openai_extractor
 
 # Map doc_type string to Pydantic model
@@ -21,6 +21,7 @@ SCHEMA_MAP = {
     "vehicleDocuments": VehicleDocument,
     "menu": RestaurantMenu,
     "message_analysis": MessageAnalysis,
+    "survey_form": SurveyForm,
 }
 
 class GeminiExtractor:

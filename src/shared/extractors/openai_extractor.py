@@ -6,7 +6,7 @@ from typing import Optional
 from openai import OpenAI
 from src.core.config import OPENAI_API_KEY
 from src.shared.utils.logger import Log
-from src.modules.ocr.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis, AdministrativeDocument
+from src.modules.ocr.models.schemas import IdCard, DriverLicense, Invoice, Document, VehicleDocument, RestaurantMenu, MessageAnalysis, AdministrativeDocument, SurveyForm
 
 # Map doc_type string to Pydantic model
 SCHEMA_MAP = {
@@ -17,6 +17,7 @@ SCHEMA_MAP = {
     "vehicleDocuments": VehicleDocument,
     "menu": RestaurantMenu,
     "message_analysis": MessageAnalysis,
+    "survey_form": SurveyForm,
 }
 
 class OpenAIExtractor:

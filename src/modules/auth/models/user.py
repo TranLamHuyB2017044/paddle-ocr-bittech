@@ -24,6 +24,7 @@ class DocTypeStats(BaseModel):
     vehicle: int = 0
     menu: int = 0
     administrativeDocument: int = 0
+    survey_form: int = 0
 
 class UserStats(BaseModel):
     total_extractions: int = 0

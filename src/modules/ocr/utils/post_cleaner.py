@@ -480,7 +480,57 @@ class PostCleaner:
 
             if "meetingAt" in cleaned_data and cleaned_data["meetingAt"]:
                 cleaned_data["meetingAt"] = PostCleaner._format_datetime(cleaned_data["meetingAt"])
-             
+
+        # 4.2 Clean & Standardize Survey Form (Phiếu Khảo Sát Nông Nghiệp)
+        if doc_type == "survey_form":
+            # Clean phone
+            if "phone" in cleaned_data and cleaned_data["phone"]:
+                p_digits = re.sub(r"[^\d]", "", str(cleaned_data["phone"]))
+                if p_digits.startswith("84") and len(p_digits) >= 11:
+                    p_digits = "0" + p_digits[2:]
+                cleaned_data["phone"] = p_digits if p_digits else None
+
+            # Clean items list
+            if "items" in cleaned_data:
+                items = cleaned_data["items"]
+                if isinstance(items, list):
+                    cleaned_items = []
+                    category_map = {
+                        "trongtrot": "trongTrot",
+                        "trong_trot": "trongTrot",
+                        "trồng trọt": "trongTrot",
+                        "trồng trọt": "trongTrot",
+                        "caytrong": "trongTrot",
+                        "channuoi": "chanNuoi",
+                        "chan_nuoi": "chanNuoi",
+                        "chăn nuôi": "chanNuoi",
+                        "thuysan": "thuySan",
+                        "thuy_san": "thuySan",
+                        "thủy sản": "thuySan",
+                        "khac": "khac",
+                        "khác": "khac",
+                    }
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        cat = str(it.get("category", "")).strip().lower()
+                        normalized_cat = category_map.get(cat, it.get("category", "trongTrot"))
+                        
+                        ht = it.get("isHighTech", False)
+                        if isinstance(ht, str):
+                            is_high_tech = ht.lower() in ("true", "1", "yes", "co", "có")
+                        else:
+                            is_high_tech = bool(ht)
+                            
+                        cleaned_items.append({
+                            "category": normalized_cat,
+                            "name": str(it.get("name", "")).strip() if it.get("name") else None,
+                            "yieldAmount": str(it.get("yieldAmount", "")).strip() if it.get("yieldAmount") else None,
+                            "frequency": str(it.get("frequency", "")).strip() if it.get("frequency") else None,
+                            "isHighTech": is_high_tech,
+                        })
+                    cleaned_data["items"] = cleaned_items
+
         # 5. Reorder Keys (Quan trọng để JSON đẹp và đúng thứ tự Schema)
         
         # Định nghĩa thứ tự cho từng loại
@@ -504,6 +554,9 @@ class PostCleaner:
                 "issueDate", "receiveDate", "deadline",
                 "priority", "security", "category",
                 "requireReply", "meetingAt", "note"
+            ],
+            "survey_form": [
+                "fullName", "phone", "hamlet", "address", "items"
             ]
         }
         

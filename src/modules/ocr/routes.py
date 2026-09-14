@@ -26,7 +26,7 @@ limiter = get_limiter()
 
 # Thời gian signed URL hợp lệ (giây)
 SIGNED_URL_EXPIRY_SEC = 15 * 60  # 15 phút
-ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'vehicleDocuments', 'menu', 'administrativeDocument'}
+ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'vehicleDocuments', 'menu', 'administrativeDocument', 'survey_form'}
 
 
 @file_bp.route('/uploads/<path:filename>', methods=['GET'])
