@@ -19,6 +19,7 @@
 
     // Create a unique localStorage key based on chatbotId
     const STORAGE_KEY = `chatbot_session_${scriptTag?.getAttribute('data-chatbot-id') || ''}`;
+    const CATEGORY_STORAGE_KEY = `chatbot_category_${scriptTag?.getAttribute('data-chatbot-id') || ''}`;
 
     const CONFIG = {
         chatbotId: scriptTag?.getAttribute('data-chatbot-id') || '',
@@ -31,11 +32,46 @@
         workspaceId: null,
         workflowWebhookUrl: scriptTag?.getAttribute('data-webhook-url') || null,
         suggestions: [],
-        sessionId: localStorage.getItem(STORAGE_KEY) || null
+        sessionId: localStorage.getItem(STORAGE_KEY) || null,
+        showSources: false,
+        categories: [],
+        activeCategory: localStorage.getItem(CATEGORY_STORAGE_KEY) || null
     };
 
-    let input, sendBtn, messagesDiv;
+    let input, sendBtn, messagesDiv, mentionPopup, categoryChipContainer;
     let isSending = false; // Prevent duplicate requests
+    let mentionSelectedIndex = -1;
+    let filteredCategories = [];
+
+    // Cache gợi ý theo chuyên mục: { '__all__': [...], 'nha-dat': [...], ... }
+    const suggestionsCache = new Map();
+    const SUGGESTIONS_CACHE_PREFIX = `cb_sug_${CONFIG.chatbotId || 'bot'}_`;
+
+    function getCachedSuggestions(category) {
+        const key = category || '__all__';
+        if (suggestionsCache.has(key)) {
+            return suggestionsCache.get(key);
+        }
+        try {
+            const raw = sessionStorage.getItem(SUGGESTIONS_CACHE_PREFIX + key);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    suggestionsCache.set(key, parsed);
+                    return parsed;
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function setCachedSuggestions(category, list) {
+        const key = category || '__all__';
+        suggestionsCache.set(key, list);
+        try {
+            sessionStorage.setItem(SUGGESTIONS_CACHE_PREFIX + key, JSON.stringify(list));
+        } catch (e) {}
+    }
 
     // Helper function to ensure URL is absolute
     function ensureAbsoluteUrl(url, baseUrl) {
@@ -110,8 +146,13 @@
                             </div>
                         </div>
                     </div>
-                    <button id="chatbot-close-btn" aria-label="Close Chat">×</button>
+                    <div class="cb-header-actions">
+                        <button id="chatbot-close-btn" aria-label="Close Chat">×</button>
+                    </div>
                 </div>
+
+                <!-- Active Category Bar -->
+                <div id="cb-category-chip-container" class="cb-category-bar" style="display: none;"></div>
                 
                 <!-- Messages -->
                 <div id="chatbot-messages">
@@ -120,6 +161,9 @@
                         <div class="cb-message-time">${formatTime(new Date())}</div>
                     </div>
                 </div>
+
+                <!-- Mention Autocomplete Popup -->
+                <div id="cb-mention-popup" class="cb-mention-popup" style="display: none;"></div>
                 
                 <!-- Input Area -->
                 <div id="chatbot-input-area">
@@ -134,7 +178,7 @@
                 
                 <!-- Powered By -->
                 <div class="cb-powered-by">
-                    Powered by <a href="https://docx.bittechx.vn/" target="_blank" rel="noopener noreferrer">Bittech RAG</a>
+                    Powered by <a href="https://docx.bittechx.vn/" target="_blank" rel="noopener noreferrer">Bittech</a>
                 </div>
             </div>
         `;
@@ -145,11 +189,13 @@
         input = document.getElementById('chatbot-input');
         sendBtn = document.getElementById('chatbot-send-btn');
         messagesDiv = document.getElementById('chatbot-messages');
+        mentionPopup = document.getElementById('cb-mention-popup');
+        categoryChipContainer = document.getElementById('cb-category-chip-container');
 
         // Auto-resize textarea
         function autoResizeTextarea() {
             input.style.height = 'auto';
-            input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+            input.style.height = Math.max(46, Math.min(input.scrollHeight, 140)) + 'px';
         }
         input.addEventListener('input', autoResizeTextarea);
 
@@ -201,6 +247,9 @@
                     if (botData.workflow_webhook_url) {
                         CONFIG.workflowWebhookUrl = botData.workflow_webhook_url;
                     }
+                    if (botData.show_sources !== undefined) {
+                        CONFIG.showSources = Boolean(botData.show_sources);
+                    }
 
                     // Update the greeting message
                     const messagesDiv = document.getElementById('chatbot-messages');
@@ -238,8 +287,9 @@
                     // Re-apply styles with new theme color
                     reapplyStyles();
 
-                    // Fetch suggestions
+                    // Fetch suggestions & categories
                     fetchSuggestions();
+                    fetchCategories();
                 }
             }
         } catch (e) {
@@ -247,10 +297,290 @@
         }
     }
 
-    async function fetchSuggestions() {
+    async function fetchCategories() {
         if (!CONFIG.chatbotId || !CONFIG.publicToken) return;
         try {
-            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/suggest`, {
+            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/categories`, {
+                method: 'GET',
+                headers: {
+                    'x-public-token': CONFIG.publicToken
+                }
+            });
+            if (response.ok) {
+                const resData = await response.json();
+                if (resData.statusCode === 200 && Array.isArray(resData.data)) {
+                    CONFIG.categories = resData.data;
+                    // Validate currently stored activeCategory
+                    if (CONFIG.activeCategory) {
+                        const exists = CONFIG.categories.some(c => c.slug === CONFIG.activeCategory);
+                        if (!exists) {
+                            CONFIG.activeCategory = null;
+                            localStorage.removeItem(CATEGORY_STORAGE_KEY);
+                        }
+                    }
+                    renderCategoriesBar();
+                    if (CONFIG.activeCategory) {
+                        setTimeout(() => {
+                            const activePill = categoryChipContainer.querySelector('.cb-category-pill.active');
+                            if (activePill) {
+                                activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                            }
+                        }, 100);
+                        fetchSuggestions(CONFIG.activeCategory);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[Chatbot Embed] Fetch categories error:', e);
+        }
+    }
+
+    function setActiveCategory(categorySlug) {
+        CONFIG.activeCategory = categorySlug || null;
+        if (CONFIG.activeCategory) {
+            localStorage.setItem(CATEGORY_STORAGE_KEY, CONFIG.activeCategory);
+        } else {
+            localStorage.removeItem(CATEGORY_STORAGE_KEY);
+        }
+        renderCategoriesBar();
+
+        // Tự động cuộn pill được chọn vào giữa tầm nhìn
+        if (categoryChipContainer) {
+            setTimeout(() => {
+                const activePill = categoryChipContainer.querySelector('.cb-category-pill.active');
+                if (activePill) {
+                    activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                }
+            }, 50);
+        }
+
+        // Tự động tải lại câu hỏi gợi ý theo chuyên mục được chọn (nếu chưa chat)
+        if (messagesDiv && messagesDiv.querySelectorAll('.cb-message-wrapper').length <= 1) {
+            fetchSuggestions(CONFIG.activeCategory);
+        }
+    }
+
+    function renderCategoriesBar() {
+        if (!categoryChipContainer) return;
+        if (!CONFIG.categories || CONFIG.categories.length === 0) {
+            categoryChipContainer.innerHTML = '';
+            categoryChipContainer.style.display = 'none';
+            return;
+        }
+
+        categoryChipContainer.style.display = 'flex';
+        categoryChipContainer.innerHTML = '';
+
+        // Nút 'Tất cả'
+        const allBtn = document.createElement('button');
+        allBtn.type = 'button';
+        allBtn.className = `cb-category-pill ${!CONFIG.activeCategory ? 'active' : ''}`;
+        allBtn.innerHTML = `<span class="cb-category-pill-name">Tất cả</span>`;
+        allBtn.title = 'Tìm kiếm trong toàn bộ kho tài liệu';
+        allBtn.addEventListener('click', () => {
+            setActiveCategory(null);
+        });
+        categoryChipContainer.appendChild(allBtn);
+
+        // Các nút category
+        CONFIG.categories.forEach(cat => {
+            const isSelected = CONFIG.activeCategory === cat.slug;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `cb-category-pill ${isSelected ? 'active' : ''}`;
+            const icon = cat.icon || '🏷️';
+            btn.innerHTML = `
+                <span class="cb-category-pill-icon">${escapeHTML(icon)}</span>
+                <span class="cb-category-pill-name">${escapeHTML(cat.name)}</span>
+                ${isSelected ? '<span class="cb-category-pill-clear" title="Bỏ chọn">✕</span>' : ''}
+            `;
+            btn.title = `Chuyên mục: ${cat.name}`;
+            btn.addEventListener('click', (e) => {
+                // Nếu bấm vào icon clear hoặc bấm lại category đang chọn -> bỏ chọn
+                if (isSelected) {
+                    setActiveCategory(null);
+                } else {
+                    setActiveCategory(cat.slug);
+                }
+            });
+            categoryChipContainer.appendChild(btn);
+        });
+    }
+
+    // Mention Autocomplete Handlers
+    function showMentionPopup(query) {
+        if (!mentionPopup || !CONFIG.categories || CONFIG.categories.length === 0) {
+            hideMentionPopup();
+            return;
+        }
+
+        const q = (query || '').toLowerCase().trim();
+        filteredCategories = CONFIG.categories.filter(c =>
+            !q || (c.name && c.name.toLowerCase().includes(q)) || (c.slug && c.slug.toLowerCase().includes(q))
+        );
+
+        if (filteredCategories.length === 0) {
+            hideMentionPopup();
+            return;
+        }
+
+        mentionSelectedIndex = 0;
+        renderMentionPopup();
+        mentionPopup.style.display = 'block';
+    }
+
+    function hideMentionPopup() {
+        if (mentionPopup) {
+            mentionPopup.style.display = 'none';
+            mentionPopup.innerHTML = '';
+        }
+        mentionSelectedIndex = -1;
+        filteredCategories = [];
+    }
+
+    function renderMentionPopup() {
+        if (!mentionPopup) return;
+        mentionPopup.innerHTML = '';
+
+        const header = document.createElement('div');
+        header.className = 'cb-mention-header';
+        header.textContent = 'Chọn chuyên mục';
+        mentionPopup.appendChild(header);
+
+        filteredCategories.forEach((cat, index) => {
+            const item = document.createElement('div');
+            item.className = `cb-mention-item ${index === mentionSelectedIndex ? 'active' : ''}`;
+            const icon = cat.icon || '🏷️';
+            item.innerHTML = `
+                <span class="cb-mention-icon">${escapeHTML(icon)}</span>
+                <div class="cb-mention-info">
+                    <span class="cb-mention-name">${escapeHTML(cat.name)}</span>
+                    <span class="cb-mention-slug">${escapeHTML(cat.slug)}</span>
+                </div>
+            `;
+            item.addEventListener('mouseenter', () => {
+                mentionSelectedIndex = index;
+                updateMentionSelectedClass();
+            });
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault(); // Prevent blur
+                selectCategory(cat);
+            });
+            mentionPopup.appendChild(item);
+        });
+    }
+
+    function updateMentionSelectedClass() {
+        if (!mentionPopup) return;
+        const items = mentionPopup.querySelectorAll('.cb-mention-item');
+        items.forEach((it, idx) => {
+            if (idx === mentionSelectedIndex) {
+                it.classList.add('active');
+                it.scrollIntoView({ block: 'nearest' });
+            } else {
+                it.classList.remove('active');
+            }
+        });
+    }
+
+    function selectCategory(category) {
+        setActiveCategory(category.slug);
+        // Remove the @mention token from input
+        if (input) {
+            const val = input.value;
+            const cursorPos = input.selectionStart || val.length;
+            const before = val.substring(0, cursorPos);
+            const atIndex = before.lastIndexOf('@');
+            if (atIndex !== -1) {
+                const after = val.substring(cursorPos);
+                input.value = (val.substring(0, atIndex) + after).replace(/\s{2,}/g, ' ');
+            }
+            input.focus();
+        }
+        hideMentionPopup();
+    }
+
+    function checkMentionTrigger() {
+        if (!input || !CONFIG.categories || CONFIG.categories.length === 0) return;
+        const val = input.value;
+        const cursorPos = input.selectionStart || val.length;
+        const textBeforeCursor = val.substring(0, cursorPos);
+        const atIndex = textBeforeCursor.lastIndexOf('@');
+
+        if (atIndex !== -1) {
+            // Check that @ is at start or preceded by space
+            const charBeforeAt = atIndex > 0 ? textBeforeCursor[atIndex - 1] : ' ';
+            if (charBeforeAt === ' ' || charBeforeAt === '\n') {
+                const query = textBeforeCursor.substring(atIndex + 1);
+                // Don't trigger if user typed a space after @
+                if (!query.includes(' ')) {
+                    showMentionPopup(query);
+                    return;
+                }
+            }
+        }
+        hideMentionPopup();
+    }
+
+    function renderSuggestionsSkeleton() {
+        if (!messagesDiv) return;
+        // Check if suggestions or skeleton already rendered
+        if (document.querySelector('.cb-suggestions-container')) return;
+
+        const suggestionsContainer = document.createElement('div');
+        suggestionsContainer.className = 'cb-suggestions-container cb-suggestions-skeleton-wrapper';
+
+        const suggestionsTitle = document.createElement('div');
+        suggestionsTitle.className = 'cb-suggestions-skeleton-title cb-skeleton-shimmer';
+        suggestionsContainer.appendChild(suggestionsTitle);
+
+        const suggestionsList = document.createElement('div');
+        suggestionsList.className = 'cb-suggestions-list';
+
+        // Tạo 3 thanh skeleton nút gợi ý với độ dài tự nhiên
+        [88, 96, 75].forEach(widthPercent => {
+            const skeletonBtn = document.createElement('div');
+            skeletonBtn.className = 'cb-suggestion-skeleton-btn cb-skeleton-shimmer';
+            skeletonBtn.style.width = widthPercent + '%';
+            suggestionsList.appendChild(skeletonBtn);
+        });
+
+        suggestionsContainer.appendChild(suggestionsList);
+        messagesDiv.appendChild(suggestionsContainer);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function removeSuggestionsSkeleton() {
+        const skeletonWrapper = document.querySelector('.cb-suggestions-skeleton-wrapper');
+        if (skeletonWrapper) {
+            skeletonWrapper.remove();
+        }
+    }
+
+    async function fetchSuggestions(category = null) {
+        if (!CONFIG.chatbotId || !CONFIG.publicToken) return;
+
+        // Xóa gợi ý cũ trước đó nếu có (khi đổi category)
+        const oldSuggestions = document.querySelector('.cb-suggestions-container:not(.cb-suggestions-skeleton-wrapper)');
+        if (oldSuggestions) {
+            oldSuggestions.remove();
+        }
+
+        // 1. Kiểm tra cache trước - nếu đã có thì hiển thị ngay lập tức (không gọi lại API)
+        const cached = getCachedSuggestions(category);
+        if (cached && Array.isArray(cached) && cached.length > 0) {
+            CONFIG.suggestions = cached;
+            removeSuggestionsSkeleton();
+            renderSuggestions();
+            return;
+        }
+
+        // 2. Nếu chưa có trong cache thì mới hiển thị skeleton và gọi API
+        renderSuggestionsSkeleton();
+
+        try {
+            const catParam = category ? `?category=${encodeURIComponent(category)}` : '';
+            const response = await fetch(`${CONFIG.apiBaseUrl}/api/public/chatbot/${CONFIG.chatbotId}/suggest${catParam}`, {
                 method: 'GET',
                 headers: {
                     'x-public-token': CONFIG.publicToken
@@ -259,19 +589,25 @@
 
             if (response.ok) {
                 const resData = await response.json();
-                if (resData.statusCode === 200 && resData.data && resData.data.suggestions) {
+                if (resData.statusCode === 200 && resData.data && Array.isArray(resData.data.suggestions) && resData.data.suggestions.length > 0) {
                     CONFIG.suggestions = resData.data.suggestions;
-                    // Render suggestions
+                    // Lưu vào cache
+                    setCachedSuggestions(category, CONFIG.suggestions);
+                    removeSuggestionsSkeleton();
                     renderSuggestions();
+                    return;
                 }
             }
         } catch (e) {
             console.error('[Chatbot Embed] Fetch suggestions error:', e);
         }
+
+        // Xóa skeleton nếu không có suggestion hoặc lỗi
+        removeSuggestionsSkeleton();
     }
 
     function escapeHTML(str) {
-        return str
+        return (str || '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
@@ -283,7 +619,10 @@
         if (!messagesDiv || CONFIG.suggestions.length === 0) return;
 
         // Check if suggestions already rendered
-        if (document.querySelector('.cb-suggestions-container')) return;
+        const existing = document.querySelector('.cb-suggestions-container:not(.cb-suggestions-skeleton-wrapper)');
+        if (existing) {
+            existing.remove();
+        }
 
         const suggestionsContainer = document.createElement('div');
         suggestionsContainer.className = 'cb-suggestions-container';
@@ -332,6 +671,7 @@
         if (!message || isSending) return; // Prevent sending empty or duplicate
 
         isSending = true; // Lock sending
+        hideMentionPopup();
 
         // Disable UI while sending
         input.disabled = true;
@@ -360,7 +700,9 @@
                 }
                 : {
                     message: message,
-                    sessionId: CONFIG.sessionId
+                    sessionId: CONFIG.sessionId,
+                    category: CONFIG.activeCategory || null,
+                    show_sources: CONFIG.showSources
                 };
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -382,7 +724,7 @@
                     CONFIG.sessionId = resData.data.sessionId;
                     localStorage.setItem(STORAGE_KEY, resData.data.sessionId);
                 }
-                appendMessage('bot', resData.data.answer);
+                appendMessage('bot', resData.data.answer, resData.data.sources);
             } else {
                 // Handle specific errors
                 let errorMsg = resData.message || 'Xin lỗi, tôi đã gặp sự cố khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.';
@@ -410,7 +752,7 @@
         }
     }
 
-    function appendMessage(sender, text) {
+    function appendMessage(sender, text, sources) {
         const wrapper = document.createElement('div');
         wrapper.className = `cb-message-wrapper ${sender}`;
 
@@ -425,6 +767,26 @@
 
         if (sender === 'user') {
             messageDiv.style.background = CONFIG.themeColor;
+        }
+
+        // Render sources if available and requested
+        if (sender === 'bot' && Array.isArray(sources) && sources.length > 0) {
+            const sourcesDiv = document.createElement('div');
+            sourcesDiv.className = 'cb-sources-container';
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'cb-sources-title';
+            titleSpan.textContent = 'Nguồn tham khảo: ';
+            sourcesDiv.appendChild(titleSpan);
+
+            sources.forEach(src => {
+                const tag = document.createElement('span');
+                tag.className = 'cb-source-tag';
+                const filename = typeof src === 'string' ? src : (src.filename || src.title || JSON.stringify(src));
+                tag.textContent = filename;
+                tag.title = filename;
+                sourcesDiv.appendChild(tag);
+            });
+            messageDiv.appendChild(sourcesDiv);
         }
 
         const timeDiv = document.createElement('div');
@@ -490,52 +852,54 @@
             });
         });
 
-        // Update input focus styles by updating the style element
+        // Update input focus & category pill active styles by updating the style element
+        const dynamicCss = `
+            #chatbot-trigger-bubble {
+                background: linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)}) !important;
+            }
+            #chatbot-trigger-bubble:hover {
+                background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
+            }
+            #chatbot-input:focus {
+                border-color: ${CONFIG.themeColor} !important;
+                box-shadow: 0 0 0 3px ${rgbaColor(CONFIG.themeColor, 0.15)} !important;
+            }
+            #chatbot-send-btn {
+                background: ${CONFIG.themeColor} !important;
+            }
+            #chatbot-send-btn:hover {
+                background: ${darkenColor(CONFIG.themeColor, 10)} !important;
+            }
+            .cb-suggestion-btn:hover {
+                background: ${CONFIG.themeColor} !important;
+                color: white !important;
+                border-color: ${CONFIG.themeColor} !important;
+            }
+            .cb-category-pill:hover {
+                border-color: ${CONFIG.themeColor} !important;
+                color: ${CONFIG.themeColor} !important;
+            }
+            .cb-category-pill.active {
+                background: ${CONFIG.themeColor} !important;
+                color: white !important;
+                border-color: ${CONFIG.themeColor} !important;
+                box-shadow: 0 2px 6px ${rgbaColor(CONFIG.themeColor, 0.35)} !important;
+            }
+            .cb-category-chip {
+                border-color: ${CONFIG.themeColor} !important;
+            }
+            .cb-mention-item.active {
+                background: ${rgbaColor(CONFIG.themeColor, 0.1)} !important;
+            }
+        `;
+
         const existingStyles = document.querySelector('#chatbot-dynamic-styles');
         if (existingStyles) {
-            existingStyles.textContent = `
-                #chatbot-trigger-bubble {
-                    background: linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)}) !important;
-                }
-                #chatbot-trigger-bubble:hover {
-                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
-                }
-                #chatbot-input:focus {
-                    border-color: ${CONFIG.themeColor};
-                    box-shadow: 0 0 0 3px ${rgbaColor(CONFIG.themeColor, 0.15)};
-                }
-                #chatbot-send-btn:hover {
-                    background: ${darkenColor(CONFIG.themeColor, 10)};
-                }
-                .cb-suggestion-btn:hover {
-                    background: ${CONFIG.themeColor};
-                    color: white;
-                    border-color: ${CONFIG.themeColor};
-                }
-            `;
+            existingStyles.textContent = dynamicCss;
         } else {
             const dynamicStyles = document.createElement('style');
             dynamicStyles.id = 'chatbot-dynamic-styles';
-            dynamicStyles.textContent = `
-                #chatbot-trigger-bubble {
-                    background: linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)}) !important;
-                }
-                #chatbot-trigger-bubble:hover {
-                    background: linear-gradient(135deg, ${darkenColor(CONFIG.themeColor, 5)}, ${darkenColor(CONFIG.themeColor, 20)}) !important;
-                }
-                #chatbot-input:focus {
-                    border-color: ${CONFIG.themeColor};
-                    box-shadow: 0 0 0 3px ${rgbaColor(CONFIG.themeColor, 0.15)};
-                }
-                #chatbot-send-btn:hover {
-                    background: ${darkenColor(CONFIG.themeColor, 10)};
-                }
-                .cb-suggestion-btn:hover {
-                    background: ${CONFIG.themeColor};
-                    color: white;
-                    border-color: ${CONFIG.themeColor};
-                }
-            `;
+            dynamicStyles.textContent = dynamicCss;
             document.head.appendChild(dynamicStyles);
         }
     }
@@ -578,10 +942,11 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
                 outline: none;
                 position: relative;
                 font-size: 28px;
+                animation: cb-bubble-pop 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             }
             #chatbot-trigger-bubble:hover {
                 transform: scale(1.05) translateY(-2px);
@@ -606,18 +971,37 @@
                 flex-direction: column;
                 overflow: hidden;
                 margin-bottom: 16px;
-                animation: cb-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
                 border: 1px solid rgba(0, 0, 0, 0.08);
+                transform-origin: calc(100% - 30px) calc(100% + 40px);
+            }
+            .cb-pos-bottom-left #chatbot-window {
+                transform-origin: 30px calc(100% + 40px);
+            }
+            #chatbot-window.cb-open {
+                animation: cb-slide-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            #chatbot-window.cb-closing {
+                animation: cb-slide-out 0.18s cubic-bezier(0.4, 0, 0.2, 1) forwards;
             }
             
             @keyframes cb-slide-in {
                 from {
                     opacity: 0;
-                    transform: translateY(30px) scale(0.95);
+                    transform: translateY(20px) scale(0.85);
                 }
                 to {
                     opacity: 1;
                     transform: translateY(0) scale(1);
+                }
+            }
+            @keyframes cb-slide-out {
+                from {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
+                }
+                to {
+                    opacity: 0;
+                    transform: translateY(24px) scale(0.75);
                 }
             }
             
@@ -778,7 +1162,7 @@
                 background: ${CONFIG.themeColor};
                 color: white;
                 border-radius: 16px 16px 4px 16px;
-                text-align: right;
+                text-align: left;
             }
             
             .cb-message-time {
@@ -856,16 +1240,23 @@
                 flex: 1;
                 border: 1px solid #cbd5e1;
                 border-radius: 24px;
-                padding: 10px 16px;
+                padding: 12px 18px;
                 font-size: 14px;
                 outline: none;
                 transition: all 0.2s;
                 color: #1e293b;
                 resize: none;
-                max-height: 120px;
+                min-height: 46px;
+                max-height: 140px;
+                box-sizing: border-box;
                 overflow-y: auto;
+                scrollbar-width: none; /* Firefox */
+                -ms-overflow-style: none; /* IE and Edge */
                 line-height: 1.5;
                 font-family: inherit;
+            }
+            #chatbot-input::-webkit-scrollbar {
+                display: none; /* Chrome, Safari, Opera */
             }
             #chatbot-input:focus {
                 border-color: ${CONFIG.themeColor};
@@ -943,6 +1334,153 @@
                 border-color: ${CONFIG.themeColor};
             }
 
+            /* Suggestions Skeleton Loading */
+            .cb-skeleton-shimmer {
+                background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+                background-size: 200% 100%;
+                animation: cb-skeleton-wave 1.5s infinite ease-in-out;
+            }
+            .cb-suggestions-skeleton-title {
+                height: 14px;
+                width: 110px;
+                border-radius: 4px;
+                margin-bottom: 10px;
+            }
+            .cb-suggestion-skeleton-btn {
+                height: 35px;
+                border-radius: 8px;
+                border: 1px solid #f1f5f9;
+            }
+            @keyframes cb-skeleton-wave {
+                0% { background-position: 200% 0; }
+                100% { background-position: -200% 0; }
+            }
+
+            /* Category Bar under Header (Horizontal scrollable pills) */
+            .cb-category-bar {
+                background: #f8fafc;
+                padding: 8px 12px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                border-bottom: 1px solid #e2e8f0;
+                overflow-x: auto;
+                white-space: nowrap;
+                scrollbar-width: none; /* Firefox */
+                -ms-overflow-style: none; /* IE/Edge */
+                -webkit-overflow-scrolling: touch;
+            }
+            .cb-category-bar::-webkit-scrollbar {
+                display: none; /* Chrome/Safari */
+            }
+            .cb-category-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                background: white;
+                border: 1px solid #e2e8f0;
+                border-radius: 16px;
+                padding: 4px 10px;
+                font-size: 12px;
+                font-weight: 500;
+                color: #475569;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                flex-shrink: 0;
+                user-select: none;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            }
+            .cb-category-pill:hover {
+                border-color: ${CONFIG.themeColor};
+                color: ${CONFIG.themeColor};
+                background: #f1f5f9;
+                transform: translateY(-1px);
+            }
+            .cb-category-pill.active {
+                background: ${CONFIG.themeColor};
+                color: white;
+                border-color: ${CONFIG.themeColor};
+                box-shadow: 0 2px 6px ${rgbaColor(CONFIG.themeColor, 0.35)};
+            }
+            .cb-category-pill-icon {
+                font-size: 13px;
+                line-height: 1;
+            }
+            .cb-category-pill-name {
+                line-height: 1.2;
+            }
+            .cb-category-pill-clear {
+                font-size: 10px;
+                margin-left: 2px;
+                opacity: 0.85;
+                font-weight: bold;
+                transition: opacity 0.15s;
+            }
+            .cb-category-pill-clear:hover {
+                opacity: 1;
+            }
+
+            /* Mention Autocomplete Popup */
+            .cb-mention-popup {
+                position: absolute;
+                bottom: 64px;
+                left: 14px;
+                right: 14px;
+                max-height: 200px;
+                overflow-y: auto;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+                border: 1px solid #e2e8f0;
+                z-index: 1000;
+            }
+            .cb-mention-header {
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: #94a3b8;
+                padding: 8px 12px 4px 12px;
+                background: #f8fafc;
+                border-bottom: 1px solid #f1f5f9;
+            }
+            .cb-mention-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 8px 12px;
+                cursor: pointer;
+                transition: background 0.15s;
+                border-bottom: 1px solid #f8fafc;
+            }
+            .cb-mention-item:last-child {
+                border-bottom: none;
+            }
+            .cb-mention-item:hover, .cb-mention-item.active {
+                background: #f1f5f9;
+            }
+            .cb-mention-icon {
+                font-size: 16px;
+                flex-shrink: 0;
+            }
+            .cb-mention-info {
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .cb-mention-name {
+                font-size: 13px;
+                font-weight: 500;
+                color: #1e293b;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .cb-mention-slug {
+                font-size: 11px;
+                color: #64748b;
+            }
+
             /* Responsive adjustments */
             @media (max-width: 480px) {
                 #chatbot-window {
@@ -965,27 +1503,110 @@
         const closeBtn = document.getElementById('chatbot-close-btn');
 
         let isChatOpen = false;
+        let isTransitioning = false;
+
+        function openChat() {
+            if (isChatOpen || isTransitioning) return;
+            isChatOpen = true;
+            isTransitioning = true;
+            windowDiv.classList.remove('cb-closing');
+            windowDiv.classList.add('cb-open');
+            windowDiv.style.display = 'flex';
+            if (trigger) trigger.style.display = 'none';
+            if (input) input.focus();
+            renderCategoriesBar();
+            setTimeout(() => {
+                isTransitioning = false;
+            }, 320);
+        }
+
+        function closeChat(e) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            if (isTransitioning) return;
+            isChatOpen = false;
+            isTransitioning = true;
+            hideMentionPopup();
+            windowDiv.classList.remove('cb-open');
+            windowDiv.classList.add('cb-closing');
+
+            setTimeout(() => {
+                windowDiv.style.display = 'none';
+                windowDiv.classList.remove('cb-closing');
+                if (trigger) trigger.style.display = 'flex';
+                isTransitioning = false;
+            }, 175);
+        }
 
         function toggleChat() {
-            isChatOpen = !isChatOpen;
-            if (isChatOpen) {
-                windowDiv.style.display = 'flex';
-                trigger.style.display = 'none';
-                input.focus();
+            if (windowDiv && (windowDiv.style.display !== 'none' || isChatOpen)) {
+                closeChat();
             } else {
-                windowDiv.style.display = 'none';
-                trigger.style.display = 'flex';
+                openChat();
             }
         }
 
-        trigger.addEventListener('click', toggleChat);
-        closeBtn.addEventListener('click', toggleChat);
+        if (trigger) {
+            trigger.addEventListener('click', toggleChat);
+        }
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeChat);
+            closeBtn.addEventListener('touchend', closeChat);
+        }
 
         sendBtn.addEventListener('click', sendMessage);
+
+        // Input listeners for @ mention detection & keyboard navigation
+        input.addEventListener('input', () => {
+            checkMentionTrigger();
+        });
+
+        input.addEventListener('keyup', (e) => {
+            if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+                checkMentionTrigger();
+            }
+        });
+
         input.addEventListener('keydown', (e) => {
+            // Mention popup navigation
+            if (mentionPopup && mentionPopup.style.display === 'block' && filteredCategories.length > 0) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    mentionSelectedIndex = (mentionSelectedIndex + 1) % filteredCategories.length;
+                    updateMentionSelectedClass();
+                    return;
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    mentionSelectedIndex = (mentionSelectedIndex - 1 + filteredCategories.length) % filteredCategories.length;
+                    updateMentionSelectedClass();
+                    return;
+                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    if (mentionSelectedIndex >= 0 && mentionSelectedIndex < filteredCategories.length) {
+                        selectCategory(filteredCategories[mentionSelectedIndex]);
+                    }
+                    return;
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    hideMentionPopup();
+                    return;
+                }
+            }
+
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
+            }
+        });
+
+        // Hide mention popup when clicking outside
+        document.addEventListener('click', (e) => {
+            if (mentionPopup && mentionPopup.style.display === 'block') {
+                if (!mentionPopup.contains(e.target) && e.target !== input) {
+                    hideMentionPopup();
+                }
             }
         });
     }

@@ -10,7 +10,7 @@ class QdrantService:
         if config.QDRANT_URL.startswith("http"):
             self.client = QdrantClient(
                 url=config.QDRANT_URL,
-                api_key=config.QDRANT_API_KEY,
+                api_key=config.QDRANT_API_KEY or None,
                 check_compatibility=False
             )
         else:
@@ -27,6 +27,8 @@ class QdrantService:
         indexes = [
             ("workspace_id", models.PayloadSchemaType.KEYWORD),
             ("document_name", models.PayloadSchemaType.KEYWORD),
+            ("document_id", models.PayloadSchemaType.KEYWORD),
+            ("category", models.PayloadSchemaType.KEYWORD),
             ("page_num", models.PayloadSchemaType.INTEGER),
         ]
         for field_name, field_schema in indexes:
@@ -50,13 +52,43 @@ class QdrantService:
             sample_vector = embedding_service.embed_text(["sample"])[0]
             vector_size = len(sample_vector)
             
-            # First check if collection exists (lighter than get_collections)
+            # Check if collection exists
             try:
-                self.client.get_collection(collection_name=self.collection_name)
-                Log.info(f"[Qdrant] ✅ Collection '{self.collection_name}' already exists")
+                col_info = self.client.get_collection(collection_name=self.collection_name)
+                # Check vector size compatibility
+                existing_size = None
+                try:
+                    vectors_param = col_info.config.params.vectors
+                    if hasattr(vectors_param, 'size'):
+                        existing_size = vectors_param.size
+                    elif isinstance(vectors_param, dict):
+                        # Khi Qdrant trả về dict dạng {'': VectorParams(size=384, ...)}
+                        default_vector = vectors_param.get("") or next(iter(vectors_param.values()), None)
+                        if default_vector and hasattr(default_vector, 'size'):
+                            existing_size = default_vector.size
+                        elif isinstance(default_vector, dict):
+                            existing_size = default_vector.get("size")
+                except Exception as ex:
+                    Log.debug(f"[Qdrant] Could not read existing vector size: {ex}")
+                
+                if existing_size and existing_size != vector_size:
+                    Log.warning(
+                        f"[Qdrant] ⚠️ Collection '{self.collection_name}' có kích thước vector {existing_size} "
+                        f"không khớp với model embedding hiện tại ({vector_size} chiều). "
+                        f"Đang tự động xóa và tạo lại collection để tương thích..."
+                    )
+                    self.client.delete_collection(collection_name=self.collection_name)
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+                    )
+                    Log.info(f"[Qdrant] ✅ Recreated collection '{self.collection_name}' với size {vector_size}")
+                else:
+                    Log.info(f"[Qdrant] ✅ Collection '{self.collection_name}' already exists (size: {existing_size or vector_size})")
+                
                 self._ensure_payload_indexes()
                 return
-            except Exception:
+            except Exception as get_err:
                 # Collection doesn't exist, try to create it
                 Log.info(f"[Qdrant] Creating collection: {self.collection_name} with size {vector_size}")
                 self.client.create_collection(
@@ -78,20 +110,27 @@ class QdrantService:
             points=points
         )
 
-    def search(self, vector, workspace_id, limit=5):
+    def search(self, vector, workspace_id, limit=5, category: str | None = None):
         """
-        Search for similar vectors in a specific workspace using modern query_points API.
+        Search for similar vectors in a specific workspace, optionally filtered by category.
         """
-        search_filter = models.Filter(
-            must=[
+        must_conditions = [
+            models.FieldCondition(
+                key="workspace_id",
+                match=models.MatchValue(value=workspace_id),
+            )
+        ]
+        if category:
+            must_conditions.append(
                 models.FieldCondition(
-                    key="workspace_id",
-                    match=models.MatchValue(value=workspace_id),
+                    key="category",
+                    match=models.MatchValue(value=category),
                 )
-            ]
-        )
+            )
+
+        search_filter = models.Filter(must=must_conditions)
         
-        Log.debug(f"[Qdrant] Searching in workspace: {workspace_id}")
+        Log.debug(f"[Qdrant] Searching in workspace: {workspace_id} (category: {category})")
         response = self.client.query_points(
             collection_name=self.collection_name,
             query=vector,
@@ -99,9 +138,61 @@ class QdrantService:
             limit=limit,
             with_payload=True
         )
-        
-        # Modern Qdrant client returns a structure where points are in .points
         return response.points
+
+    def set_document_category(self, workspace_id: str, document_id: str | None, document_name: str, category: str | None):
+        """
+        Update or clear the 'category' payload on all points of a document without re-embedding.
+        Uses document_id if available, with fallback to document_name.
+        """
+        must_conditions = [
+            models.FieldCondition(key="workspace_id", match=models.MatchValue(value=str(workspace_id)))
+        ]
+        if document_id:
+            must_conditions.append(
+                models.FieldCondition(key="document_id", match=models.MatchValue(value=str(document_id)))
+            )
+        else:
+            must_conditions.append(
+                models.FieldCondition(key="document_name", match=models.MatchValue(value=document_name))
+            )
+
+        points_filter = models.Filter(must=must_conditions)
+
+        if category:
+            return self.client.set_payload(
+                collection_name=self.collection_name,
+                payload={"category": category},
+                points=models.FilterSelector(filter=points_filter)
+            )
+        else:
+            return self.client.delete_payload(
+                collection_name=self.collection_name,
+                keys=["category"],
+                points=models.FilterSelector(filter=points_filter)
+            )
+
+    def delete_by_category(self, workspace_id: str, category: str):
+        """
+        Delete all vector points belonging to a category within a workspace.
+        """
+        return self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="workspace_id",
+                            match=models.MatchValue(value=str(workspace_id)),
+                        ),
+                        models.FieldCondition(
+                            key="category",
+                            match=models.MatchValue(value=str(category)),
+                        ),
+                    ]
+                )
+            )
+        )
 
     def delete_by_workspace(self, workspace_id):
         """
@@ -121,26 +212,37 @@ class QdrantService:
             )
         )
 
-    def delete_by_document(self, workspace_id: str, document_name: str):
+    def delete_by_document(self, workspace_id: str, document_name: str, document_id: str | None = None):
         """
         Delete all vector points belonging to a specific document within a workspace.
-        Dùng cho: xóa document, reindex, replace file.
         """
+        must_conditions = [
+            models.FieldCondition(
+                key="workspace_id",
+                match=models.MatchValue(value=workspace_id),
+            )
+        ]
+        if document_id:
+            # We can match either document_id or document_name (or should match document_id if present)
+            # To be thoroughly safe with old/new points, we match workspace_id and document_name or document_id
+            must_conditions.append(
+                models.FieldCondition(
+                    key="document_id",
+                    match=models.MatchValue(value=str(document_id)),
+                )
+            )
+        else:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="document_name",
+                    match=models.MatchValue(value=document_name),
+                )
+            )
+
         return self.client.delete(
             collection_name=self.collection_name,
             points_selector=models.FilterSelector(
-                filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="workspace_id",
-                            match=models.MatchValue(value=workspace_id),
-                        ),
-                        models.FieldCondition(
-                            key="document_name",
-                            match=models.MatchValue(value=document_name),
-                        ),
-                    ]
-                )
+                filter=models.Filter(must=must_conditions)
             )
         )
 
@@ -249,6 +351,14 @@ class QdrantServiceProxy:
         if self.instance: return self.instance.delete_by_workspace(*args, **kwargs)
         raise Exception("Qdrant not initialized")
 
+    def set_document_category(self, *args, **kwargs):
+        if self.instance: return self.instance.set_document_category(*args, **kwargs)
+        raise Exception("Qdrant not initialized")
+
+    def delete_by_category(self, *args, **kwargs):
+        if self.instance: return self.instance.delete_by_category(*args, **kwargs)
+        raise Exception("Qdrant not initialized")
+
     def delete_by_document(self, *args, **kwargs):
         if self.instance: return self.instance.delete_by_document(*args, **kwargs)
         raise Exception("Qdrant not initialized")
@@ -266,3 +376,4 @@ class QdrantServiceProxy:
         return []
 
 qdrant_service = QdrantServiceProxy()
+

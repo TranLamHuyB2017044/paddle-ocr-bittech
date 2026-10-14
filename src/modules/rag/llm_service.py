@@ -97,13 +97,19 @@ class LLMService:
         
         try:
             import re
-            # Ưu tiên Gemini, fallback OpenAI
-            if gemini_extractor.is_configured and gemini_extractor.client:
+            # Mặc định dùng OpenAI, fallback sang Gemini nếu lỗi/không cấu hình
+            answer = ""
+            if openai_extractor.client:
+                try:
+                    answer = self._chat_openai(prompt, system_instruction)
+                except Exception as oe:
+                    Log.warning(f"[LLM-Title] ⚠️ OpenAI lỗi: {oe}. Đang thử fallback sang Gemini...")
+                    if gemini_extractor.is_configured and gemini_extractor.client:
+                        answer = self._chat_gemini(prompt, system_instruction)
+                    else:
+                        raise oe
+            elif gemini_extractor.is_configured and gemini_extractor.client:
                 answer = self._chat_gemini(prompt, system_instruction)
-            elif openai_extractor.client:
-                answer = self._chat_openai(prompt, system_instruction)
-            else:
-                answer = ""
             
             clean_title = answer.strip().strip('"\'`\n\r').replace('\n', ' ')
             clean_title = re.sub(r'^[#*\-\s]+', '', clean_title)

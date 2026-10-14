@@ -24,7 +24,8 @@ class QdrantService:
         if url.startswith("http"):
             self.client = QdrantClient(
                 url=url,
-                api_key=api_key
+                api_key=api_key or None,
+                check_compatibility=False
             )
         else:
             # Local storage mode

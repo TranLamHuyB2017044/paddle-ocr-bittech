@@ -66,6 +66,7 @@ def format_chatbot(bot):
     bot["workflow_webhook_url"] = bot.get("workflow_webhook_url", None)
     default_collect = False if bot.get("domain") in ("ocop", "administrative_doc") else True
     bot["collect_contact_info"] = bot.get("collect_contact_info", default_collect)
+    bot["show_sources"] = bot.get("show_sources", False)
     return bot
 
 
@@ -143,7 +144,8 @@ def get_public_chatbot_details(chatbot_id):
             "greeting": chatbot.get("greeting"),
             "workspace_id": str(chatbot["workspace_id"]) if chatbot.get("workspace_id") else None,
             "workflow_webhook_url": chatbot.get("workflow_webhook_url"),
-            "collect_contact_info": chatbot.get("collect_contact_info", False if chatbot.get("domain") in ("ocop", "administrative_doc") else True)
+            "collect_contact_info": chatbot.get("collect_contact_info", False if chatbot.get("domain") in ("ocop", "administrative_doc") else True),
+            "show_sources": chatbot.get("show_sources", False)
         }
         return jsonify({"statusCode": 200, "data": formatted})
     except Exception as e:
@@ -180,13 +182,17 @@ def public_chat_with_chatbot(chatbot_id):
         data = request.json or {}
         message = data.get("message")
         session_id = data.get("session_id") or data.get("sessionId") or secrets.token_urlsafe(16)
+        category = data.get("category")
+        if category:
+            category = str(category).strip() or None
         
         if not message:
             return jsonify({"statusCode": 400, "message": "Message is required"}), 400
         
         domain = chatbot.get("domain", "ecommerce")
+        show_sources = chatbot.get("show_sources", False)
         collect_contact = chatbot.get("collect_contact_info", False if domain in ("ocop", "administrative_doc") else True)
-        result = {"answer": "", "provider": "echo"}
+        result = {"answer": "", "provider": "echo", "sources": []}
         is_contact_info_reply = False
         
         # Check if the message contains contact info (only if collect_contact is enabled for this bot)
@@ -244,7 +250,9 @@ def public_chat_with_chatbot(chatbot_id):
                         telegram_bot_token=None,
                         telegram_chat_id=None,
                         chatbot_name=chatbot.get("name", "Chatbot"),
-                        domain=domain
+                        domain=domain,
+                        category=category,
+                        include_sources=show_sources
                     )
                     
                     no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]
@@ -273,11 +281,20 @@ def public_chat_with_chatbot(chatbot_id):
             sources=result.get("sources"),
             provider=result.get("provider"),
             session_id=session_id,
-            customer_info=customer_contact_info.get(session_id, {})
+            customer_info=customer_contact_info.get(session_id, {}),
+            category=category
         )
         
         waiting_state = waiting_for_contact.get(session_id, False) if collect_contact else False
-        return jsonify({"statusCode": 200, "data": {**result, "sessionId": session_id, "waitingForContact": waiting_state}})
+        return jsonify({
+            "statusCode": 200,
+            "data": {
+                **result,
+                "sessionId": session_id,
+                "category": category,
+                "waitingForContact": waiting_state
+            }
+        })
     except Exception as e:
         Log.error(f"[Public Chat] Error: {e}")
         return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
@@ -300,7 +317,8 @@ def get_public_chatbot_suggestions(chatbot_id):
         
         from src.modules.rag.rag_service import rag_service
         domain = chatbot.get("domain", "ecommerce")
-        suggestions = rag_service.suggest_questions(str(chatbot["workspace_id"]), domain=domain)
+        category = request.args.get('category')
+        suggestions = rag_service.suggest_questions(str(chatbot["workspace_id"]), domain=domain, category=category)
         return jsonify({"statusCode": 200, "data": {"suggestions": suggestions}})
     except Exception as e:
         Log.error(f"[Public Suggestions] Error: {e}")
@@ -353,6 +371,9 @@ def create_chatbot():
         default_collect = False if domain in ("ocop", "administrative_doc") else True
         collect_contact_info = parse_bool(raw_collect, default=default_collect)
 
+        # show_sources: default False across all domains per decision
+        show_sources = parse_bool(payload.get("show_sources"), default=False)
+
         greeting_input = str(payload.get("greeting", "")).strip() or None
         if not greeting_input and domain == "administrative_doc":
             greeting_input = "Xin chào! Tôi là trợ lý tư vấn tài liệu và văn bản hành chính. Tôi có thể hỗ trợ bạn tra cứu quy định, thủ tục, hồ sơ và thời hạn giải quyết theo các văn bản đã ban hành."
@@ -372,7 +393,8 @@ def create_chatbot():
             telegram_bot_token=str(payload.get("telegram_bot_token", "")).strip() or None,
             telegram_chat_id=str(payload.get("telegram_chat_id", "")).strip() or None,
             workflow_webhook_url=str(payload.get("workflow_webhook_url", "")).strip() or None,
-            collect_contact_info=collect_contact_info
+            collect_contact_info=collect_contact_info,
+            show_sources=show_sources
         )
 
         bot = chatbot_repo.find_by_id(bot_id)
@@ -425,6 +447,9 @@ def update_chatbot_user(chatbot_id):
             update_data["collect_contact_info"] = parse_bool(data["collect_contact_info"])
         elif "collect_contact" in data:
             update_data["collect_contact_info"] = parse_bool(data["collect_contact"])
+
+        if "show_sources" in data:
+            update_data["show_sources"] = parse_bool(data["show_sources"], default=False)
 
         success = chatbot_repo.update_chatbot(chatbot_id, update_data)
         if success:

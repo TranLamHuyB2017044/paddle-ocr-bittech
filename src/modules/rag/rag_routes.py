@@ -13,8 +13,28 @@ from src.shared.utils.logger import Log
 from src.core.config import MAX_RAG_FILE_SIZE, MAX_FILE_COUNT, MAX_DOCUMENTS_PER_WORKSPACE, DocStatus
 from src.shared.services.subscription_service import subscription_service
 from src.modules.auth.repositories.accounts_repository import accounts_repo
+from src.modules.rag.repositories.category_repository import category_repo
+from src.shared.repositories.audit_log_repository import audit_log_repo
 
 rag_bp = Blueprint('rag_bp', __name__)
+
+def _can_access_workspace(workspace):
+    """Kiểm tra quyền truy cập workspace: chủ sở hữu hoặc admin (role 0)"""
+    if not workspace:
+        return False
+    user = getattr(g, 'user', None)
+    if user and user.get('role') == 0:
+        return True
+    return workspace.get('user_id') == g.user_id
+
+def _can_access_document(doc):
+    """Kiểm tra quyền truy cập document: chủ sở hữu hoặc admin (role 0)"""
+    if not doc:
+        return False
+    user = getattr(g, 'user', None)
+    if user and user.get('role') == 0:
+        return True
+    return str(doc.get('user_id')) == g.user_id
 
 @rag_bp.route('/api/rag/workspaces', methods=['POST'])
 @require_auth
@@ -42,7 +62,11 @@ def create_workspace():
 @require_auth
 def list_workspaces():
     try:
-        workspaces = workspaces_repo.find_by_user(g.user_id)
+        user = getattr(g, 'user', None)
+        if user and user.get('role') == 0:
+            workspaces = workspaces_repo.find_all_workspaces()
+        else:
+            workspaces = workspaces_repo.find_by_user(g.user_id)
         
         # Add document count from Qdrant for each workspace
         for ws in workspaces:
@@ -63,9 +87,9 @@ def list_workspaces():
 @require_auth
 def get_workspace_details(workspace_id):
     try:
-        # Verify workspace belongs to user
+        # Verify workspace belongs to user or admin
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied or workspace not found"}), 403
             
         # Add extra info
@@ -98,9 +122,9 @@ def get_workspace_details(workspace_id):
 @require_auth
 def update_workspace(workspace_id):
     try:
-        # Verify workspace belongs to user
+        # Verify workspace belongs to user or admin
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         data = request.json
@@ -128,12 +152,12 @@ def update_workspace(workspace_id):
 @require_auth
 def delete_workspace(workspace_id):
     try:
-        # 1. Verify workspace exists and belongs to user
+        # 1. Verify workspace exists and belongs to user or admin
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
         if not workspace:
             return jsonify({"statusCode": 404, "message": "Workspace not found"}), 404
             
-        if workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         # 2. Delete vectors from Qdrant
@@ -240,7 +264,7 @@ def upload_to_workspace(workspace_id):
     try:
         # 1. Verify workspace
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied to workspace"}), 403
 
         is_allowed, msg = subscription_service.check_quota(g.user)
@@ -251,6 +275,16 @@ def upload_to_workspace(workspace_id):
         files = request.files.getlist('files')
         # Chỉ sử dụng vision_extract khi truyền cờ 'vision' bằng True (mặc định ưu tiên deepdoc và viet ocr)
         vision_extract = request.args.get('vision', 'false').lower() == 'true' or request.form.get('vision', 'false').lower() == 'true'
+        category = request.form.get('category') or request.args.get('category')
+        if category:
+            category = category.strip()
+            # Validate category exists and is active in this workspace
+            cat_obj = category_repo.find_active_by_slug(workspace_id, category)
+            if not cat_obj:
+                return jsonify({"statusCode": 400, "message": f"Category '{category}' không tồn tại trong workspace"}), 400
+        else:
+            category = None
+
         if not files:
             return jsonify({"statusCode": 400, "message": "No files uploaded"}), 400
             
@@ -259,10 +293,9 @@ def upload_to_workspace(workspace_id):
 
         # 3. Check individual file size
         for file in files:
-            # Di chuyển con trỏ đến cuối file để lấy kích thước
             file.seek(0, os.SEEK_END)
             file_size = file.tell()
-            file.seek(0) # Đưa con trỏ về đầu file để có thể đọc sau này
+            file.seek(0)
             
             if file_size > MAX_RAG_FILE_SIZE:
                  return jsonify({
@@ -271,8 +304,8 @@ def upload_to_workspace(workspace_id):
                  }), 413
 
         # Check document limit
-        current_docs = documents_repo.find_by_workspace(workspace_id)
-        if len(list(current_docs)) >= MAX_DOCUMENTS_PER_WORKSPACE:
+        current_docs_count = documents_repo.count_by_workspace(workspace_id)
+        if current_docs_count >= MAX_DOCUMENTS_PER_WORKSPACE:
              return jsonify({"statusCode": 400, "message": f"Workspace đã đạt giới hạn {MAX_DOCUMENTS_PER_WORKSPACE} tài liệu"}), 400
 
         from src.shared.utils.file_utils import save_uploaded_file_list
@@ -287,12 +320,13 @@ def upload_to_workspace(workspace_id):
         for idx, file_path in enumerate(saved_paths):
             original_filename = files[idx].filename
             
-            # Save Initial Doc record (kèm source_files để ownership check)
+            # Save Initial Doc record
             doc_id = documents_repo.save_document(
                 user_id=g.user_id,
                 workspace_id=workspace_id,
                 filename=original_filename,
                 status=DocStatus.UPLOADED,
+                category=category,
                 source_files=[
                     {
                         "file_name": os.path.basename(file_path),
@@ -301,31 +335,31 @@ def upload_to_workspace(workspace_id):
                 ]
             )
             
-            # Enqueue Background Task
-            # retry=Retry(max=3) # Optional: RQ retry logic
             from src.shared.utils.redis_client import publish_event
             publish_event(g.user_id, "document_status", {
                 "document_id": doc_id,
                 "status": DocStatus.UPLOADED,
                 "filename": original_filename,
                 "workspace_id": workspace_id,
+                "category": category,
                 "message": "Document uploaded and enqueued"
             })
 
             rag_queue.enqueue(
                 process_document_task,
                 args=(doc_id, workspace_id, file_path, original_filename, g.user_id),
-                kwargs={"vision_extract": vision_extract},
-                job_timeout='3m' 
+                kwargs={"vision_extract": vision_extract, "category": category},
+                job_timeout='15m' 
             )
             
             enqueued_docs.append({
                 "document_id": doc_id,
                 "filename": original_filename,
+                "category": category,
                 "status": DocStatus.UPLOADED
             })
             
-            Log.info(f"[RAG-API] Enqueued document {original_filename} (ID: {doc_id})")
+            Log.info(f"[RAG-API] Enqueued document {original_filename} (ID: {doc_id}, Category: {category})")
 
         return jsonify({
             "statusCode": 202, # Accepted
@@ -344,10 +378,11 @@ def upload_to_workspace(workspace_id):
 def list_documents(workspace_id):
     try:
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
             
-        documents = documents_repo.find_by_workspace(workspace_id)
+        category = request.args.get('category')
+        documents = documents_repo.find_by_workspace(workspace_id, category=category)
         # Convert ObjectId to string
         for doc in documents:
             doc["_id"] = str(doc["_id"])
@@ -369,7 +404,7 @@ def get_document_status(document_id):
         if not doc:
             return jsonify({"statusCode": 404, "message": "Document not found"}), 404
             
-        if str(doc['user_id']) != g.user_id:
+        if not _can_access_document(doc):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
             
         return jsonify({
@@ -395,12 +430,13 @@ def chat_with_workspace(workspace_id):
     try:
         # Verify workspace
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
-        data = request.json
+        data = request.json or {}
         question = data.get('question')
         provider = data.get('provider', 'auto')
+        category = data.get('category')
         
         if not question:
             return jsonify({"statusCode": 400, "message": "Question is required"}), 400
@@ -414,7 +450,7 @@ def chat_with_workspace(workspace_id):
         if g.user.get('account_id'):
             accounts_repo.increment_usage(g.user.get('account_id'))
 
-        result = rag_service.query(question, workspace_id, provider=provider)
+        result = rag_service.query(question, workspace_id, provider=provider, category=category)
         
         # Save to History
         chat_history_repo.save_message(
@@ -440,10 +476,11 @@ def suggest_workspace_questions(workspace_id):
     try:
         # Verify workspace
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
-        suggestions = rag_service.suggest_questions(workspace_id)
+        category = request.args.get('category')
+        suggestions = rag_service.suggest_questions(workspace_id, category=category)
         
         return jsonify({
             "statusCode": 200,
@@ -459,7 +496,7 @@ def get_workspace_chat_history(workspace_id):
     try:
         # Verify workspace
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         limit = request.args.get('limit', default=50, type=int)
@@ -482,7 +519,7 @@ def delete_workspace_chat_history(workspace_id):
     try:
         # Verify workspace
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         deleted_count = chat_history_repo.clear_history(workspace_id)
@@ -514,7 +551,7 @@ def delete_document(workspace_id, document_id):
     try:
         # 1. Verify workspace ownership
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied to workspace"}), 403
 
         # 2. Verify document belongs to this workspace and user
@@ -525,7 +562,7 @@ def delete_document(workspace_id, document_id):
         if str(doc.get("workspace_id")) != workspace_id:
             return jsonify({"statusCode": 403, "message": "Document không thuộc workspace này"}), 403
 
-        if str(doc.get("user_id")) != g.user_id:
+        if not _can_access_document(doc):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         document_name = doc.get("filename", "")
@@ -572,7 +609,7 @@ def reindex_document(document_id):
         if not doc:
             return jsonify({"statusCode": 404, "message": "Document không tồn tại"}), 404
 
-        if str(doc.get("user_id")) != g.user_id:
+        if not _can_access_document(doc):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         workspace_id = doc.get("workspace_id")
@@ -594,14 +631,21 @@ def reindex_document(document_id):
 
         # 3. Xóa vectors cũ trong Qdrant
         try:
-            qdrant_service.delete_by_document(workspace_id, document_name)
+            qdrant_service.delete_by_document(workspace_id, document_name, document_id=str(document_id))
             Log.info(f"[RAG-API] Đã xóa vectors cũ: workspace={workspace_id}, doc={document_name}")
         except Exception as q_err:
             Log.error(f"[RAG-API] Lỗi xóa Qdrant vectors khi reindex: {q_err}")
 
         # 4. Index lại từ raw_text đã lưu
         structured_data = [{"text": raw_text, "page_num": 1}]
-        total_chunks = rag_service.index_text(structured_data, workspace_id, document_name)
+        doc_category = doc.get("category")
+        total_chunks = rag_service.index_text(
+            structured_data,
+            workspace_id,
+            document_name,
+            category=doc_category,
+            document_id=str(document_id)
+        )
 
         # 5. Cập nhật status READY
         documents_repo.update_status(document_id, "ready", total_chunks=total_chunks)
@@ -620,13 +664,13 @@ def reindex_document(document_id):
             "data": {
                 "document_id": document_id,
                 "document_name": document_name,
-                "total_chunks": total_chunks
+                "total_chunks": total_chunks,
+                "category": doc_category
             }
         })
 
     except Exception as e:
         Log.error(f"[RAG-API] reindex_document error: {e}")
-        # Đặt status về FAILED nếu có lỗi
         try:
             documents_repo.update_status(document_id, "failed", error_message=str(e))
         except Exception:
@@ -644,24 +688,28 @@ def reindex_document(document_id):
 def upload_text_to_workspace(workspace_id):
     """
     Tạo document từ raw text (không cần file):
-      Body JSON: { "text": "...", "document_name": "..." }
-      1. Verify quyền sở hữu workspace
-      2. Lưu vào MongoDB (status=ready, raw_text)
-      3. Index vào Qdrant ngay lập tức
-      4. Trả về document_id
+      Body JSON: { "text": "...", "document_name": "...", "category": "..." }
     """
     try:
         from src.core.config import DocStatus
 
         # 1. Verify workspace ownership
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied to workspace"}), 403
 
         # 2. Parse body
         data = request.get_json(silent=True) or {}
         text = (data.get("text") or "").strip()
         document_name = (data.get("document_name") or "").strip()
+        category = data.get("category")
+        if category:
+            category = category.strip()
+            cat_obj = category_repo.find_active_by_slug(workspace_id, category)
+            if not cat_obj:
+                return jsonify({"statusCode": 400, "message": f"Category '{category}' không tồn tại trong workspace"}), 400
+        else:
+            category = None
 
         if not text:
             return jsonify({"statusCode": 400, "message": "Trường 'text' là bắt buộc"}), 400
@@ -671,8 +719,8 @@ def upload_text_to_workspace(workspace_id):
             document_name = llm_service.generate_title(text, fallback_filename="Văn bản mới")
 
         # Check document limit
-        current_docs = list(documents_repo.find_by_workspace(workspace_id))
-        if len(current_docs) >= MAX_DOCUMENTS_PER_WORKSPACE:
+        current_docs_count = documents_repo.count_by_workspace(workspace_id)
+        if current_docs_count >= MAX_DOCUMENTS_PER_WORKSPACE:
             return jsonify({
                 "statusCode": 400,
                 "message": f"Workspace đã đạt giới hạn {MAX_DOCUMENTS_PER_WORKSPACE} tài liệu"
@@ -685,11 +733,18 @@ def upload_text_to_workspace(workspace_id):
             filename=document_name,
             status=DocStatus.PROCESSING,
             raw_text=text,
+            category=category
         )
 
-        # 4. Index vào Qdrant ngay lập tức (text nhỏ, không cần worker)
+        # 4. Index vào Qdrant ngay lập tức
         structured_data = [{"text": text, "page_num": 1}]
-        total_chunks = rag_service.index_text(structured_data, workspace_id, document_name)
+        total_chunks = rag_service.index_text(
+            structured_data,
+            workspace_id,
+            document_name,
+            category=category,
+            document_id=str(doc_id)
+        )
 
         # 5. Cập nhật status READY
         documents_repo.update_status(doc_id, DocStatus.READY, total_chunks=total_chunks)
@@ -699,16 +754,18 @@ def upload_text_to_workspace(workspace_id):
             "document_id": doc_id,
             "status": DocStatus.READY,
             "filename": document_name,
-            "workspace_id": workspace_id
+            "workspace_id": workspace_id,
+            "category": category
         })
 
-        Log.info(f"[RAG-API] Upload text thành công: doc={doc_id}, name={document_name}, chunks={total_chunks}")
+        Log.info(f"[RAG-API] Upload text thành công: doc={doc_id}, name={document_name}, category={category}, chunks={total_chunks}")
         return jsonify({
             "statusCode": 201,
             "message": f"Đã tạo và index document '{document_name}' từ raw text thành công",
             "data": {
                 "document_id": doc_id,
                 "document_name": document_name,
+                "category": category,
                 "total_chunks": total_chunks,
                 "status": DocStatus.READY
             }
@@ -725,11 +782,7 @@ def upload_text_to_workspace(workspace_id):
 def update_document_text(document_id):
     """
     Cập nhật raw_text của document và reindex tự động:
-      Body JSON: { "new_text": "..." }
-      1. Verify quyền sở hữu
-      2. Cập nhật raw_text trong MongoDB
-      3. Xóa vectors cũ trong Qdrant
-      4. Index lại với nội dung mới
+      Body JSON: { "new_text": "...", "category": "..." }
     """
     try:
         from src.core.config import DocStatus
@@ -739,7 +792,7 @@ def update_document_text(document_id):
         if not doc:
             return jsonify({"statusCode": 404, "message": "Document không tồn tại"}), 404
 
-        if str(doc.get("user_id")) != g.user_id:
+        if not _can_access_document(doc):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         # 2. Parse body
@@ -755,6 +808,19 @@ def update_document_text(document_id):
         if not workspace_id:
             return jsonify({"statusCode": 400, "message": "Document không thuộc workspace nào"}), 400
 
+        category = doc.get("category")
+        if "category" in data:
+            req_cat = data.get("category")
+            if req_cat:
+                req_cat = req_cat.strip()
+                cat_obj = category_repo.find_active_by_slug(workspace_id, req_cat)
+                if not cat_obj:
+                    return jsonify({"statusCode": 400, "message": f"Category '{req_cat}' không tồn tại trong workspace"}), 400
+                category = req_cat
+            else:
+                category = None
+            documents_repo.update_metadata(document_id, category=category)
+
         # 3. Đánh trạng thái processing
         documents_repo.update_status(document_id, DocStatus.PROCESSING)
 
@@ -763,14 +829,20 @@ def update_document_text(document_id):
 
         # 5. Xóa vectors cũ
         try:
-            qdrant_service.delete_by_document(workspace_id, document_name)
+            qdrant_service.delete_by_document(workspace_id, document_name, document_id=str(document_id))
             Log.info(f"[RAG-API] Đã xóa vectors cũ khi update text: doc={document_name}")
         except Exception as q_err:
             Log.error(f"[RAG-API] Lỗi xóa Qdrant khi update text: {q_err}")
 
         # 6. Index lại với nội dung mới
         structured_data = [{"text": new_text, "page_num": 1}]
-        total_chunks = rag_service.index_text(structured_data, workspace_id, document_name)
+        total_chunks = rag_service.index_text(
+            structured_data,
+            workspace_id,
+            document_name,
+            category=category,
+            document_id=str(document_id)
+        )
 
         # 7. Cập nhật status READY
         documents_repo.update_status(document_id, DocStatus.READY, total_chunks=total_chunks)
@@ -789,6 +861,7 @@ def update_document_text(document_id):
             "data": {
                 "document_id": document_id,
                 "document_name": document_name,
+                "category": category,
                 "total_chunks": total_chunks
             }
         })
@@ -825,7 +898,7 @@ def replace_document_file(workspace_id, document_id):
 
         # 1. Verify workspace ownership
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied to workspace"}), 403
 
         # 2. Verify document
@@ -836,7 +909,7 @@ def replace_document_file(workspace_id, document_id):
         if str(doc.get("workspace_id")) != workspace_id:
             return jsonify({"statusCode": 403, "message": "Document không thuộc workspace này"}), 403
 
-        if str(doc.get("user_id")) != g.user_id:
+        if not _can_access_document(doc):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
         # 3. Lấy file mới
@@ -855,6 +928,7 @@ def replace_document_file(workspace_id, document_id):
             }), 413
 
         # 4. Lưu file mới vào disk
+        # 4. Lưu file mới vào disk
         saved_paths = save_uploaded_file_list([new_file])
         if not saved_paths:
             return jsonify({"statusCode": 400, "message": "Không thể lưu file"}), 400
@@ -863,9 +937,22 @@ def replace_document_file(workspace_id, document_id):
         original_filename = new_file.filename
         old_document_name = doc.get("filename", "")
 
-        # 5. Xóa vectors cũ (theo tên file cũ)
+        # Category from request or keep existing
+        category = doc.get("category")
+        if "category" in request.form or "category" in request.args:
+            req_cat = request.form.get("category") or request.args.get("category")
+            if req_cat:
+                req_cat = req_cat.strip()
+                cat_obj = category_repo.find_active_by_slug(workspace_id, req_cat)
+                if not cat_obj:
+                    return jsonify({"statusCode": 400, "message": f"Category '{req_cat}' không tồn tại trong workspace"}), 400
+                category = req_cat
+            else:
+                category = None
+
+        # 5. Xóa vectors cũ
         try:
-            qdrant_service.delete_by_document(workspace_id, old_document_name)
+            qdrant_service.delete_by_document(workspace_id, old_document_name, document_id=str(document_id))
             Log.info(f"[RAG-API] Đã xóa vectors cũ khi replace: {old_document_name}")
         except Exception as q_err:
             Log.error(f"[RAG-API] Lỗi xóa Qdrant khi replace: {q_err}")
@@ -876,6 +963,7 @@ def replace_document_file(workspace_id, document_id):
             {"$set": {
                 "filename": original_filename,
                 "status": DocStatus.UPLOADED,
+                "category": category,
                 "raw_text": None,
                 "total_chunks": 0,
                 "error_message": None,
@@ -888,13 +976,12 @@ def replace_document_file(workspace_id, document_id):
         )
 
         # 7. Enqueue process_document_task
-        # Chỉ sử dụng vision_extract khi truyền cờ 'vision' bằng True (mặc định ưu tiên deepdoc và viet ocr)
         vision_extract = request.args.get('vision', 'false').lower() == 'true' or request.form.get('vision', 'false').lower() == 'true'
         rag_queue.enqueue(
             process_document_task,
             args=(document_id, workspace_id, new_file_path, original_filename, g.user_id),
-            kwargs={"vision_extract": vision_extract},
-            job_timeout='3m'
+            kwargs={"vision_extract": vision_extract, "category": category},
+            job_timeout='15m'
         )
 
         from src.shared.utils.redis_client import publish_event
@@ -902,6 +989,7 @@ def replace_document_file(workspace_id, document_id):
             "document_id": document_id,
             "status": DocStatus.UPLOADED,
             "filename": original_filename,
+            "category": category,
             "message": "File mới đã được upload và đang xử lý"
         })
 
@@ -912,6 +1000,7 @@ def replace_document_file(workspace_id, document_id):
             "data": {
                 "document_id": document_id,
                 "new_filename": original_filename,
+                "category": category,
                 "status": DocStatus.UPLOADED
             }
         }), 202
@@ -926,23 +1015,18 @@ def replace_document_file(workspace_id, document_id):
 @require_auth
 def reindex_all_documents(workspace_id):
     """
-    Reindex toàn bộ document trong workspace:
-      1. Verify quyền sở hữu workspace
-      2. Duyệt tất cả document trong workspace
-      3. Với mỗi document có raw_text → xóa vectors cũ → index lại
-      4. Document không có raw_text → bỏ qua và báo cáo
-      5. Trả về tổng kết
+    Reindex toàn bộ document trong workspace (bỏ qua tài liệu is_deleted).
     """
     try:
         from src.core.config import DocStatus
 
         # 1. Verify workspace ownership
         workspace = workspaces_repo.find_workspace_by_id(workspace_id)
-        if not workspace or workspace['user_id'] != g.user_id:
+        if not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Access denied to workspace"}), 403
 
-        # 2. Lấy tất cả documents trong workspace
-        all_docs = list(documents_repo.find_by_workspace(workspace_id))
+        # 2. Lấy tất cả documents active trong workspace
+        all_docs = list(documents_repo.find_by_workspace(workspace_id, include_deleted=False))
         if not all_docs:
             return jsonify({
                 "statusCode": 200,
@@ -957,6 +1041,7 @@ def reindex_all_documents(workspace_id):
             doc_id = str(doc["_id"])
             document_name = doc.get("filename", "")
             raw_text = doc.get("raw_text", "")
+            doc_category = doc.get("category")
 
             if not raw_text or not raw_text.strip():
                 Log.info(f"[RAG-API] reindex-all: Bỏ qua {document_name} (không có raw_text)")
@@ -967,18 +1052,24 @@ def reindex_all_documents(workspace_id):
 
             try:
                 # Xóa vectors cũ
-                qdrant_service.delete_by_document(workspace_id, document_name)
+                qdrant_service.delete_by_document(workspace_id, document_name, document_id=doc_id)
 
                 # Index lại
                 structured_data = [{"text": raw_text, "page_num": 1}]
-                total_chunks = rag_service.index_text(structured_data, workspace_id, document_name)
+                total_chunks = rag_service.index_text(
+                    structured_data,
+                    workspace_id,
+                    document_name,
+                    category=doc_category,
+                    document_id=doc_id
+                )
 
                 # Cập nhật status
                 documents_repo.update_status(doc_id, DocStatus.READY, total_chunks=total_chunks)
 
                 succeeded += 1
                 results.append({"document_id": doc_id, "name": document_name,
-                                 "result": "success", "total_chunks": total_chunks})
+                                 "category": doc_category, "result": "success", "total_chunks": total_chunks})
                 Log.info(f"[RAG-API] reindex-all: Thành công {document_name} ({total_chunks} chunks)")
 
             except Exception as doc_err:
@@ -1016,9 +1107,8 @@ def reindex_all_documents(workspace_id):
 @require_auth
 def update_document_metadata(document_id):
     """
-    Cập nhật metadata của document (không đụng đến Qdrant vectors):
-      Body JSON: { "filename": "...", "description": "...", "tags": [...] }
-      Chỉ cập nhật MongoDB, không reindex.
+    Cập nhật metadata của document (filename, description, tags, category).
+    Nếu đổi category, gọi Qdrant set_document_category payload mà không re-embed.
     """
     try:
         # 1. Verify document ownership
@@ -1026,13 +1116,13 @@ def update_document_metadata(document_id):
         if not doc:
             return jsonify({"statusCode": 404, "message": "Document không tồn tại"}), 404
 
-        if str(doc.get("user_id")) != g.user_id:
+        if not _can_access_document(doc):
             return jsonify({"statusCode": 403, "message": "Access denied"}), 403
 
-        # 2. Parse body – chỉ cho phép các trường metadata an toàn
+        workspace_id = doc.get("workspace_id")
         data = request.get_json(silent=True) or {}
 
-        ALLOWED_FIELDS = {"filename", "description", "tags"}
+        ALLOWED_FIELDS = {"filename", "description", "tags", "category"}
         update_fields = {k: v for k, v in data.items() if k in ALLOWED_FIELDS}
 
         if not update_fields:
@@ -1045,6 +1135,41 @@ def update_document_metadata(document_id):
         if "tags" in update_fields:
             if not isinstance(update_fields["tags"], list):
                 return jsonify({"statusCode": 400, "message": "'tags' phải là danh sách"}), 400
+
+        # Validate & handle category change
+        if "category" in update_fields:
+            new_cat = update_fields["category"]
+            if new_cat:
+                new_cat = str(new_cat).strip()
+                cat_obj = category_repo.find_active_by_slug(workspace_id, new_cat)
+                if not cat_obj:
+                    return jsonify({"statusCode": 400, "message": f"Category '{new_cat}' không tồn tại trong workspace"}), 400
+                update_fields["category"] = new_cat
+            else:
+                update_fields["category"] = None
+
+            # Update Qdrant payload directly
+            try:
+                qdrant_service.set_document_category(
+                    workspace_id=workspace_id,
+                    document_id=str(document_id),
+                    document_name=doc.get("filename", ""),
+                    category=update_fields["category"]
+                )
+            except Exception as q_err:
+                Log.error(f"[RAG-API] Failed to update category in Qdrant: {q_err}")
+
+            # Audit log
+            audit_log_repo.log(
+                action="document.category_change",
+                actor_user_id=g.user_id,
+                workspace_id=workspace_id,
+                target_type="document",
+                target_id=str(document_id),
+                snapshot={"old_category": doc.get("category"), "new_category": update_fields["category"], "filename": doc.get("filename")},
+                ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent")
+            )
 
         # 3. Cập nhật MongoDB
         updated = documents_repo.update_metadata(document_id, **update_fields)

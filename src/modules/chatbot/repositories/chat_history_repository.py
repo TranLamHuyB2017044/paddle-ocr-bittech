@@ -8,7 +8,7 @@ class ChatHistoryRepository(BaseRepository):
     def __init__(self):
         super().__init__("chat_histories")
 
-    def save_message(self, workspace_id, user_id, question, answer, sources=None, provider=None, session_id=None, customer_info=None):
+    def save_message(self, workspace_id, user_id, question, answer, sources=None, provider=None, session_id=None, customer_info=None, category=None):
         message = {
             "workspace_id": ObjectId(workspace_id) if isinstance(workspace_id, str) and ObjectId.is_valid(workspace_id) else workspace_id,
             "user_id": ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id,
@@ -18,6 +18,7 @@ class ChatHistoryRepository(BaseRepository):
             "sources": sources or [],
             "provider": provider,
             "customer_info": customer_info or {},
+            "category": category,
             "timestamp": datetime.now()
         }
         return self.create(message)

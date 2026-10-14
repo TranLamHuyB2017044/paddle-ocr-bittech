@@ -59,10 +59,12 @@ register_modules(app)
 
 # Register Other Blueprints
 from src.modules.rag.rag_routes import rag_bp
+from src.modules.chatbot.category_routes import category_bp
 from src.core.sse.routes import sse_bp
 from src.modules.product_recognition.routes.product_routes import product_bp
 
 app.register_blueprint(rag_bp)
+app.register_blueprint(category_bp)
 app.register_blueprint(sse_bp)
 app.register_blueprint(product_bp, url_prefix='/api')
 

@@ -54,13 +54,13 @@ def silent_cleanup_files(file_paths):
     thread = threading.Thread(target=cleanup, daemon=True)
     thread.start()
 
-def process_document_task(doc_id, workspace_id, file_path, original_filename, user_id, vision_extract=False):
+def process_document_task(doc_id, workspace_id, file_path, original_filename, user_id, vision_extract=False, category: str | None = None):
     """
     Background task for RAG indexing
     """
     try:
         start_time = time.time()
-        Log.info(f"[Worker] Starting processing document: {original_filename}")
+        Log.info(f"[Worker] Starting processing document: {original_filename} (Category: {category})")
         documents_repo.update_status(doc_id, DocStatus.PROCESSING)
         publish_event(user_id, "document_status", {"document_id": doc_id, "status": DocStatus.PROCESSING})
         
@@ -163,15 +163,22 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
             # Tự động tạo tên tài liệu thông minh dựa trên nội dung trích xuất
             from src.modules.rag.llm_service import llm_service
             smart_title = llm_service.generate_title(combined_raw_text, fallback_filename=original_filename)
-            Log.info(f"[Worker] Smart title for RAG doc {doc_id}: '{smart_title}' (original: '{original_filename}')")
+            Log.info(f"[Worker] Smart title for RAG doc {doc_id}: '{smart_title}' (original: '{original_filename}', Category: '{category}')")
 
-            total_chunks = rag_service.index_text(structured_data, workspace_id, smart_title)
+            total_chunks = rag_service.index_text(
+                structured_data,
+                workspace_id,
+                smart_title,
+                category=category,
+                document_id=str(doc_id)
+            )
             documents_repo.update_status(
                 doc_id, DocStatus.READY,
                 total_chunks=total_chunks,
                 raw_text=combined_raw_text,
                 filename=smart_title,
-                original_filename=original_filename
+                original_filename=original_filename,
+                category=category
             )
             publish_event(user_id, "document_status", {
                 "document_id": doc_id,
@@ -179,7 +186,8 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                 "filename": smart_title,
                 "original_filename": original_filename,
                 "workspace_id": workspace_id,
-                "total_chunks": total_chunks
+                "total_chunks": total_chunks,
+                "category": category
             })
         else:
             raise Exception("No text could be extracted")

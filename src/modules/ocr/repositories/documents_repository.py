@@ -9,29 +9,25 @@ class DocumentsRepository(BaseRepository):
     
     def save_document(self, user_id, doc_type=None, workspace_id=None, filename=None,
                       status=None, source_files: list | None = None,
-                      raw_text: str | None = None, **kwargs):
+                      raw_text: str | None = None, category: str | None = None, **kwargs):
         """
         Save document metadata (Compatible with both OCR logs and RAG system).
-
-        Args:
-            source_files: Danh sách metadata file đã lưu trên disk, mỗi phần tử có dạng:
-                {
-                    "file_name": "20260514_101010_0_front.jpg",
-                    "storage_path": "uploads/20260514_101010_0_front.jpg"
-                }
-                Dùng để thực hiện ownership check khi user request /uploads/<filename>.
-            raw_text: Nội dung văn bản thô (dùng cho RAG upload-text và reindex).
         """
         data: dict[str, Any] = {
             "user_id": ObjectId(user_id) if user_id else None,
             "created_at": datetime.now(),
-            "updated_at": datetime.now()
+            "updated_at": datetime.now(),
+            "is_deleted": False,
+            "deleted_at": None,
+            "deleted_by": None,
+            "deleted_reason": None
         }
         
         # RAG specific fields
-        if workspace_id: data["workspace_id"] = workspace_id
+        if workspace_id: data["workspace_id"] = str(workspace_id)
         if filename: data["filename"] = filename
         if status: data["status"] = status
+        if category: data["category"] = category
         
         # OCR log specific fields (backward compatibility)
         if doc_type: data["document_type"] = doc_type
@@ -53,15 +49,9 @@ class DocumentsRepository(BaseRepository):
         """
         Tìm document đầu tiên chứa file tại storage_path.
         Dùng để ownership check trên route /uploads/<filename>.
-
-        Args:
-            storage_path: Đường dẫn tương đối, ví dụ "uploads/20260514_front.jpg"
-
-        Returns:
-            Document dict hoặc None nếu không tìm thấy.
         """
         return self.collection.find_one(
-            {"source_files.storage_path": storage_path}
+            {"source_files.storage_path": storage_path, "is_deleted": {"$ne": True}}
         )
 
     def update_status(self, doc_id, status, **kwargs):
@@ -72,17 +62,78 @@ class DocumentsRepository(BaseRepository):
             "status": status,
             "updated_at": datetime.now()
         }
-        
-        # Add any other fields (total_chunks, error_message, result, etc.)
         update_data.update(kwargs)
-            
         self.collection.update_one(
             {"_id": ObjectId(doc_id)},
             {"$set": update_data}
         )
 
-    def find_by_workspace(self, workspace_id):
-        return self.find_all({"workspace_id": workspace_id})
+    def find_by_workspace(self, workspace_id, category: str | None = None, include_deleted: bool = False):
+        query: dict[str, Any] = {"workspace_id": str(workspace_id)}
+        if not include_deleted:
+            query["is_deleted"] = {"$ne": True}
+        if category:
+            query["category"] = category
+        return self.find_all(query)
+
+    def count_by_workspace(self, workspace_id, category: str | None = None) -> int:
+        query: dict[str, Any] = {
+            "workspace_id": str(workspace_id),
+            "is_deleted": {"$ne": True}
+        }
+        if category:
+            query["category"] = category
+        return self.collection.count_documents(query)
+
+    def soft_delete_by_category(self, workspace_id: str, category_slug: str, deleted_by: str | None = None) -> list:
+        """
+        Soft-delete all documents belonging to a category.
+        Returns the list of affected document dicts (including id and filename).
+        """
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        query = {
+            "workspace_id": str(workspace_id),
+            "category": category_slug,
+            "is_deleted": {"$ne": True}
+        }
+        docs = list(self.collection.find(query, {"_id": 1, "filename": 1, "category": 1, "raw_text": 1}))
+        if docs:
+            self.collection.update_many(
+                query,
+                {"$set": {
+                    "is_deleted": True,
+                    "deleted_at": now,
+                    "deleted_by": str(deleted_by) if deleted_by else None,
+                    "deleted_reason": f"category_deleted:{category_slug}",
+                    "updated_at": datetime.now()
+                }}
+            )
+        return docs
+
+    def restore_by_category(self, workspace_id: str, category_slug: str) -> list:
+        """
+        Restore documents that were soft-deleted because of this category deletion.
+        """
+        query = {
+            "workspace_id": str(workspace_id),
+            "category": category_slug,
+            "is_deleted": True,
+            "deleted_reason": f"category_deleted:{category_slug}"
+        }
+        docs = list(self.collection.find(query))
+        if docs:
+            self.collection.update_many(
+                query,
+                {"$set": {
+                    "is_deleted": False,
+                    "deleted_at": None,
+                    "deleted_by": None,
+                    "deleted_reason": None,
+                    "updated_at": datetime.now()
+                }}
+            )
+        return docs
 
     def delete_by_user(self, user_id):
         uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
@@ -92,17 +143,11 @@ class DocumentsRepository(BaseRepository):
     def delete_document(self, doc_id: str) -> bool:
         """
         Xóa một document record khỏi MongoDB theo ID.
-        Trả về True nếu xóa thành công, False nếu không tìm thấy.
         """
         result = self.collection.delete_one({"_id": ObjectId(doc_id)})
         return result.deleted_count > 0
 
     def update_metadata(self, doc_id: str, **fields) -> bool:
-        """
-        Cập nhật các trường metadata của document (không ảnh hưởng đến Qdrant vectors).
-        Các trường được phép cập nhật: filename, description, tags, v.v.
-        Trả về True nếu tìm thấy và cập nhật thành công.
-        """
         if not fields:
             return False
         fields["updated_at"] = datetime.now()
@@ -113,9 +158,6 @@ class DocumentsRepository(BaseRepository):
         return result.matched_count > 0
 
     def update_raw_text(self, doc_id: str, raw_text: str) -> bool:
-        """
-        Cập nhật raw_text của document (dùng sau khi reindex hoặc update-text).
-        """
         result = self.collection.update_one(
             {"_id": ObjectId(doc_id)},
             {"$set": {"raw_text": raw_text, "updated_at": datetime.now()}}

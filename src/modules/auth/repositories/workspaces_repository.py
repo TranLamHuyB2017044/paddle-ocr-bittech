@@ -22,6 +22,14 @@ class WorkspacesRepository(BaseRepository):
             workspace["account_id"] = ObjectId(account_id) if isinstance(account_id, str) else account_id
         return self.create(workspace)
 
+    def find_all_workspaces(self):
+        workspaces = list(self.collection.find())
+        for w in workspaces:
+            w["_id"] = str(w["_id"])
+            if "user_id" in w:
+                w["user_id"] = str(w["user_id"])
+        return workspaces
+
     def find_by_user(self, user_id):
         # Convert to ObjectId for querying
         uid = ObjectId(user_id) if isinstance(user_id, str) else user_id

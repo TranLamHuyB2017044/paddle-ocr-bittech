@@ -45,28 +45,28 @@ class RagService:
         """
         return self._chunk_worker(text, chunk_size, chunk_overlap)
 
-    def index_text(self, data, workspace_id: str, document_name: str, batch_size: int = 50):
+    def index_text(self, data, workspace_id: str, document_name: str, batch_size: int = 32,
+                   category: str | None = None, document_id: str | None = None):
         """
-        Chunk text, embed it, and store in Qdrant.
+        Chunk text, embed it, and store in Qdrant with optional category and document_id metadata.
         data can be:
         - str: raw text
         - list: List of dicts [{"text": str, "page_num": int}]
         """
-        Log.info(f"[RAG] Indexing document '{document_name}' for workspace '{workspace_id}'")
+        import gc
+        Log.info(f"[RAG] Indexing document '{document_name}' (ID: {document_id}, Category: {category}) for workspace '{workspace_id}'")
         
         all_chunks_with_meta = []
         
         if isinstance(data, str):
-            # Fallback for simple string
             chunks = self.split_text(data)
             for i, chunk in enumerate(chunks):
                 all_chunks_with_meta.append({
                     "text": chunk,
-                    "page_num": 1, # Default to page 1
+                    "page_num": 1,
                     "chunk_index": i
                 })
         elif isinstance(data, list):
-            # Structured data with pages
             for item in data:
                 text = item.get("text", "")
                 page_num = item.get("page_num", 1)
@@ -78,7 +78,7 @@ class RagService:
                     all_chunks_with_meta.append({
                         "text": chunk,
                         "page_num": page_num,
-                        "chunk_index": i # Index within page, but we'll re-index later if needed
+                        "chunk_index": i
                     })
         
         if not all_chunks_with_meta:
@@ -87,118 +87,120 @@ class RagService:
             
         Log.info(f"[RAG] Created {len(all_chunks_with_meta)} chunks across all pages")
         
-        # 2. Batch Embedding & Upserting
+        # Batch Embedding & Upserting
         total_indexed = 0
         for i in range(0, len(all_chunks_with_meta), batch_size):
             batch = all_chunks_with_meta[i : i + batch_size]
             batch_texts = [item["text"] for item in batch]
             
             Log.debug(f"[RAG] Processing batch {i//batch_size + 1}/{(len(all_chunks_with_meta)-1)//batch_size + 1}")
-            
             embeddings = embedding_service.embed_text(batch_texts)
             
             points = []
             for j, (item, vector) in enumerate(zip(batch, embeddings)):
+                payload = {
+                    "text": item["text"],
+                    "workspace_id": str(workspace_id),
+                    "document_name": document_name,
+                    "page_num": item["page_num"],
+                    "chunk_index": i + j
+                }
+                if document_id:
+                    payload["document_id"] = str(document_id)
+                if category:
+                    payload["category"] = category
+
                 points.append(
                     models.PointStruct(
                         id=str(uuid.uuid4()),
                         vector=vector,
-                        payload={
-                            "text": item["text"],
-                            "workspace_id": workspace_id,
-                            "document_name": document_name,
-                            "page_num": item["page_num"],
-                            "chunk_index": i + j
-                        }
+                        payload=payload
                     )
                 )
             
             qdrant_service.upsert_points(points)
             total_indexed += len(points)
+            del points, embeddings, batch_texts, batch
+            gc.collect()
             
         Log.info(f"[RAG] Successfully indexed {total_indexed} points in Qdrant")
         return total_indexed
 
-    def query(self, question: str, workspace_id: str, provider: str = "auto") -> Dict:
+    def _retrieve_context(self, question_vector, workspace_id: str, category: str | None = None, limit: int = 5):
         """
-        Perform RAG: Search -> Augment -> Generate.
+        Helper method to retrieve chunks from Qdrant, reconstruct parent pages, and build sources.
         """
-        # 1. Clean and Embed question
-        cleaned_q = clean_question(question)
-        Log.info(f"[RAG] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}'")
-        question_vector = embedding_service.embed_text([cleaned_q])[0]
-        
-        # 2. Search Qdrant
-        results = qdrant_service.search(question_vector, workspace_id, limit=5)
-        Log.info(f"[RAG] 🔎 Found {len(results)} relevant context chunks")
-        
+        results = qdrant_service.search(question_vector, workspace_id, limit=limit, category=category)
+        Log.info(f"[RAG Retrieve] 🔎 Found {len(results)} relevant context chunks (category: {category})")
+
         context_parts = []
         sources = []
         unique_sources = set()
-        
         retrieved_pages = set()
         parent_pages_count = 0
-        MAX_PARENT_PAGES = 2 # Giới hạn tối đa 2 trang nguyên vẹn để tránh bùng nổ Token
-        
+        MAX_PARENT_PAGES = 2
+
         for i, res in enumerate(results):
-            txt = res.payload["text"]
+            txt = res.payload.get("text", "")
             doc = res.payload.get("document_name", "unknown")
             page = res.payload.get("page_num", 1)
-            score = res.score
-            
-            Log.debug(f"   [{i}] Score: {score:.4f} | Source: {doc} (P.{page}) | Text: {txt[:50]}...")
-            
+            doc_id = res.payload.get("document_id")
+            cat = res.payload.get("category")
+            score = float(getattr(res, "score", 0.0))
+
             source_key = f"{doc}_page_{page}"
             page_key = (doc, page)
-            
-            # Nếu trang này đã được lấy nguyên bản trước đó -> Bỏ qua
+
+            snippet = txt.strip()
+            if len(snippet) > 160:
+                snippet = snippet[:157] + "..."
+
+            source_item = {
+                "document_id": doc_id,
+                "document_name": doc,
+                "page_num": page,
+                "score": round(score, 4),
+                "category": cat,
+                "snippet": snippet
+            }
+
             if page_key in retrieved_pages:
                 if source_key not in unique_sources:
-                    sources.append({
-                        "document_name": doc,
-                        "page_num": page,
-                        "score": score
-                    })
+                    sources.append(source_item)
                     unique_sources.add(source_key)
                 continue
-                
-            # Kiểm tra điều kiện nạp nguyên trang (Parent Page)
+
             if doc != "unknown" and page > 0 and parent_pages_count < MAX_PARENT_PAGES:
                 retrieved_pages.add(page_key)
                 parent_pages_count += 1
-                
-                # Fetch toàn bộ các mảnh của trang đó để ghép lại
                 page_chunks = qdrant_service.get_chunks_for_page(workspace_id, doc, page)
                 if page_chunks:
-                    # Sắp xếp theo chunk_index để giữ đúng thứ tự đọc tự nhiên
                     page_chunks.sort(key=lambda x: x.payload.get("chunk_index", 0))
-                    full_page_text = "\n".join([c.payload["text"] for c in page_chunks])
-                    
+                    full_page_text = "\n".join([c.payload.get("text", "") for c in page_chunks])
                     context_parts.append(f"--- NGUỒN: {doc}, TRANG: {page} ---\n{full_page_text}")
-                    Log.info(f"[RAG] Reconstructed full parent page context: {doc} (Page {page})")
-                    
                     if source_key not in unique_sources:
-                        sources.append({
-                            "document_name": doc,
-                            "page_num": page,
-                            "score": score
-                        })
+                        sources.append(source_item)
                         unique_sources.add(source_key)
                     continue
-            
-            # Fallback: Nếu vượt quá giới hạn trang hoặc không thể ghép trang, dùng chính nội dung chunk thô
+
             if source_key not in unique_sources:
                 context_parts.append(f"--- NGUỒN: {doc}, TRANG: {page} (Đoạn trích) ---\n{txt}")
-                sources.append({
-                    "document_name": doc,
-                    "page_num": page,
-                    "score": score
-                })
+                sources.append(source_item)
                 unique_sources.add(source_key)
-            
+
         context = "\n\n".join(context_parts)
+        return context, sources, results
+
+    def query(self, question: str, workspace_id: str, provider: str = "auto", category: str | None = None) -> Dict:
+        """
+        Perform RAG: Search -> Augment -> Generate.
+        """
+        cleaned_q = clean_question(question)
+        Log.info(f"[RAG] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}' (Category: '{category}')")
+        question_vector = embedding_service.embed_text([cleaned_q])[0]
         
-        # 3. Augment & Generate
+        context, sources, _ = self._retrieve_context(question_vector, workspace_id, category=category, limit=5)
+        
         system_instruction = (
             "Bạn là một trợ lý AI thông minh. Hãy trả lời câu hỏi dựa trên ngữ cảnh được cung cấp. "
             "Ngữ cảnh bao gồm các đoạn trích từ tài liệu, mỗi đoạn có thông tin 'NGUỒN' và 'TRANG'.\n\n"
@@ -211,32 +213,40 @@ class RagService:
         )
         
         prompt = f"DỰA TRÊN NGỮ CẢNH SAU:\n{context}\n\nCÂU HỎI: {question}"
-        
         answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
+        
+        # Filter sources with minimum relevance score
+        min_score = getattr(config, "RAG_SOURCE_MIN_SCORE", 0.35)
+        filtered_sources = [s for s in sources if s["score"] >= min_score]
         
         Log.info(f"[RAG] ✅ Answer generated using provider: {used_provider}")
         
         return {
             "answer": answer,
             "provider": used_provider,
-            "sources": sources
+            "sources": filtered_sources
         }
 
-    def suggest_questions(self, workspace_id: str, domain: str = "general") -> List[str]:
+    def suggest_questions(self, workspace_id: str, domain: str = "general", category: str | None = None) -> List[str]:
         """
-        Suggest potential questions based on randomly sampled context from workspace.
+        Suggest potential questions based on context from workspace and optional category.
         """
-        # Since we don't have a "get random" easily, we search with a generic vector 
-        # or just fetch recent points. In Qdrant we can scroll.
+        must_conditions = [
+            models.FieldCondition(
+                key="workspace_id",
+                match=models.MatchValue(value=str(workspace_id)),
+            )
+        ]
+        if category:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="category",
+                    match=models.MatchValue(value=str(category)),
+                )
+            )
+
         scroll_result = qdrant_service.scroll(
-            scroll_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="workspace_id",
-                        match=models.MatchValue(value=workspace_id),
-                    )
-                ]
-            ),
+            scroll_filter=models.Filter(must=must_conditions),
             limit=10
         )
         
@@ -244,7 +254,7 @@ class RagService:
         if not points:
             return ["Tài liệu chưa có dữ liệu để gợi ý."]
         
-        context = "\n".join([p.payload["text"] for p in points])[:2000]
+        context = "\n".join([p.payload.get("text", "") for p in points])[:2000]
         
         if domain == "administrative_doc":
             prompt = (
@@ -265,73 +275,24 @@ class RagService:
                 f"NỘI DUNG:\n{context}"
             )
             suggestion_text, _ = llm_service.chat(prompt, "Bạn là trợ lý gợi ý câu hỏi.")
-        # Simple parsing (split by newline and clean)
+
         suggestions = [s.strip('- ').strip() for s in suggestion_text.split('\n') if s.strip()]
         return suggestions[:5]
 
     def chat_store(self, question: str, workspace_id: str, provider: str = "auto", 
                    telegram_bot_token: str | None = None, telegram_chat_id: str | None = None, 
-                   chatbot_name: str = "Chatbot", domain: str = "ecommerce") -> Dict:
+                   chatbot_name: str = "Chatbot", domain: str = "ecommerce",
+                   category: str | None = None, include_sources: bool = False) -> Dict:
         """
-        Chat for store: no source citations, optimized for customer support.
+        Chat for store: optionally includes verified source citations when requested.
         Sends Telegram notification if no information is found.
         """
-        # 1. Clean and Embed question
         cleaned_q = clean_question(question)
-        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}' (Domain: '{domain}')")
+        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}' (Domain: '{domain}', Category: '{category}')")
         question_vector = embedding_service.embed_text([cleaned_q])[0]
         
-        # 2. Search Qdrant
-        results = qdrant_service.search(question_vector, workspace_id, limit=5)
-        Log.info(f"[RAG Store Chat] 🔎 Found {len(results)} relevant context chunks")
+        context, sources, results = self._retrieve_context(question_vector, workspace_id, category=category, limit=5)
         
-        # Log what Qdrant returned (for debugging)
-        if len(results) > 0:
-            Log.info(f"[RAG Store Chat] 📄 Context chunks found:")
-            for i, res in enumerate(results):
-                doc_name = res.payload.get("document_name", "unknown")
-                Log.info(f"   [{i+1}] Doc: {doc_name} | Text: {res.payload['text'][:80]}...")
-        else:
-            Log.info(f"[RAG Store Chat] 📭 NO context found in Qdrant!")
-        
-        context_parts = []
-        retrieved_pages = set()
-        parent_pages_count = 0
-        MAX_PARENT_PAGES = 2 # Giới hạn tối đa 2 trang nguyên vẹn để tránh bùng nổ Token
-        
-        for i, res in enumerate(results):
-            txt = res.payload["text"]
-            doc = res.payload.get("document_name", "unknown")
-            page = res.payload.get("page_num", 1)
-            
-            page_key = (doc, page)
-            
-            # Nếu trang này đã được lấy nguyên bản trước đó -> Bỏ qua
-            if page_key in retrieved_pages:
-                continue
-                
-            # Kiểm tra điều kiện nạp nguyên trang (Parent Page)
-            if doc != "unknown" and page > 0 and parent_pages_count < MAX_PARENT_PAGES:
-                retrieved_pages.add(page_key)
-                parent_pages_count += 1
-                
-                # Fetch toàn bộ các mảnh của trang đó để ghép lại
-                page_chunks = qdrant_service.get_chunks_for_page(workspace_id, doc, page)
-                if page_chunks:
-                    # Sắp xếp theo chunk_index để giữ đúng thứ tự đọc tự nhiên
-                    page_chunks.sort(key=lambda x: x.payload.get("chunk_index", 0))
-                    full_page_text = "\n".join([c.payload["text"] for c in page_chunks])
-                    context_parts.append(full_page_text)
-                    Log.info(f"[RAG Store Chat] Reconstructed full parent page context: {doc} (Page {page})")
-                    continue
-            
-            # Fallback: dùng chính nội dung chunk thô
-            context_parts.append(txt)
-        
-        context = "\n\n".join(context_parts)
-        
-        # 3. Augment & Generate
-        # Strict system prompt to prevent hallucination, configured per domain
         domain_prompt = get_chatbot_prompt(domain)
         if len(results) == 0:
             if domain == "administrative_doc":
@@ -343,7 +304,6 @@ class RagService:
                     "KHÔNG ĐỀ CẬP ĐẾN Bittech."
                 )
             else:
-                # No context at all - force "no information"
                 system_instruction = (
                     f"{domain_prompt}\n\n"
                     "LƯU Ý QUAN TRỌNG: Hiện tại bạn KHÔNG TÌM THẤY thông tin tài liệu liên quan đến câu hỏi này. "
@@ -376,13 +336,10 @@ class RagService:
                 )
         
         prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI: {question}"
-        
         answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
-        
         Log.info(f"[RAG Store Chat] ✅ Answer generated using provider: {used_provider}")
         
-        # 4. Check if we need to send Telegram notification
-        # Detect if the answer indicates no information is available
+        # Check no-info keywords
         no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết", "sẽ liên hệ", "liên hệ lại"]
         is_no_info = any(keyword.lower() in answer.lower() for keyword in no_info_keywords)
         
@@ -394,9 +351,17 @@ class RagService:
             except Exception as e:
                 Log.error(f"[RAG Store Chat] Lỗi khi gửi thông báo Telegram: {str(e)}")
         
+        # Determine sources to return
+        final_sources = []
+        if include_sources and not is_no_info:
+            min_score = getattr(config, "RAG_SOURCE_MIN_SCORE", 0.35)
+            final_sources = [s for s in sources if s["score"] >= min_score]
+        
         return {
             "answer": answer,
-            "provider": used_provider
+            "provider": used_provider,
+            "sources": final_sources
         }
 
 rag_service = RagService()
+

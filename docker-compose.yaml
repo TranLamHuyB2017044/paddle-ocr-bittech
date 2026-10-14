@@ -36,6 +36,22 @@ services:
         limits:
           cpus: "0.5"
           memory: 600M                             
+
+  qdrant:
+    image: qdrant/qdrant:v1.16.3
+    container_name: paddle-ocr-qdrant
+    restart: unless-stopped
+    networks:
+      - ocr-network
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
   worker:
     build: .
     container_name: paddle-ocr-worker
@@ -46,17 +62,24 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     networks:
       - ocr-network
     env_file:
       - .env
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0  
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=
+      - PRODUCT_QDRANT_URL=http://qdrant:6333
+      - PRODUCT_QDRANT_API_KEY=
     volumes:
       - uploads-data:/app/uploads                     
       - logs-data:/app/logs  
       - ./.licensekek:/app/.licensekek:ro
       - ./storage:/app/storage:ro                  
+      - ./src:/app/src
       - ./src/modules/ocr/hand_writting:/app/src/modules/ocr/hand_writting
     security_opt:
       - no-new-privileges:true                     
@@ -68,7 +91,7 @@ services:
       resources:
         limits:
           # cpus: "2.0"
-          memory: 3G
+          memory: 5G
 
 
   ocr-api:
@@ -82,6 +105,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     networks:
       - ocr-network
     ports:
@@ -91,12 +116,17 @@ services:
       - logs-data:/app/logs
       - ./.licensekek:/app/.licensekek:ro
       - ./storage:/app/storage:ro
+      - ./src:/app/src
       - ./src/modules/ocr/hand_writting:/app/src/modules/ocr/hand_writting
     env_file:
       - .env
     environment:
       - PORT=8080
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=
+      - PRODUCT_QDRANT_URL=http://qdrant:6333
+      - PRODUCT_QDRANT_API_KEY=
       - PYTHONUNBUFFERED=1
     security_opt:
       - no-new-privileges:true 
@@ -129,6 +159,8 @@ networks:
 # ============================================================
 volumes:
   redis-data:
+    driver: local
+  qdrant-data:
     driver: local
   uploads-data:
     driver: local

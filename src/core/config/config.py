@@ -213,7 +213,10 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 RAG_COLLECTION_NAME = "documents_rag"
 RAG_CHUNK_SIZE = 800
 RAG_CHUNK_OVERLAP = 100
-EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "fastembed").lower()  # "openai" hoặc "fastembed"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+RAG_SOURCE_MIN_SCORE = float(os.getenv("RAG_SOURCE_MIN_SCORE", "0.35"))
 
 # Email Config
 EMAIL_HOST = os.getenv("SMTP_HOST", "")
