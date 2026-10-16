@@ -258,25 +258,36 @@ class RagService:
         
         if domain == "administrative_doc":
             prompt = (
-                f"Dựa trên nội dung văn bản hành chính sau đây, hãy gợi ý 3 câu hỏi ngắn gọn, thiết thực mà người dân hoặc cán bộ có thể muốn hỏi "
-                f"(ví dụ về thành phần hồ sơ, điều kiện áp dụng, trình tự thực hiện, thẩm quyền hoặc thời hạn giải quyết). "
-                f"QUY TẮC: Chỉ gợi ý các câu hỏi mà câu trả lời chi tiết của nó có thể được tìm thấy trực tiếp trong đoạn nội dung được cung cấp bên dưới.\n"
-                f"Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng.\n\n"
+                f"Dựa trên nội dung trích xuất từ văn bản sau đây, hãy gợi ý 3 câu hỏi ngắn gọn, thiết thực nhất mà người đọc có thể muốn tra cứu.\n"
+                f"QUY TẮC BẮT BUỘC:\n"
+                f"1. Câu hỏi PHẢI có câu trả lời rõ ràng, trực tiếp ngay trong đoạn trích xuất bên dưới.\n"
+                f"2. KHÔNG đặt câu hỏi suy diễn chéo (ví dụ: nếu đoạn trích chỉ nêu mức phạt của hành vi thì KHÔNG hỏi về thẩm quyền ai xử phạt, trừ khi đoạn trích nêu cụ thể thẩm quyền của hành vi đó).\n"
+                f"3. Ưu tiên hỏi thẳng vào các thông tin cụ thể có sẵn: mức phạt, điều kiện, giấy tờ, trình tự.\n"
+                f"4. Chỉ trả về các câu hỏi, mỗi câu một dòng, không đánh số thứ tự đầu dòng (không thêm 1., 2., -).\n\n"
                 f"NỘI DUNG:\n{context}"
             )
-            suggestion_text, _ = llm_service.chat(prompt, "Bạn là chuyên viên hành chính gợi ý câu hỏi tra cứu thủ tục.")
+            suggestion_text, _ = llm_service.chat(prompt, "Bạn là chuyên viên pháp lý gợi ý câu hỏi tra cứu chính xác từ tài liệu.")
         else:
             prompt = (
                 f"Dựa trên nội dung sau đây, hãy gợi ý 3 câu hỏi ngắn gọn mà người dùng có thể muốn hỏi "
-                f"để tìm hiểu thông tin từ tài liệu này. QUY TẮC: Chỉ gợi ý các câu hỏi mà câu trả lời chi tiết "
-                f"của nó có thể được tìm thấy trực tiếp trong đoạn nội dung được cung cấp bên dưới (không gợi ý câu hỏi "
-                f"nếu nội dung chỉ đề cập lướt qua tên tiêu đề hoặc từ khóa mà không giải thích chi tiết).\n"
-                f"Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng.\n\n"
+                f"để tìm hiểu thông tin từ tài liệu này.\n"
+                f"QUY TẮC BẮT BUỘC:\n"
+                f"1. Chỉ gợi ý câu hỏi mà câu trả lời chi tiết có sẵn trực tiếp trong đoạn nội dung bên dưới.\n"
+                f"2. Không hỏi về các từ khóa chỉ xuất hiện thoáng qua mà không có nội dung giải thích.\n"
+                f"3. Chỉ trả về danh sách các câu hỏi, mỗi câu một dòng, không đánh số thứ tự đầu dòng.\n\n"
                 f"NỘI DUNG:\n{context}"
             )
             suggestion_text, _ = llm_service.chat(prompt, "Bạn là trợ lý gợi ý câu hỏi.")
 
-        suggestions = [s.strip('- ').strip() for s in suggestion_text.split('\n') if s.strip()]
+        suggestions = []
+        for line in suggestion_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            cleaned_s = re.sub(r'^\s*(\d+[\.\)]|[-*•])\s*', '', line).strip()
+            if cleaned_s:
+                suggestions.append(cleaned_s)
+
         return suggestions[:5]
 
     def chat_store(self, question: str, workspace_id: str, provider: str = "auto", 
@@ -291,7 +302,8 @@ class RagService:
         Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}' (Domain: '{domain}', Category: '{category}')")
         question_vector = embedding_service.embed_text([cleaned_q])[0]
         
-        context, sources, results = self._retrieve_context(question_vector, workspace_id, category=category, limit=5)
+        retrieval_limit = 7 if domain == "administrative_doc" else 5
+        context, sources, results = self._retrieve_context(question_vector, workspace_id, category=category, limit=retrieval_limit)
         
         domain_prompt = get_chatbot_prompt(domain)
         if len(results) == 0:
