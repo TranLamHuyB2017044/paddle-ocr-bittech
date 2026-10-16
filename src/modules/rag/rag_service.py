@@ -41,51 +41,38 @@ class RagService:
 
     def split_text(self, text: str, chunk_size: int = config.RAG_CHUNK_SIZE, chunk_overlap: int = config.RAG_CHUNK_OVERLAP) -> List[str]:
         """
-        Public API for splitting text.
+        Public API for splitting text using smart structure-aware chunking.
         """
-        return self._chunk_worker(text, chunk_size, chunk_overlap)
+        from src.modules.rag.chunking_service import chunk_document_smart
+        chunks = chunk_document_smart(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        return [c["text"] for c in chunks]
 
     def index_text(self, data, workspace_id: str, document_name: str, batch_size: int = 32,
                    category: str | None = None, document_id: str | None = None):
         """
-        Chunk text, embed it, and store in Qdrant with optional category and document_id metadata.
+        Smart structure-aware chunking, embedding, and storing in Qdrant with
+        section/chapter hierarchy, category, and document_id metadata.
         data can be:
         - str: raw text
         - list: List of dicts [{"text": str, "page_num": int}]
         """
         import gc
+        from src.modules.rag.chunking_service import chunk_document_smart
+        
         Log.info(f"[RAG] Indexing document '{document_name}' (ID: {document_id}, Category: {category}) for workspace '{workspace_id}'")
         
-        all_chunks_with_meta = []
-        
-        if isinstance(data, str):
-            chunks = self.split_text(data)
-            for i, chunk in enumerate(chunks):
-                all_chunks_with_meta.append({
-                    "text": chunk,
-                    "page_num": 1,
-                    "chunk_index": i
-                })
-        elif isinstance(data, list):
-            for item in data:
-                text = item.get("text", "")
-                page_num = item.get("page_num", 1)
-                if not text.strip():
-                    continue
-                
-                chunks = self.split_text(text)
-                for i, chunk in enumerate(chunks):
-                    all_chunks_with_meta.append({
-                        "text": chunk,
-                        "page_num": page_num,
-                        "chunk_index": i
-                    })
+        all_chunks_with_meta = chunk_document_smart(
+            data,
+            document_name=document_name,
+            chunk_size=getattr(config, "RAG_CHUNK_SIZE", 1000),
+            chunk_overlap=getattr(config, "RAG_CHUNK_OVERLAP", 150)
+        )
         
         if not all_chunks_with_meta:
             Log.warning("[RAG] No text to index")
             return 0
             
-        Log.info(f"[RAG] Created {len(all_chunks_with_meta)} chunks across all pages")
+        Log.info(f"[RAG] 📦 Created {len(all_chunks_with_meta)} structure-aware chunks for '{document_name}'")
         
         # Batch Embedding & Upserting
         total_indexed = 0
@@ -102,9 +89,15 @@ class RagService:
                     "text": item["text"],
                     "workspace_id": str(workspace_id),
                     "document_name": document_name,
-                    "page_num": item["page_num"],
-                    "chunk_index": i + j
+                    "page_num": item.get("page_num", 1),
+                    "chunk_index": item.get("chunk_index", i + j)
                 }
+                if item.get("section_title"):
+                    payload["section_title"] = item["section_title"]
+                if item.get("chapter_title"):
+                    payload["chapter_title"] = item["chapter_title"]
+                if item.get("raw_text"):
+                    payload["raw_text"] = item["raw_text"]
                 if document_id:
                     payload["document_id"] = str(document_id)
                 if category:
@@ -159,6 +152,8 @@ class RagService:
                 "document_id": doc_id,
                 "document_name": doc,
                 "page_num": page,
+                "section_title": res.payload.get("section_title"),
+                "chapter_title": res.payload.get("chapter_title"),
                 "score": round(score, 4),
                 "category": cat,
                 "snippet": snippet
@@ -373,6 +368,167 @@ class RagService:
             "answer": answer,
             "provider": used_provider,
             "sources": final_sources
+        }
+
+    def inspect_search(
+        self,
+        question: str,
+        workspace_id: str,
+        category: str | None = None,
+        limit: int = 7,
+        min_score: float = 0.35,
+        domain: str = "administrative_doc",
+        generate_answer: bool = True,
+        provider: str = "auto"
+    ) -> Dict:
+        """
+        Playground/Debug Inspection API:
+        Retrieves chunks with detailed similarity scores and metadata,
+        optionally generates answer, and computes has_answer flag with explanation.
+        """
+        import time
+        t_start = time.time()
+        
+        cleaned_q = clean_question(question)
+        Log.info(f"[RAG Playground] 🔍 Inspect query: '{cleaned_q}' in workspace '{workspace_id}' (category: '{category}', domain: '{domain}')")
+        
+        t_embed_start = time.time()
+        question_vector = embedding_service.embed_text([cleaned_q])[0]
+        embed_time_ms = round((time.time() - t_embed_start) * 1000, 2)
+        
+        t_search_start = time.time()
+        context, sources, raw_results = self._retrieve_context(
+            question_vector,
+            workspace_id,
+            category=category,
+            limit=limit
+        )
+        search_time_ms = round((time.time() - t_search_start) * 1000, 2)
+        
+        retrieved_chunks = []
+        for r in raw_results:
+            chunk_id = str(getattr(r, "id", ""))
+            score = round(float(getattr(r, "score", 0.0)), 4)
+            payload = getattr(r, "payload", {}) or {}
+            raw_text = payload.get("text", "")
+            snippet = raw_text.strip()[:180] + "..." if len(raw_text.strip()) > 180 else raw_text.strip()
+            
+            retrieved_chunks.append({
+                "chunk_id": chunk_id,
+                "document_id": payload.get("document_id"),
+                "document_name": payload.get("document_name", "unknown"),
+                "page_num": payload.get("page_num", 1),
+                "chunk_index": payload.get("chunk_index", 0),
+                "section_title": payload.get("section_title"),
+                "chapter_title": payload.get("chapter_title"),
+                "category": payload.get("category"),
+                "score": score,
+                "snippet": snippet,
+                "text": raw_text
+            })
+            
+        highest_score = retrieved_chunks[0]["score"] if retrieved_chunks else 0.0
+        lowest_score = retrieved_chunks[-1]["score"] if retrieved_chunks else 0.0
+        
+        llm_answer = None
+        used_provider = None
+        llm_time_ms = 0.0
+        
+        if generate_answer:
+            t_llm_start = time.time()
+            domain_prompt = get_chatbot_prompt(domain)
+            
+            if len(retrieved_chunks) == 0:
+                if domain == "administrative_doc":
+                    system_instruction = (
+                        f"{domain_prompt}\n\n"
+                        "LƯU Ý QUAN TRỌNG: Hiện tại bạn KHÔNG TÌM THẤY thông tin quy định hoặc văn bản liên quan đến câu hỏi này. "
+                        "BẠN CHỈ ĐƯỢC NÓI: 'Nội dung này chưa được quy định hoặc chưa có trong tài liệu văn bản được cung cấp. Vui lòng liên hệ cơ quan ban hành hoặc Bộ phận Một cửa có thẩm quyền để được giải đáp chính thức.' "
+                        "TUYỆT ĐỐI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC NGOÀI TÀI LIỆU ĐÃ CÓ."
+                    )
+                else:
+                    system_instruction = (
+                        f"{domain_prompt}\n\n"
+                        "LƯU Ý QUAN TRỌNG: Hiện tại bạn KHÔNG TÌM THẤY thông tin tài liệu liên quan đến câu hỏi này. "
+                        "BẠN CHỈ ĐƯỢC NÓI: 'Tôi không có thông tin về câu hỏi này.' "
+                        "TUYỆT ĐỐI KHÔNG TỰ TẠO RA CÂU TRẢ LỜI NÀO KHÁC."
+                    )
+            else:
+                if domain == "administrative_doc":
+                    system_instruction = (
+                        f"{domain_prompt}\n\n"
+                        "QUY TẮC BẮT BUỘC:\n"
+                        "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN HÀNH CHÍNH được cung cấp bên dưới.\n"
+                        "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có trong nội dung.\n"
+                        "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa được quy định trong tài liệu được cung cấp.\n"
+                        "- KHÔNG tự bịa ra câu trả lời hay điều khoản không tồn tại."
+                    )
+                else:
+                    system_instruction = (
+                        f"{domain_prompt}\n\n"
+                        "QUY TẮC BẮT BUỘC:\n"
+                        "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG TÀI LIỆU được cung cấp bên dưới.\n"
+                        "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng bạn không có thông tin đó.\n"
+                        "- KHÔNG tự bịa ra câu trả lời."
+                    )
+            
+            prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI: {question}"
+            llm_answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
+            llm_time_ms = round((time.time() - t_llm_start) * 1000, 2)
+            
+        no_answer_patterns = [
+            "không có thông tin", "không tìm thấy", "chưa được quy định", 
+            "không được nêu rõ", "không đề cập", "chưa có trong tài liệu",
+            "chưa được nêu", "vui lòng liên hệ cơ quan", "tôi không biết"
+        ]
+        
+        is_refusal = False
+        if llm_answer:
+            is_refusal = any(p in llm_answer.lower() for p in no_answer_patterns)
+            
+        # Determine has_answer flag & exact reason
+        if len(retrieved_chunks) == 0:
+            has_answer = False
+            reason = "NO_CHUNKS_FOUND"
+            reason_vi = "Không tìm thấy bất kỳ đoạn văn bản nào phù hợp trong bộ lọc (workspace/category)."
+        elif highest_score < min_score:
+            has_answer = False
+            reason = "LOW_SIMILARITY_SCORE"
+            reason_vi = f"Điểm tương đồng cao nhất ({highest_score}) thấp hơn ngưỡng tối thiểu ({min_score}), tài liệu không liên quan đến câu hỏi."
+        elif is_refusal:
+            has_answer = False
+            reason = "NOT_FOUND_IN_DOCUMENT_CONTENT"
+            reason_vi = "Đoạn văn bản được kéo về không chứa câu trả lời cho câu hỏi này, LLM từ chối trả lời theo cơ chế chống ảo giác."
+        else:
+            has_answer = True
+            reason = "ANSWER_FOUND"
+            reason_vi = "Tìm thấy nội dung phù hợp và LLM đã trích xuất được câu trả lời từ tài liệu."
+            
+        total_time_ms = round((time.time() - t_start) * 1000, 2)
+        
+        return {
+            "query": question,
+            "cleaned_query": cleaned_q,
+            "workspace_id": workspace_id,
+            "category": category,
+            "domain": domain,
+            "stats": {
+                "total_chunks_found": len(retrieved_chunks),
+                "highest_score": highest_score,
+                "lowest_score": lowest_score,
+                "min_score_threshold": min_score,
+                "embed_time_ms": embed_time_ms,
+                "search_time_ms": search_time_ms,
+                "llm_time_ms": llm_time_ms,
+                "total_time_ms": total_time_ms
+            },
+            "retrieved_chunks": retrieved_chunks,
+            "full_context_sent_to_llm": context,
+            "llm_answer": llm_answer,
+            "provider": used_provider,
+            "has_answer": has_answer,
+            "reason": reason,
+            "reason_vi": reason_vi
         }
 
 rag_service = RagService()

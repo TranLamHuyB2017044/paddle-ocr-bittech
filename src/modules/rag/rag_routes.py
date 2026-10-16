@@ -789,6 +789,118 @@ def upload_text_to_workspace(workspace_id):
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
+# ── GET /api/rag/documents/<document_id>/text (hoặc /content) ────────────────
+@rag_bp.route('/api/rag/documents/<document_id>/text', methods=['GET'])
+@rag_bp.route('/api/rag/documents/<document_id>/content', methods=['GET'])
+@require_auth
+def get_document_content(document_id):
+    """
+    Lấy toàn bộ nội dung văn bản (raw_text) đã được OCR của tài liệu để debug hoặc xem trước.
+    """
+    try:
+        doc = documents_repo.find_by_id(document_id)
+        if not doc or not _can_access_document(doc):
+            return jsonify({"statusCode": 404, "message": "Không tìm thấy tài liệu hoặc không có quyền truy cập"}), 404
+
+        raw_text = doc.get("raw_text") or ""
+        
+        return jsonify({
+            "statusCode": 200,
+            "data": {
+                "document_id": str(doc["_id"]),
+                "filename": doc.get("filename"),
+                "original_filename": doc.get("original_filename"),
+                "workspace_id": str(doc.get("workspace_id")),
+                "category": doc.get("category"),
+                "status": doc.get("status"),
+                "total_chunks": doc.get("total_chunks", 0),
+                "total_characters": len(raw_text),
+                "total_words": len(raw_text.split()) if raw_text else 0,
+                "raw_text": raw_text,
+                "source_files": doc.get("source_files", []),
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at")
+            }
+        }), 200
+
+    except Exception as e:
+        Log.error(f"[RAG-API] get_document_content error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+# ── GET /api/rag/documents/<document_id>/chunks ──────────────────────────────
+@rag_bp.route('/api/rag/documents/<document_id>/chunks', methods=['GET'])
+@require_auth
+def get_document_chunks(document_id):
+    """
+    Lấy danh sách các chunk thực tế trong Qdrant của document để debug:
+    Xem phân bổ chunk, tiêu đề đề mục (section_title), số trang, nội dung từng chunk.
+    """
+    try:
+        doc = documents_repo.find_by_id(document_id)
+        if not doc or not _can_access_document(doc):
+            return jsonify({"statusCode": 404, "message": "Không tìm thấy tài liệu hoặc không có quyền truy cập"}), 404
+
+        workspace_id = str(doc.get("workspace_id"))
+        doc_name = doc.get("filename") or doc.get("original_filename")
+
+        from qdrant_client.http import models
+        filter_conditions = [
+            models.FieldCondition(key="workspace_id", match=models.MatchValue(value=workspace_id))
+        ]
+        filter_conditions.append(
+            models.FieldCondition(key="document_id", match=models.MatchValue(value=str(document_id)))
+        )
+
+        scroll_res = qdrant_service.scroll(
+            scroll_filter=models.Filter(must=filter_conditions),
+            limit=500
+        )
+        points = scroll_res[0] if scroll_res else []
+
+        # Fallback theo document_name nếu tài liệu cũ chưa có document_id trong payload
+        if not points and doc_name:
+            scroll_res = qdrant_service.scroll(
+                scroll_filter=models.Filter(must=[
+                    models.FieldCondition(key="workspace_id", match=models.MatchValue(value=workspace_id)),
+                    models.FieldCondition(key="document_name", match=models.MatchValue(value=doc_name))
+                ]),
+                limit=500
+            )
+            points = scroll_res[0] if scroll_res else []
+
+        chunks_list = []
+        for p in points:
+            payload = p.payload or {}
+            chunks_list.append({
+                "chunk_id": str(p.id),
+                "chunk_index": payload.get("chunk_index", 0),
+                "page_num": payload.get("page_num", 1),
+                "section_title": payload.get("section_title"),
+                "chapter_title": payload.get("chapter_title"),
+                "category": payload.get("category"),
+                "text": payload.get("text", ""),
+                "char_count": len(payload.get("text", ""))
+            })
+
+        chunks_list.sort(key=lambda x: x["chunk_index"])
+
+        return jsonify({
+            "statusCode": 200,
+            "data": {
+                "document_id": document_id,
+                "document_name": doc_name,
+                "category": doc.get("category"),
+                "total_chunks": len(chunks_list),
+                "chunks": chunks_list
+            }
+        }), 200
+
+    except Exception as e:
+        Log.error(f"[RAG-API] get_document_chunks error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
 # ── PUT /api/rag/documents/<document_id>/text ─────────────────────────────────
 @rag_bp.route('/api/rag/documents/<document_id>/text', methods=['PUT'])
 @require_auth
@@ -1203,4 +1315,128 @@ def update_document_metadata(document_id):
     except Exception as e:
         Log.error(f"[RAG-API] update_document_metadata error: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@rag_bp.route('/api/rag/playground/search', methods=['POST'])
+@require_auth
+def playground_search():
+    """
+    RAG Playground / Test Search API for Admin & Developers.
+    Accepts a question, performs vector retrieval, returns similarity scores of all chunks,
+    full context, and LLM answer with has_answer analysis.
+    """
+    try:
+        data = request.json or {}
+        workspace_id = data.get('workspace_id')
+        question = data.get('query') or data.get('question')
+
+        if not workspace_id:
+            return jsonify({"statusCode": 400, "message": "workspace_id là bắt buộc"}), 400
+        if not question or not str(question).strip():
+            return jsonify({"statusCode": 400, "message": "query hoặc question không được để trống"}), 400
+
+        workspace = workspaces_repo.find_by_id(workspace_id)
+        if not workspace or not _can_access_workspace(workspace):
+            return jsonify({"statusCode": 403, "message": "Không có quyền truy cập workspace này"}), 403
+
+        category = data.get('category')
+        if category:
+            category = str(category).strip()
+            # If slug doesn't exist, allow or warn
+            cat_obj = category_repo.find_active_by_slug(workspace_id, category)
+            if not cat_obj:
+                return jsonify({"statusCode": 404, "message": f"Category slug '{category}' không tồn tại trong workspace"}), 404
+
+        limit = int(data.get('limit', 7))
+        min_score = float(data.get('min_score', 0.35))
+        domain = data.get('domain', 'administrative_doc')
+        generate_answer = bool(data.get('generate_answer', True))
+        provider = data.get('provider', 'auto')
+
+        result = rag_service.inspect_search(
+            question=str(question).strip(),
+            workspace_id=str(workspace_id),
+            category=category,
+            limit=limit,
+            min_score=min_score,
+            domain=domain,
+            generate_answer=generate_answer,
+            provider=provider
+        )
+
+        return jsonify({
+            "statusCode": 200,
+            "message": "Tìm kiếm RAG Playground thành công",
+            "data": result
+        }), 200
+
+    except Exception as e:
+        Log.error(f"[RAG Playground API] Error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@rag_bp.route('/api/rag/documents/<document_id>/reindex', methods=['POST'])
+@require_auth
+def reindex_document_endpoint(document_id):
+    """
+    Reindex document using the smart structure-aware chunker.
+    Uses stored raw_text from MongoDB, purges old Qdrant chunks, and re-embeds.
+    """
+    try:
+        doc = documents_repo.find_by_id(document_id)
+        if not doc or not _can_access_document(doc):
+            return jsonify({"statusCode": 404, "message": "Không tìm thấy tài liệu hoặc không có quyền truy cập"}), 404
+
+        workspace_id = str(doc.get("workspace_id"))
+        doc_name = doc.get("filename") or doc.get("original_filename") or "document"
+        category = doc.get("category")
+        raw_text = doc.get("raw_text")
+
+        if not raw_text:
+            return jsonify({"statusCode": 400, "message": "Tài liệu chưa có raw_text để reindex"}), 400
+
+        # Purge old points in Qdrant
+        try:
+            from qdrant_client.http import models
+            qdrant_service.client.delete(
+                collection_name=qdrant_service.collection_name,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(key="workspace_id", match=models.MatchValue(value=workspace_id)),
+                            models.FieldCondition(key="document_id", match=models.MatchValue(value=str(document_id)))
+                        ]
+                    )
+                )
+            )
+        except Exception as q_err:
+            Log.warning(f"[RAG-API] Xóa chunk cũ khi reindex: {q_err}")
+
+        # Index text with new smart chunker
+        total_chunks = rag_service.index_text(
+            data=raw_text,
+            workspace_id=workspace_id,
+            document_name=doc_name,
+            category=category,
+            document_id=str(document_id)
+        )
+
+        documents_repo.update_metadata(document_id, total_chunks=total_chunks)
+
+        return jsonify({
+            "statusCode": 200,
+            "message": f"Reindex tài liệu thành công với cấu trúc thông minh!",
+            "data": {
+                "document_id": document_id,
+                "total_chunks": total_chunks,
+                "document_name": doc_name,
+                "category": category
+            }
+        }), 200
+
+    except Exception as e:
+        Log.error(f"[RAG-API] reindex_document error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
 
