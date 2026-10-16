@@ -388,12 +388,14 @@ def get_public_chatbot_categories(chatbot_id):
         result = []
         for cat in categories:
             count = documents_repo.count_by_workspace(str(workspace_id), category=cat["slug"])
-            result.append({
-                "slug": cat["slug"],
-                "name": cat["name"],
-                "icon": cat.get("icon"),
-                "doc_count": count
-            })
+            # Chỉ hiển thị cho bot widget nếu danh mục có ít nhất 1 tài liệu
+            if count >= 1:
+                result.append({
+                    "slug": cat["slug"],
+                    "name": cat["name"],
+                    "icon": cat.get("icon"),
+                    "doc_count": count
+                })
 
         return jsonify({"statusCode": 200, "data": result}), 200
     except Exception as e:
