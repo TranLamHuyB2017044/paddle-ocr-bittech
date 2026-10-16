@@ -349,7 +349,7 @@ def upload_to_workspace(workspace_id):
                 process_document_task,
                 args=(doc_id, workspace_id, file_path, original_filename, g.user_id),
                 kwargs={"vision_extract": vision_extract, "category": category},
-                job_timeout='15m' 
+                job_timeout='30m' 
             )
             
             enqueued_docs.append({
@@ -1106,7 +1106,7 @@ def replace_document_file(workspace_id, document_id):
             process_document_task,
             args=(document_id, workspace_id, new_file_path, original_filename, g.user_id),
             kwargs={"vision_extract": vision_extract, "category": category},
-            job_timeout='15m'
+            job_timeout='30m'
         )
 
         from src.shared.utils.redis_client import publish_event

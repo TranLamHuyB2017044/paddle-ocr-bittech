@@ -76,61 +76,109 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
             structured_data = [{"text": text, "page_num": 1}]
         elif ext == 'pdf':
             import fitz
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             try:
                 doc = fitz.open(file_path)
-                for idx in range(len(doc)):
+                total_pages = len(doc)
+                Log.info(f"[Worker] 🚀 Bắt đầu xử lý PDF '{original_filename}' với {total_pages} trang (Mode: {'Vision LLM' if vision_extract else 'PaddleOCR'})")
+                
+                # Mảng lưu kết quả theo đúng thứ tự trang
+                page_results = [None] * total_pages
+                pages_needing_ocr = [] # danh sách (idx, fallback_text)
+                
+                # Bước 1: Quét nhanh các trang có sẵn native text (chỉ mất ~0.2s cho toàn bộ PDF)
+                for idx in range(total_pages):
                     page = doc[idx]
                     page_text = page.get_text().strip()
                     has_images = len(page.get_images()) > 0
-                    
-                    # Cần OCR nếu trang trống hoặc text quá ngắn (< 200 ký tự) và có chứa hình ảnh
                     needs_ocr = not page_text or (len(page_text) < 200 and has_images)
                     
-                    if needs_ocr:
-                        Log.info(f"[Worker] PDF page {idx+1} needs OCR (text len: {len(page_text)}, images: {has_images})")
+                    if not needs_ocr:
+                        page_text_extracted = extract_page_text_with_tables(page)
+                        page_results[idx] = {"text": page_text_extracted, "page_num": idx + 1}
+                    else:
+                        pages_needing_ocr.append((idx, page_text))
+                
+                doc.close() # Đóng handle fitz chính sau khi quét
+                
+                native_count = total_pages - len(pages_needing_ocr)
+                Log.info(f"[Worker] 📊 PDF '{original_filename}': {native_count} trang có sẵn text, {len(pages_needing_ocr)} trang cần OCR")
+                
+                # Bước 2: Xử lý song song theo lô cho các trang cần OCR
+                if pages_needing_ocr:
+                    workers_count = 8 if vision_extract else 4
+                    
+                    def process_single_ocr_page(page_info):
+                        p_idx, fallback_text = page_info
                         try:
+                            # Mở handle riêng trong worker thread để thread-safe tuyệt đối
+                            sub_doc = fitz.open(file_path)
+                            sub_page = sub_doc[p_idx]
+                            
                             from src.core.config import root_dir
                             abs_temp_dir = os.path.join(root_dir, "uploads/temp")
                             os.makedirs(abs_temp_dir, exist_ok=True)
                             
                             import uuid
-                            img_path = os.path.join(abs_temp_dir, f"{uuid.uuid4()}_p{idx}.jpg")
-                            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                            img_path = os.path.join(abs_temp_dir, f"{uuid.uuid4()}_p{p_idx}.jpg")
+                            # Dùng matrix 1.5x1.5 (150-200 DPI) thay vì 2.0x2.0 để giảm 50% thời gian OCR và RAM
+                            pix = sub_page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
                             pix.save(img_path)
+                            sub_doc.close()
                             
                             text = None
                             if vision_extract:
                                 try:
-                                    Log.info(f"[Worker] Using Vision LLM for RAG PDF page {idx+1}")
                                     text = extract_text_with_vision_llm(img_path)
                                     from src.core.config import VISION_LLM_COST
                                     users_repo.increment_extraction_stats(user_id, "document", cost=VISION_LLM_COST)
-                                except Exception as e:
-                                    Log.warning(f"[Worker] Vision LLM RAG failed for page {idx+1}: {e}. Fallback to traditional OCR.")
+                                except Exception as v_err:
+                                    Log.warning(f"[Worker] Vision LLM RAG thất bại trang {p_idx+1}: {v_err}. Chuyển sang local OCR.")
                             
                             if not text:
                                 res, _ = ocr_extract(img_path)
                                 if res:
                                     text = "\n".join([line['text'] if isinstance(line, dict) else str(line) for line in res])
                             
-                            if text:
-                                structured_data.append({"text": text, "page_num": idx + 1})
-                            else:
-                                structured_data.append({"text": page_text, "page_num": idx + 1})
-                                
                             if os.path.exists(img_path):
                                 os.remove(img_path)
-                        except Exception as e:
-                            Log.error(f"[Worker] Failed to OCR page {idx+1}: {e}")
-                            structured_data.append({"text": page_text, "page_num": idx + 1})
-                    else:
-                        Log.info(f"[Worker] PDF page {idx+1} has native text (len: {len(page_text)})")
-                        page_text_extracted = extract_page_text_with_tables(page)
-                        structured_data.append({"text": page_text_extracted, "page_num": idx + 1})
-                doc.close()
+                                
+                            final_text = text if text and text.strip() else fallback_text
+                            return p_idx, final_text
+                        except Exception as p_err:
+                            Log.error(f"[Worker] Lỗi khi OCR trang {p_idx+1}: {p_err}")
+                            return p_idx, fallback_text
+
+                    completed_ocr = 0
+                    total_ocr_needed = len(pages_needing_ocr)
+                    
+                    with ThreadPoolExecutor(max_workers=workers_count) as executor:
+                        future_to_page = {
+                            executor.submit(process_single_ocr_page, p_info): p_info[0]
+                            for p_info in pages_needing_ocr
+                        }
+                        
+                        for future in as_completed(future_to_page):
+                            p_idx, p_extracted_text = future.result()
+                            page_results[p_idx] = {"text": p_extracted_text, "page_num": p_idx + 1}
+                            completed_ocr += 1
+                            
+                            # Cập nhật tiến trình qua Redis SSE định kỳ mỗi 5 trang hoặc trang cuối
+                            if completed_ocr % 5 == 0 or completed_ocr == total_ocr_needed:
+                                total_processed = native_count + completed_ocr
+                                percent = int((total_processed / total_pages) * 100)
+                                Log.info(f"[Worker] ⏳ Tiến độ PDF '{original_filename}': {total_processed}/{total_pages} trang ({percent}%)")
+                                publish_event(user_id, "document_status", {
+                                    "document_id": doc_id,
+                                    "status": DocStatus.PROCESSING,
+                                    "progress": f"{total_processed}/{total_pages}",
+                                    "percent": percent,
+                                    "message": f"Đang xử lý trang {total_processed}/{total_pages}..."
+                                })
+
+                structured_data = [res for res in page_results if res is not None]
             except Exception as e:
-                Log.error(f"[Worker] Failed to process PDF page-by-page: {e}")
-                # Fallback to extract_text_from_pdf
+                Log.error(f"[Worker] Failed to process PDF: {e}")
                 pages = extract_text_from_pdf(file_path)
                 structured_data = pages
         elif ext in ['jpg', 'jpeg', 'png', 'bmp']:
