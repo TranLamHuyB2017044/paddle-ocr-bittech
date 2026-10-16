@@ -107,13 +107,39 @@ def update_workspace_category(workspace_id, slug):
         description = data.get("description")
         icon = data.get("icon")
 
-        updated_cat = category_repo.update_category(
-            workspace_id=workspace_id,
-            slug=slug,
-            name=name,
-            description=description,
-            icon=icon
-        )
+        try:
+            updated_cat = category_repo.update_category(
+                workspace_id=workspace_id,
+                slug=slug,
+                name=name,
+                description=description,
+                icon=icon
+            )
+        except ValueError as ve:
+            return jsonify({"statusCode": 409, "message": str(ve)}), 409
+
+        if not updated_cat:
+            return jsonify({"statusCode": 404, "message": f"Category '{slug}' không tìm thấy để cập nhật"}), 404
+
+        old_slug = slug
+        new_slug = updated_cat.get("slug", old_slug)
+        affected_docs_count = 0
+
+        # Cascade update nếu slug thay đổi theo tên category
+        if new_slug != old_slug:
+            # 1. Update documents in MongoDB
+            affected_docs_count = documents_repo.rename_category(workspace_id, old_slug, new_slug)
+            Log.info(f"[CategoryAPI] Cascade renamed category '{old_slug}' -> '{new_slug}' for {affected_docs_count} documents")
+
+            # 2. Update vector payload in Qdrant
+            try:
+                qdrant_service.rename_category(workspace_id, old_slug, new_slug)
+                Log.info(f"[CategoryAPI] Cascade updated Qdrant payload category '{old_slug}' -> '{new_slug}' in workspace '{workspace_id}'")
+            except Exception as q_err:
+                Log.error(f"[CategoryAPI] Failed to update Qdrant payload category: {q_err}")
+
+        # Xóa trường nội bộ nếu có
+        updated_cat.pop("_old_slug", None)
 
         audit_log_repo.log(
             action="category.update",
@@ -121,13 +147,19 @@ def update_workspace_category(workspace_id, slug):
             account_id=g.user.get("account_id"),
             workspace_id=workspace_id,
             target_type="category",
-            target_id=slug,
+            target_id=new_slug,
             snapshot={"old": cat, "updated": updated_cat},
+            affected={"old_slug": old_slug, "new_slug": new_slug, "affected_documents": affected_docs_count},
             ip=request.remote_addr,
             user_agent=request.headers.get("User-Agent")
         )
 
-        return jsonify({"statusCode": 200, "message": "Cập nhật category thành công", "data": updated_cat}), 200
+        return jsonify({
+            "statusCode": 200,
+            "message": "Cập nhật category thành công",
+            "data": updated_cat,
+            "affected_documents": affected_docs_count
+        }), 200
     except Exception as e:
         Log.error(f"[CategoryAPI] Update category error: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500

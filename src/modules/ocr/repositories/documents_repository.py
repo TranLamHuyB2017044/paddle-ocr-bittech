@@ -164,5 +164,19 @@ class DocumentsRepository(BaseRepository):
         )
         return result.matched_count > 0
 
+    def rename_category(self, workspace_id: str, old_slug: str, new_slug: str) -> int:
+        """
+        Đổi slug của category trên toàn bộ documents trong workspace.
+        """
+        res = self.collection.update_many(
+            {"workspace_id": str(workspace_id), "category": old_slug},
+            {"$set": {"category": new_slug, "updated_at": datetime.now()}}
+        )
+        self.collection.update_many(
+            {"workspace_id": str(workspace_id), "deleted_reason": f"category_deleted:{old_slug}"},
+            {"$set": {"deleted_reason": f"category_deleted:{new_slug}"}}
+        )
+        return res.modified_count
+
 # Global instance
 documents_repo = DocumentsRepository()

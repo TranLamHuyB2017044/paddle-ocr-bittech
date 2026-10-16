@@ -172,6 +172,28 @@ class QdrantService:
                 points=models.FilterSelector(filter=points_filter)
             )
 
+    def rename_category(self, workspace_id: str, old_category: str, new_category: str):
+        """
+        Update the 'category' payload on all points of a category within a workspace from old_category to new_category.
+        """
+        filter_condition = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="workspace_id",
+                    match=models.MatchValue(value=str(workspace_id)),
+                ),
+                models.FieldCondition(
+                    key="category",
+                    match=models.MatchValue(value=str(old_category)),
+                ),
+            ]
+        )
+        return self.client.set_payload(
+            collection_name=self.collection_name,
+            payload={"category": str(new_category)},
+            points=models.FilterSelector(filter=filter_condition)
+        )
+
     def delete_by_category(self, workspace_id: str, category: str):
         """
         Delete all vector points belonging to a category within a workspace.
@@ -353,6 +375,10 @@ class QdrantServiceProxy:
 
     def set_document_category(self, *args, **kwargs):
         if self.instance: return self.instance.set_document_category(*args, **kwargs)
+        raise Exception("Qdrant not initialized")
+
+    def rename_category(self, *args, **kwargs):
+        if self.instance: return self.instance.rename_category(*args, **kwargs)
         raise Exception("Qdrant not initialized")
 
     def delete_by_category(self, *args, **kwargs):

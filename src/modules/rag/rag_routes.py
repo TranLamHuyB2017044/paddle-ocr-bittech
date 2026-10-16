@@ -383,10 +383,23 @@ def list_documents(workspace_id):
             
         category = request.args.get('category')
         documents = documents_repo.find_by_workspace(workspace_id, category=category)
-        # Convert ObjectId to string
+        
+        # Populate category details (name, icon)
+        categories = category_repo.list_by_workspace(workspace_id, include_deleted=True)
+        cat_map = {c["slug"]: c for c in categories}
+
+        # Convert ObjectId to string and enrich category info
         for doc in documents:
             doc["_id"] = str(doc["_id"])
             if "user_id" in doc: doc["user_id"] = str(doc["user_id"])
+            doc_cat = doc.get("category")
+            if doc_cat and doc_cat in cat_map:
+                c_info = cat_map[doc_cat]
+                doc["category_name"] = c_info.get("name")
+                doc["category_icon"] = c_info.get("icon")
+            else:
+                doc["category_name"] = None
+                doc["category_icon"] = None
             
         return jsonify({
             "statusCode": 200,
