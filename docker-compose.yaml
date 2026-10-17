@@ -90,8 +90,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "8.0"
-          memory: 8G
+          cpus: "4.0"
+          memory: 5G
 
 
   ocr-api:

@@ -108,22 +108,6 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                 
                 # Bước 2: Xử lý các trang cần OCR
                 if pages_needing_ocr:
-                    # Cho phép xử lý song song nhiều trang cùng lúc (mặc định 2 trang, tinh chỉnh qua PDF_OCR_WORKERS).
-                    # Tự động cân bằng số luồng nhận dạng dòng chữ (OCR_THREADS):
-                    # workers_count * OCR_THREADS <= 4 Cores CPU của container.
-                    # Nhờ đó 2 trang chạy song song chỉ mất ~7s/trang (thay vì vọt lên 20s do nghẽn 16 luồng như trước),
-                    # và tổng thời gian tài liệu nhanh hơn 30% so với chạy tuần tự.
-                    # Cấu hình OCR tối ưu 8 Cores:
-                    # Cho phép 2 trang song song cùng lúc, mỗi trang 4 cores nhận dạng (2 trang x 4 luồng = 8 cores).
-                    # Mỗi trang hoàn thành chỉ trong ~4.5s, giúp 2 trang xong cùng lúc cứ mỗi ~4.5s (tương đương 2.25s/trang).
-                    if vision_extract:
-                        workers_count = int(os.getenv("PDF_VISION_WORKERS", "8"))
-                    else:
-                        workers_count = int(os.getenv("PDF_OCR_WORKERS", "2"))
-                        ocr_threads = int(os.getenv("OCR_THREADS", str(max(1, 8 // workers_count))))
-                        os.environ["OCR_THREADS"] = str(ocr_threads)
-                        Log.info(f"[Worker] 🚀 Cấu hình OCR tối ưu (8 Cores): {workers_count} trang song song, {ocr_threads} luồng nhận dạng/trang")
-                    
                     ocr_start_time = time.time()
                     page_ocr_times = {}
 
@@ -141,8 +125,7 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
                             
                             import uuid
                             img_path = os.path.join(abs_temp_dir, f"{uuid.uuid4()}_p{p_idx}.jpg")
-                            # Khôi phục matrix 2.0x2.0 (tương đương chuẩn 300 DPI) để ảnh sắc nét, text detector bắt đúng nét chữ
-                            # và OCR nhanh hơn 1.5x1.5 (tránh vỡ hạt nét chữ gây tăng số lượng box giả)
+                            # Sử dụng matrix 2.0x2.0 (chuẩn 300 DPI) để ảnh sắc nét, text detector bắt đúng nét chữ
                             pix = sub_page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
                             pix.save(img_path)
                             sub_doc.close()
@@ -177,32 +160,52 @@ def process_document_task(doc_id, workspace_id, file_path, original_filename, us
 
                     completed_ocr = 0
                     total_ocr_needed = len(pages_needing_ocr)
-                    
-                    with ThreadPoolExecutor(max_workers=workers_count) as executor:
-                        future_to_page = {
-                            executor.submit(process_single_ocr_page, p_info): p_info[0]
-                            for p_info in pages_needing_ocr
-                        }
-                        
-                        for future in as_completed(future_to_page):
-                            p_idx, p_extracted_text, p_ocr_time = future.result()
+
+                    if vision_extract:
+                        # Với Vision LLM: gọi API ngoài (network I/O bound) -> dùng đa luồng song song
+                        workers_count = int(os.getenv("PDF_VISION_WORKERS", "8"))
+                        Log.info(f"[Worker] 🌐 Vision LLM: Xử lý {workers_count} luồng song song")
+                        with ThreadPoolExecutor(max_workers=workers_count) as executor:
+                            future_to_page = {
+                                executor.submit(process_single_ocr_page, p_info): p_info[0]
+                                for p_info in pages_needing_ocr
+                            }
+                            for future in as_completed(future_to_page):
+                                p_idx, p_extracted_text, p_ocr_time = future.result()
+                                page_results[p_idx] = {"text": p_extracted_text, "page_num": p_idx + 1}
+                                page_ocr_times[p_idx] = p_ocr_time
+                                completed_ocr += 1
+                                total_processed = native_count + completed_ocr
+                                percent = int((total_processed / total_pages) * 100)
+                                if completed_ocr % 5 == 0 or completed_ocr == total_ocr_needed:
+                                    Log.info(f"[Worker] ⏳ Tiến độ PDF '{original_filename}': {total_processed}/{total_pages} trang ({percent}%)")
+                                    publish_event(user_id, "document_status", {
+                                        "document_id": doc_id,
+                                        "status": DocStatus.PROCESSING,
+                                        "progress": f"{total_processed}/{total_pages}",
+                                        "percent": percent,
+                                        "message": f"Đang xử lý trang {total_processed}/{total_pages}..."
+                                    })
+                    else:
+                        # CHẾ ĐỘ TUẦN TỰ HOÀN TOÀN: 1 trang 1 lần, dồn trọn 4 cores cho mỗi trang
+                        # OCR_THREADS=4 để 4 cores song song nhận dạng các dòng chữ trong trang đó.
+                        os.environ["OCR_THREADS"] = "4"
+                        Log.info(f"[Worker] ⚙️ Chế độ OCR hoàn toàn tuần tự: 1 trang/lần, 4 cores dồn toàn lực cho 1 trang")
+                        for p_info in pages_needing_ocr:
+                            p_idx, p_extracted_text, p_ocr_time = process_single_ocr_page(p_info)
                             page_results[p_idx] = {"text": p_extracted_text, "page_num": p_idx + 1}
                             page_ocr_times[p_idx] = p_ocr_time
                             completed_ocr += 1
-                            
                             total_processed = native_count + completed_ocr
                             percent = int((total_processed / total_pages) * 100)
-                            
-                            # Cập nhật tiến trình qua Redis SSE sau mỗi trang (nếu <= 10 trang) hoặc mỗi 5 trang
-                            if completed_ocr % 5 == 0 or completed_ocr == total_ocr_needed or total_ocr_needed <= 10:
-                                Log.info(f"[Worker] ⏳ Tiến độ PDF '{original_filename}': {total_processed}/{total_pages} trang ({percent}%)")
-                                publish_event(user_id, "document_status", {
-                                    "document_id": doc_id,
-                                    "status": DocStatus.PROCESSING,
-                                    "progress": f"{total_processed}/{total_pages}",
-                                    "percent": percent,
-                                    "message": f"Đang xử lý trang {total_processed}/{total_pages}..."
-                                })
+                            Log.info(f"[Worker] ⏳ Tiến độ PDF '{original_filename}': {total_processed}/{total_pages} trang ({percent}%)")
+                            publish_event(user_id, "document_status", {
+                                "document_id": doc_id,
+                                "status": DocStatus.PROCESSING,
+                                "progress": f"{total_processed}/{total_pages}",
+                                "percent": percent,
+                                "message": f"Đang xử lý trang {total_processed}/{total_pages}..."
+                            })
 
                     total_ocr_wall_time = time.time() - ocr_start_time
                     avg_ocr_page = total_ocr_wall_time / total_ocr_needed if total_ocr_needed > 0 else 0.0
