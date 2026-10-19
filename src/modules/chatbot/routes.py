@@ -19,6 +19,7 @@ from src.modules.auth.repositories.users_repository import users_repo
 from src.modules.auth.repositories.accounts_repository import accounts_repo
 from src.shared.services.subscription_service import subscription_service
 from src.shared.utils.auth_middleware import require_auth
+from src.shared.utils.security import hash_password
 from src.shared.utils.logger import Log
 from src.shared.utils.rate_limit import limiter
 from src.shared.utils.redis_client import rag_queue
@@ -571,6 +572,159 @@ def toggle_user_active(user_id):
         return jsonify({"statusCode": 200, "message": "User status updated successfully", "data": result}), 200
     except Exception as e:
         Log.error(f"[Admin API] Error toggling user active: {e}")
+        return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
+
+
+@chatbot_bp.route("/api/admin/users/<user_id>", methods=["PUT"])
+@require_auth
+def update_admin_user(user_id):
+    """Admin chỉnh sửa TẤT CẢ thông tin của user bất kỳ"""
+    try:
+        if g.user.get("role") != 0:
+            return jsonify({"statusCode": 403, "message": "Access denied. Admin only."}), 403
+
+        from bson import ObjectId
+        target_user = None
+        try:
+            target_user = users_repo.collection.find_one({"_id": ObjectId(user_id)})
+        except Exception:
+            pass
+        if not target_user and str(user_id).isdigit():
+            target_user = users_repo.collection.find_one({"user_id": int(user_id)})
+
+        if not target_user:
+            return jsonify({"statusCode": 404, "message": "User not found"}), 404
+
+        target_id_str = str(target_user["_id"])
+        data = request.json or {}
+        update_data = {}
+
+        if "fullname" in data:
+            fn = str(data["fullname"]).strip()
+            if not fn:
+                return jsonify({"statusCode": 400, "message": "Họ và tên không được để trống"}), 400
+            update_data["fullname"] = fn
+
+        if "email" in data:
+            email_val = str(data["email"]).strip().lower()
+            if not email_val:
+                return jsonify({"statusCode": 400, "message": "Email không được để trống"}), 400
+            existing_email = users_repo.find_by_email(email_val)
+            if existing_email and str(existing_email["_id"]) != target_id_str:
+                return jsonify({"statusCode": 400, "message": "Email đã được sử dụng bởi tài khoản khác"}), 400
+            update_data["email"] = email_val
+
+        if "phone" in data:
+            phone_val = str(data["phone"]).strip() if data["phone"] else None
+            if phone_val:
+                existing_phone = users_repo.collection.find_one({"phone": phone_val})
+                if existing_phone and str(existing_phone["_id"]) != target_id_str:
+                    return jsonify({"statusCode": 400, "message": "Số điện thoại đã được đăng ký cho tài khoản khác"}), 400
+            update_data["phone"] = phone_val
+
+        if "username" in data:
+            username_val = str(data["username"]).strip()
+            if not username_val:
+                return jsonify({"statusCode": 400, "message": "Username không được để trống"}), 400
+            existing_username = users_repo.find_by_username(username_val)
+            if existing_username and str(existing_username["_id"]) != target_id_str:
+                return jsonify({"statusCode": 400, "message": "Username đã tồn tại"}), 400
+            update_data["username"] = username_val
+
+        if "role" in data and data["role"] is not None:
+            try:
+                update_data["role"] = int(data["role"])
+            except (ValueError, TypeError):
+                return jsonify({"statusCode": 400, "message": "Role không hợp lệ"}), 400
+
+        if "active" in data and data["active"] is not None:
+            if isinstance(data["active"], bool):
+                update_data["active"] = data["active"]
+            else:
+                update_data["active"] = str(data["active"]).strip().lower() in ("true", "1")
+
+        if "avatar_url" in data:
+            update_data["avatar_url"] = str(data["avatar_url"]).strip() if data["avatar_url"] else None
+
+        # Admin reset mật khẩu trực tiếp cho user mà không cần mật khẩu cũ
+        if "password" in data or "new_password" in data:
+            new_pass = data.get("new_password") or data.get("password")
+            if not new_pass or len(str(new_pass).strip()) < 6:
+                return jsonify({"statusCode": 400, "message": "Mật khẩu mới phải có ít nhất 6 ký tự"}), 400
+            update_data["password"] = hash_password(str(new_pass).strip())
+
+        # Admin reset khóa thiết bị Device Lock
+        if data.get("reset_device") is True:
+            update_data["deviceId"] = None
+
+        # Admin cập nhật Plan cho Account của User
+        if "plan" in data and data["plan"] is not None:
+            try:
+                plan_val = int(data["plan"])
+                if plan_val not in PLANS_CONFIG:
+                    return jsonify({"statusCode": 400, "message": f"Plan ID không hợp lệ: {plan_val}"}), 400
+                target_account_id = target_user.get("account_id")
+                if target_account_id:
+                    accounts_repo.update(str(target_account_id), {"plan": plan_val})
+            except (ValueError, TypeError):
+                return jsonify({"statusCode": 400, "message": "Giá trị plan không hợp lệ"}), 400
+
+        if not update_data:
+            return jsonify({"statusCode": 400, "message": "Không có thông tin nào được cập nhật"}), 400
+
+        update_data["updated_at"] = datetime.now()
+        success = users_repo.update(target_id_str, update_data)
+        if success:
+            updated = users_repo.get_user_with_details(target_id_str)
+            return jsonify({
+                "statusCode": 200,
+                "message": "Cập nhật tài khoản người dùng thành công",
+                "data": updated
+            }), 200
+        else:
+            return jsonify({"statusCode": 400, "message": "Cập nhật tài khoản thất bại"}), 400
+    except Exception as e:
+        Log.error(f"[Admin API] Error updating user: {e}")
+        return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
+
+
+@chatbot_bp.route("/api/admin/users/<user_id>/reset-password", methods=["PUT", "POST"])
+@require_auth
+def admin_reset_user_password(user_id):
+    """Admin reset mật khẩu cho user nhanh chóng"""
+    try:
+        if g.user.get("role") != 0:
+            return jsonify({"statusCode": 403, "message": "Access denied. Admin only."}), 403
+
+        from bson import ObjectId
+        target_user = None
+        try:
+            target_user = users_repo.collection.find_one({"_id": ObjectId(user_id)})
+        except Exception:
+            pass
+        if not target_user and str(user_id).isdigit():
+            target_user = users_repo.collection.find_one({"user_id": int(user_id)})
+
+        if not target_user:
+            return jsonify({"statusCode": 404, "message": "User not found"}), 404
+
+        data = request.json or {}
+        new_pass = data.get("password") or data.get("new_password")
+        if not new_pass or len(str(new_pass).strip()) < 6:
+            return jsonify({"statusCode": 400, "message": "Mật khẩu mới phải có ít nhất 6 ký tự"}), 400
+
+        hashed = hash_password(str(new_pass).strip())
+        users_repo.update(str(target_user["_id"]), {
+            "password": hashed,
+            "updated_at": datetime.now()
+        })
+
+        return jsonify({
+            "statusCode": 200,
+            "message": f"Đặt lại mật khẩu cho tài khoản '{target_user.get('username')}' thành công"
+        }), 200
+    except Exception as e:
+        Log.error(f"[Admin API] Error resetting user password: {e}")
         return jsonify({"statusCode": 500, "message": "Internal server error", "error": str(e)}), 500
 
 

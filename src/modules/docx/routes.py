@@ -19,7 +19,7 @@ from src.shared.utils.auth_middleware import require_auth, require_role
 from src.shared.utils.logger import Log
 from src.shared.utils.rate_limit import get_limiter, limiter
 from src.shared.utils.file_utils import validate_image_file
-from src.shared.utils.security import hash_token
+from src.shared.utils.security import hash_token, hash_password, verify_password
 from src.modules.auth.services import auth_service, oauth_service, token_service, DRIVE_SCOPES
 from src.shared.services.email_service import email_service
 from src.shared.services.subscription_service import subscription_service
@@ -276,34 +276,284 @@ def update_user_avatar():
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
+def _find_user_by_any_id(user_id_val):
+    from bson import ObjectId
+    user = None
+    try:
+        user = users_repo.collection.find_one({"_id": ObjectId(str(user_id_val))})
+    except Exception:
+        pass
+    if not user and str(user_id_val).isdigit():
+        user = users_repo.collection.find_one({"user_id": int(user_id_val)})
+    return user
+
+
+@docx_bp.route('/api/user/profile', methods=['GET'])
+@docx_bp.route('/api/user/me', methods=['GET'])
+@require_auth
+def get_my_profile():
+    try:
+        user = users_repo.find_by_id(g.user_id)
+        if not user:
+            return jsonify({"statusCode": 404, "message": "User not found"}), 404
+
+        user_data = {
+            "id": str(user["_id"]),
+            "user_id": user.get("user_id"),
+            "username": user.get("username"),
+            "fullname": user.get("fullname"),
+            "email": user.get("email"),
+            "phone": user.get("phone"),
+            "avatar_url": user.get("avatar_url"),
+            "role": user.get("role", 2),
+            "active": user.get("active", True),
+            "account_id": str(user.get("account_id")) if user.get("account_id") else None,
+            "created_at": user.get("created_at"),
+            "updated_at": user.get("updated_at")
+        }
+
+        # Lấy thông tin quota nếu có account_id
+        if user.get("account_id"):
+            quota_info = subscription_service.get_quota_info(user["account_id"])
+            user_data["quota"] = quota_info
+
+        return jsonify({"statusCode": 200, "data": user_data}), 200
+    except Exception as e:
+        Log.error(f"[DocxAPI] Get profile failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@docx_bp.route('/api/user/profile', methods=['PUT'])
 @docx_bp.route('/api/user/update', methods=['PUT'])
 @require_auth
 def update_profile():
+    """User chỉnh sửa thông tin cá nhân của chính mình (fullname, phone, avatar_url)"""
     try:
-        data = request.json
-        allowed_fields = ["fullname", "phone", "avatar_url", "group_key", "user_id", "role"]
-        update_data = {k: v for k, v in data.items() if k in allowed_fields}
-        
-        if not update_data:
-            return jsonify({"statusCode": 400, "message": "No valid fields to update"}), 400
+        data = request.json or {}
+        update_data = {}
 
+        if "fullname" in data:
+            fullname = str(data["fullname"]).strip()
+            if not fullname:
+                return jsonify({"statusCode": 400, "message": "Họ và tên không được để trống"}), 400
+            update_data["fullname"] = fullname
+
+        if "phone" in data:
+            phone = str(data["phone"]).strip() if data["phone"] else None
+            if phone:
+                # Kiểm tra trùng phone với user khác
+                existing = users_repo.collection.find_one({"phone": phone})
+                if existing and str(existing["_id"]) != str(g.user_id):
+                    return jsonify({"statusCode": 400, "message": "Số điện thoại đã được đăng ký cho tài khoản khác"}), 400
+            update_data["phone"] = phone
+
+        if "avatar_url" in data:
+            update_data["avatar_url"] = str(data["avatar_url"]).strip() if data["avatar_url"] else None
+
+        if not update_data:
+            return jsonify({"statusCode": 400, "message": "Không có trường hợp lệ nào để cập nhật"}), 400
+
+        update_data["updated_at"] = datetime.now()
         success = users_repo.update(g.user_id, update_data)
         if success:
             updated_user = users_repo.find_by_id(g.user_id)
             if updated_user:
                 updated_user.pop("password", None)
+                updated_user.pop("api_key", None)
+                updated_user.pop("deviceId", None)
                 updated_user["_id"] = str(updated_user["_id"])
-                 
+
             return jsonify({
-                "statusCode": 200, 
-                "message": "User updated successfully",
+                "statusCode": 200,
+                "message": "Cập nhật thông tin cá nhân thành công",
                 "data": updated_user
-            })
+            }), 200
         else:
-            return jsonify({"statusCode": 400, "message": "Update failed"}), 400
+            return jsonify({"statusCode": 400, "message": "Cập nhật thất bại"}), 400
 
     except Exception as e:
-        Log.error(f"[DocxAPI] Update failed: {e}")
+        Log.error(f"[DocxAPI] Update profile failed: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@docx_bp.route('/api/user/change-password', methods=['PUT', 'POST'])
+@docx_bp.route('/api/auth/change-password', methods=['PUT', 'POST'])
+@require_auth
+def change_password():
+    """User cập nhật mật khẩu của chính họ với old_password và new_password"""
+    try:
+        data = request.json or {}
+        old_password = data.get("old_password") or data.get("current_password")
+        new_password = data.get("new_password") or data.get("password")
+
+        if not old_password:
+            return jsonify({"statusCode": 400, "message": "Vui lòng nhập mật khẩu hiện tại"}), 400
+        if not new_password or len(str(new_password).strip()) < 6:
+            return jsonify({"statusCode": 400, "message": "Mật khẩu mới phải có ít nhất 6 ký tự"}), 400
+
+        user = users_repo.find_by_id(g.user_id)
+        if not user:
+            return jsonify({"statusCode": 404, "message": "User not found"}), 404
+
+        current_hash = user.get("password")
+        if not current_hash or not verify_password(str(old_password), current_hash):
+            return jsonify({"statusCode": 400, "message": "Mật khẩu hiện tại không chính xác"}), 400
+
+        hashed_new_password = hash_password(str(new_password).strip())
+        success = users_repo.update(g.user_id, {
+            "password": hashed_new_password,
+            "updated_at": datetime.now()
+        })
+
+        if success:
+            return jsonify({
+                "statusCode": 200,
+                "message": "Đổi mật khẩu thành công"
+            }), 200
+        else:
+            return jsonify({"statusCode": 400, "message": "Đổi mật khẩu thất bại"}), 400
+
+    except Exception as e:
+        Log.error(f"[DocxAPI] Change password error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@docx_bp.route('/api/users/<user_id>', methods=['PUT'])
+@require_auth
+def update_user_by_id(user_id):
+    """
+    Route phân quyền:
+    - Admin (role 0): Có thể cập nhật ALL thông tin của user bất kỳ (fullname, email, phone, username, role, active, plan, password...).
+    - User (chính họ): Chỉ cập nhật thông tin cá nhân (fullname, phone, avatar_url) và mật khẩu (nếu có old_password).
+    - User khác: Bị từ chối quyền truy cập (403).
+    """
+    try:
+        target_user = _find_user_by_any_id(user_id)
+        if not target_user:
+            return jsonify({"statusCode": 404, "message": "Không tìm thấy người dùng"}), 404
+
+        target_id_str = str(target_user["_id"])
+        is_admin = g.user.get("role") == 0
+        is_self = str(g.user_id) == target_id_str
+
+        if not is_admin and not is_self:
+            return jsonify({"statusCode": 403, "message": "Bạn không có quyền chỉnh sửa tài khoản của người dùng khác"}), 403
+
+        data = request.json or {}
+        update_data = {}
+
+        # 1. Cập nhật Họ và tên
+        if "fullname" in data:
+            fn = str(data["fullname"]).strip()
+            if not fn:
+                return jsonify({"statusCode": 400, "message": "Họ và tên không được để trống"}), 400
+            update_data["fullname"] = fn
+
+        # 2. Cập nhật Số điện thoại
+        if "phone" in data:
+            phone_val = str(data["phone"]).strip() if data["phone"] else None
+            if phone_val:
+                existing_phone = users_repo.collection.find_one({"phone": phone_val})
+                if existing_phone and str(existing_phone["_id"]) != target_id_str:
+                    return jsonify({"statusCode": 400, "message": "Số điện thoại đã được đăng ký cho tài khoản khác"}), 400
+            update_data["phone"] = phone_val
+
+        # 3. Cập nhật Avatar
+        if "avatar_url" in data:
+            update_data["avatar_url"] = str(data["avatar_url"]).strip() if data["avatar_url"] else None
+
+        # 4. Đổi mật khẩu
+        # - Admin: có thể set thẳng password mới mà không cần old_password
+        # - User: bắt buộc phải có old_password và verify chính xác
+        if "password" in data or "new_password" in data:
+            new_pass = data.get("new_password") or data.get("password")
+            if not new_pass or len(str(new_pass).strip()) < 6:
+                return jsonify({"statusCode": 400, "message": "Mật khẩu mới phải có ít nhất 6 ký tự"}), 400
+
+            if not is_admin:
+                old_pass = data.get("old_password") or data.get("current_password")
+                if not old_pass:
+                    return jsonify({"statusCode": 400, "message": "Vui lòng cung cấp mật khẩu cũ để đổi mật khẩu"}), 400
+                if not target_user.get("password") or not verify_password(str(old_pass), target_user["password"]):
+                    return jsonify({"statusCode": 400, "message": "Mật khẩu hiện tại không chính xác"}), 400
+
+            update_data["password"] = hash_password(str(new_pass).strip())
+
+        # 5. Các quyền chỉ dành riêng cho Admin (is_admin == True)
+        if is_admin:
+            # Cập nhật Email
+            if "email" in data:
+                email_val = str(data["email"]).strip().lower()
+                if not email_val:
+                    return jsonify({"statusCode": 400, "message": "Email không được để trống"}), 400
+                existing_email = users_repo.find_by_email(email_val)
+                if existing_email and str(existing_email["_id"]) != target_id_str:
+                    return jsonify({"statusCode": 400, "message": "Email đã được sử dụng bởi tài khoản khác"}), 400
+                update_data["email"] = email_val
+
+            # Cập nhật Username
+            if "username" in data:
+                username_val = str(data["username"]).strip()
+                if not username_val:
+                    return jsonify({"statusCode": 400, "message": "Username không được để trống"}), 400
+                existing_username = users_repo.find_by_username(username_val)
+                if existing_username and str(existing_username["_id"]) != target_id_str:
+                    return jsonify({"statusCode": 400, "message": "Username đã tồn tại"}), 400
+                update_data["username"] = username_val
+
+            # Cập nhật Role
+            if "role" in data and data["role"] is not None:
+                try:
+                    update_data["role"] = int(data["role"])
+                except (ValueError, TypeError):
+                    return jsonify({"statusCode": 400, "message": "Role không hợp lệ"}), 400
+
+            # Cập nhật Trạng thái Active
+            if "active" in data and data["active"] is not None:
+                if isinstance(data["active"], bool):
+                    update_data["active"] = data["active"]
+                else:
+                    update_data["active"] = str(data["active"]).strip().lower() in ("true", "1")
+
+            # Reset khóa thiết bị Device Lock
+            if data.get("reset_device") is True:
+                update_data["deviceId"] = None
+
+            # Cập nhật Gói cước (Plan) cho Account của User
+            if "plan" in data and data["plan"] is not None:
+                try:
+                    plan_val = int(data["plan"])
+                    if plan_val not in PLANS_CONFIG:
+                        return jsonify({"statusCode": 400, "message": f"Plan ID không hợp lệ: {plan_val}"}), 400
+                    
+                    target_account_id = target_user.get("account_id")
+                    if target_account_id:
+                        accounts_repo.update(str(target_account_id), {"plan": plan_val})
+                except (ValueError, TypeError):
+                    return jsonify({"statusCode": 400, "message": "Giá trị plan không hợp lệ"}), 400
+
+        if not update_data:
+            return jsonify({"statusCode": 400, "message": "Không có thông tin nào được cập nhật"}), 400
+
+        update_data["updated_at"] = datetime.now()
+        success = users_repo.update(target_id_str, update_data)
+        if success:
+            updated_user = users_repo.find_by_id(target_id_str)
+            updated_user.pop("password", None)
+            updated_user.pop("api_key", None)
+            updated_user.pop("deviceId", None)
+            updated_user["_id"] = str(updated_user["_id"])
+
+            return jsonify({
+                "statusCode": 200,
+                "message": "Cập nhật tài khoản thành công",
+                "data": updated_user
+            }), 200
+        else:
+            return jsonify({"statusCode": 400, "message": "Cập nhật tài khoản thất bại"}), 400
+
+    except Exception as e:
+        Log.error(f"[DocxAPI] Update user by id failed: {e}")
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
