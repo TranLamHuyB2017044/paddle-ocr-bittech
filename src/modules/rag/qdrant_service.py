@@ -30,6 +30,13 @@ class QdrantService:
             ("document_id", models.PayloadSchemaType.KEYWORD),
             ("category", models.PayloadSchemaType.KEYWORD),
             ("page_num", models.PayloadSchemaType.INTEGER),
+            ("arrivalNo", models.PayloadSchemaType.INTEGER),
+            ("documentNo", models.PayloadSchemaType.KEYWORD),
+            ("priority", models.PayloadSchemaType.KEYWORD),
+            ("security", models.PayloadSchemaType.KEYWORD),
+            ("status", models.PayloadSchemaType.KEYWORD),
+            ("currentDeptName", models.PayloadSchemaType.KEYWORD),
+            ("currentUserName", models.PayloadSchemaType.KEYWORD),
         ]
         for field_name, field_schema in indexes:
             try:
@@ -340,6 +347,104 @@ class QdrantService:
             Log.error(f"[Qdrant] Lỗi khi scroll chunks cho trang {page_num}: {e}")
             return []
 
+    def upsert_document_record(self, workspace_id: str, document_id: str, semantic_text: str, vector: list, record_meta: dict):
+        """
+        Lưu 1 dòng dữ liệu văn bản đến vào Qdrant (1 Vector Point duy nhất).
+        Sử dụng uuid5 từ document_id để đảm bảo idempotent.
+        """
+        import uuid
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(document_id)))
+        payload = {
+            "workspace_id": str(workspace_id),
+            "document_id": str(document_id),
+            "text": semantic_text,
+            "is_record": True,
+            **record_meta
+        }
+        point = models.PointStruct(
+            id=point_id,
+            vector=vector,
+            payload=payload
+        )
+        Log.info(f"[Qdrant] 📥 Upserting document record '{document_id}' (arrivalNo: {record_meta.get('arrivalNo')})")
+        return self.upsert_points([point])
+
+    def patch_document_metadata(self, workspace_id: str, document_id: str, payload_updates: dict):
+        """
+        Cập nhật metadata động (priority, security, status, assignees, deadline...)
+        cho 1 dòng dữ liệu văn bản đến mà KHÔNG re-embed (0% tài nguyên embedding).
+        """
+        import uuid
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(document_id)))
+        Log.info(f"[Qdrant] ⚡ Patching payload for document record '{document_id}': {list(payload_updates.keys())}")
+        return self.client.set_payload(
+            collection_name=self.collection_name,
+            payload=payload_updates,
+            points=[point_id]
+        )
+
+    def delete_document_record(self, workspace_id: str, document_id: str):
+        """
+        Xóa bỏ vector point của 1 dòng văn bản đến.
+        """
+        import uuid
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(document_id)))
+        Log.info(f"[Qdrant] 🗑️ Deleting document record point '{document_id}'")
+        return self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models.PointIdsList(points=[point_id])
+        )
+
+    def search_document_records(self, workspace_id: str, vector: list = None,
+                                arrival_no: int = None, document_no: str = None,
+                                status: str = None, priority: str = None, security: str = None,
+                                current_dept: str = None, current_user: str = None,
+                                limit: int = 10):
+        """
+        Tìm kiếm thông minh kết hợp Exact Match Filter và Semantic Search cho văn bản đến.
+        """
+        must_conditions = [
+            models.FieldCondition(key="workspace_id", match=models.MatchValue(value=str(workspace_id)))
+        ]
+        
+        # Exact match filters
+        if arrival_no is not None:
+            must_conditions.append(models.FieldCondition(key="arrivalNo", match=models.MatchValue(value=int(arrival_no))))
+        if document_no:
+            must_conditions.append(models.FieldCondition(key="documentNo", match=models.MatchValue(value=str(document_no).strip())))
+        if status:
+            must_conditions.append(models.FieldCondition(key="status", match=models.MatchValue(value=str(status).strip())))
+        if priority:
+            must_conditions.append(models.FieldCondition(key="priority", match=models.MatchValue(value=str(priority).strip())))
+        if security:
+            must_conditions.append(models.FieldCondition(key="security", match=models.MatchValue(value=str(security).strip())))
+        if current_dept:
+            must_conditions.append(models.FieldCondition(key="currentDeptName", match=models.MatchValue(value=str(current_dept).strip())))
+        if current_user:
+            must_conditions.append(models.FieldCondition(key="currentUserName", match=models.MatchValue(value=str(current_user).strip())))
+
+        search_filter = models.Filter(must=must_conditions)
+
+        if vector:
+            response = self.client.query_points(
+                collection_name=self.collection_name,
+                query=vector,
+                query_filter=search_filter,
+                limit=limit,
+                with_payload=True
+            )
+            return response.points
+        else:
+            # Scroll theo filter nếu không có vector query (tìm chính xác theo số hiệu hoặc bộ lọc)
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=search_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False
+            )
+            return points
+
 # Lazy singleton pattern
 _qdrant_service_instance = None
 
@@ -350,56 +455,19 @@ def get_qdrant_service():
             _qdrant_service_instance = QdrantService()
         except Exception as e:
             Log.error(f"[Qdrant] ❌ Critical: Could not initialize Qdrant: {e}")
-            # Instead of crashing the whole app import, we return None 
-            # and let the routes handle the error
             return None
     return _qdrant_service_instance
 
-# We will use a property-like access in the service module
+# Dynamic proxy access in the service module
 class QdrantServiceProxy:
     @property
     def instance(self):
         return get_qdrant_service()
     
-    def upsert_points(self, *args, **kwargs):
-        if self.instance: return self.instance.upsert_points(*args, **kwargs)
+    def __getattr__(self, name):
+        if self.instance:
+            return getattr(self.instance, name)
         raise Exception("Qdrant not initialized")
-        
-    def search(self, *args, **kwargs):
-        if self.instance: return self.instance.search(*args, **kwargs)
-        raise Exception("Qdrant not initialized")
-        
-    def delete_by_workspace(self, *args, **kwargs):
-        if self.instance: return self.instance.delete_by_workspace(*args, **kwargs)
-        raise Exception("Qdrant not initialized")
-
-    def set_document_category(self, *args, **kwargs):
-        if self.instance: return self.instance.set_document_category(*args, **kwargs)
-        raise Exception("Qdrant not initialized")
-
-    def rename_category(self, *args, **kwargs):
-        if self.instance: return self.instance.rename_category(*args, **kwargs)
-        raise Exception("Qdrant not initialized")
-
-    def delete_by_category(self, *args, **kwargs):
-        if self.instance: return self.instance.delete_by_category(*args, **kwargs)
-        raise Exception("Qdrant not initialized")
-
-    def delete_by_document(self, *args, **kwargs):
-        if self.instance: return self.instance.delete_by_document(*args, **kwargs)
-        raise Exception("Qdrant not initialized")
-
-    def scroll(self, *args, **kwargs):
-        if self.instance: return self.instance.scroll(*args, **kwargs)
-        raise Exception("Qdrant not initialized")
-
-    def get_document_count(self, *args, **kwargs):
-        if self.instance: return self.instance.get_document_count(*args, **kwargs)
-        return 0
-
-    def get_chunks_for_page(self, *args, **kwargs):
-        if self.instance: return self.instance.get_chunks_for_page(*args, **kwargs)
-        return []
 
 qdrant_service = QdrantServiceProxy()
 

@@ -320,12 +320,17 @@ class RagService:
                 )
         else:
             if domain == "administrative_doc":
+                from datetime import datetime
+                today_str = datetime.now().strftime("%d/%m/%Y")
                 system_instruction = (
                     f"{domain_prompt}\n\n"
+                    f"THÔNG TIN THỜI GIAN THỰC: Hôm nay là ngày {today_str}.\n\n"
                     "QUY TẮC BẮT BUỘC:\n"
-                    "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN HÀNH CHÍNH được cung cấp bên dưới.\n"
-                    "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có trong nội dung.\n"
-                    "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa được quy định trong tài liệu được cung cấp.\n"
+                    "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN VÀ METADATA HỆ THỐNG được cung cấp bên dưới.\n"
+                    "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số đến (nếu có), Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có.\n"
+                    "- ƯU TIÊN METADATA KHI CÓ MÂU THUẪN: Nếu nội dung file gốc và metadata cập nhật (Độ khẩn, Độ mật, Trạng thái, Cán bộ phụ trách) có mâu thuẫn, LUÔN ƯU TIÊN thông tin metadata mới nhất.\n"
+                    "- XỬ LÝ QUÁ HẠN: Chỉ xác định quá hạn nếu có ngày hạn cụ thể < ngày hôm nay và chưa hoàn thành. Nếu ghi 'Không đặt hạn', tuyệt đối không báo quá hạn.\n"
+                    "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa có trong dữ liệu được cung cấp.\n"
                     "- Giữ văn phong chuẩn mực hành chính, rõ ràng, khách quan và chính xác.\n"
                     "- KHÔNG tự bịa ra câu trả lời hay điều khoản không tồn tại.\n"
                     "- KHÔNG trả lời liên quan tới Bittech."
@@ -455,12 +460,17 @@ class RagService:
                     )
             else:
                 if domain == "administrative_doc":
+                    from datetime import datetime
+                    today_str = datetime.now().strftime("%d/%m/%Y")
                     system_instruction = (
                         f"{domain_prompt}\n\n"
+                        f"THÔNG TIN THỜI GIAN THỰC: Hôm nay là ngày {today_str}.\n\n"
                         "QUY TẮC BẮT BUỘC:\n"
-                        "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN HÀNH CHÍNH được cung cấp bên dưới.\n"
-                        "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có trong nội dung.\n"
-                        "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa được quy định trong tài liệu được cung cấp.\n"
+                        "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN VÀ METADATA HỆ THỐNG được cung cấp bên dưới.\n"
+                        "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số đến (nếu có), Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có.\n"
+                        "- ƯU TIÊN METADATA KHI CÓ MÂU THUẪN: Nếu nội dung file gốc và metadata cập nhật (Độ khẩn, Độ mật, Trạng thái, Cán bộ phụ trách) có mâu thuẫn, LUÔN ƯU TIÊN thông tin metadata mới nhất.\n"
+                        "- XỬ LÝ QUÁ HẠN: Chỉ xác định quá hạn nếu có ngày hạn cụ thể < ngày hôm nay và chưa hoàn thành. Nếu ghi 'Không đặt hạn', tuyệt đối không báo quá hạn.\n"
+                        "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa có trong dữ liệu được cung cấp.\n"
                         "- KHÔNG tự bịa ra câu trả lời hay điều khoản không tồn tại."
                     )
                 else:
@@ -530,6 +540,142 @@ class RagService:
             "reason": reason,
             "reason_vi": reason_vi
         }
+
+    # =========================================================================
+    # DOCUMENT RECORD MANAGEMENT (VĂN BẢN ĐẾN DẠNG DÒNG DỮ LIỆU)
+    # =========================================================================
+
+    def build_record_semantic_text(self, record: dict) -> str:
+        """
+        Chuẩn hóa chuỗi ngữ nghĩa bao quát toàn bộ thực thể cho 1 dòng dữ liệu văn bản đến.
+        Chuỗi này dùng để sinh vector embedding duy nhất cho dòng đó.
+        """
+        parts = []
+        if record.get("arrivalNo"):
+            parts.append(f"Số đến: {record.get('arrivalNo')}")
+        if record.get("documentNo"):
+            parts.append(f"Số ký hiệu: {record.get('documentNo')}")
+        if record.get("senderOrg"):
+            parts.append(f"Cơ quan ban hành: {record.get('senderOrg')}")
+        if record.get("title"):
+            parts.append(f"Trích yếu nội dung: {record.get('title')}")
+        
+        category = record.get("categoryName") or record.get("category")
+        if category:
+            parts.append(f"Lĩnh vực: {category}")
+
+        dept = record.get("currentDeptName")
+        if dept:
+            parts.append(f"Đơn vị thụ lý: {dept}")
+        
+        user = record.get("currentUserName")
+        if user:
+            parts.append(f"Cán bộ phụ trách: {user}")
+
+        if record.get("receiveDate"):
+            parts.append(f"Ngày đến: {record.get('receiveDate')}")
+        if record.get("deadline"):
+            parts.append(f"Hạn xử lý: {record.get('deadline')}")
+        else:
+            parts.append("Hạn xử lý: Không đặt hạn")
+
+        if record.get("priority"):
+            parts.append(f"Độ khẩn: {record.get('priority')}")
+        if record.get("security"):
+            parts.append(f"Độ mật: {record.get('security')}")
+        if record.get("note"):
+            parts.append(f"Ghi chú: {record.get('note')}")
+
+        return ". ".join(parts) + "."
+
+    def index_document_record(self, record: dict, workspace_id: str):
+        """
+        Tiếp nhận và lưu trữ 1 dòng văn bản đến vào Qdrant.
+        Chỉ embed 1 lần duy nhất cho chuỗi ngữ nghĩa của dòng này (không re-chunking).
+        """
+        document_id = record.get("id") or record.get("document_id")
+        if not document_id:
+            raise ValueError("Record phải có trường 'id' hoặc 'document_id'")
+
+        semantic_text = self.build_record_semantic_text(record)
+        vector = embedding_service.embed_text([semantic_text])[0]
+
+        # Chuẩn bị metadata lưu vào Qdrant
+        clean_meta = dict(record)
+        clean_meta.pop("id", None)
+        clean_meta.pop("document_id", None)
+        clean_meta.pop("workspace_id", None)
+
+        return qdrant_service.upsert_document_record(
+            workspace_id=str(workspace_id),
+            document_id=str(document_id),
+            semantic_text=semantic_text,
+            vector=vector,
+            record_meta=clean_meta
+        )
+
+    def patch_document_record_metadata(self, workspace_id: str, document_id: str, updates: dict):
+        """
+        Cập nhật metadata động (priority, security, status, assignees, deadline...)
+        cho 1 dòng dữ liệu văn bản đến. Tuyệt đối KHÔNG re-embed (0% chi phí AI).
+        """
+        clean_updates = dict(updates)
+        clean_updates.pop("id", None)
+        clean_updates.pop("document_id", None)
+        clean_updates.pop("workspace_id", None)
+
+        return qdrant_service.patch_document_metadata(
+            workspace_id=str(workspace_id),
+            document_id=str(document_id),
+            payload_updates=clean_updates
+        )
+
+    def delete_document_record(self, workspace_id: str, document_id: str):
+        """
+        Xóa dòng dữ liệu văn bản đến khỏi Vector DB.
+        """
+        return qdrant_service.delete_document_record(
+            workspace_id=str(workspace_id),
+            document_id=str(document_id)
+        )
+
+    def search_document_records(self, workspace_id: str, query: str = None,
+                                arrival_no: int = None, document_no: str = None,
+                                status: str = None, priority: str = None, security: str = None,
+                                current_dept: str = None, current_user: str = None,
+                                limit: int = 10):
+        """
+        Tìm kiếm thông minh kết hợp Exact Match (Số đến, Số ký hiệu, Trạng thái...)
+        và Semantic Search (Truy vấn theo nội dung trích yếu).
+        """
+        vector = None
+        if query and query.strip():
+            vector = embedding_service.embed_text([query.strip()])[0]
+
+        points = qdrant_service.search_document_records(
+            workspace_id=str(workspace_id),
+            vector=vector,
+            arrival_no=arrival_no,
+            document_no=document_no,
+            status=status,
+            priority=priority,
+            security=security,
+            current_dept=current_dept,
+            current_user=current_user,
+            limit=limit
+        )
+
+        results = []
+        for p in points:
+            payload = p.payload or {}
+            score = getattr(p, "score", None)
+            results.append({
+                "point_id": p.id,
+                "document_id": payload.get("document_id"),
+                "score": score,
+                "payload": payload
+            })
+        return results
 
 rag_service = RagService()
 

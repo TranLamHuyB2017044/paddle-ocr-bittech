@@ -1439,4 +1439,159 @@ def reindex_document_endpoint(document_id):
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
+# =========================================================================
+# DOCUMENT RECORDS SYNC APIS (VĂN BẢN ĐẾN DẠNG DÒNG DỮ LIỆU)
+# =========================================================================
+
+@rag_bp.route('/api/rag/records', methods=['POST'])
+@require_auth
+def create_document_record():
+    """
+    Tiếp nhận 1 dòng dữ liệu văn bản đến từ backend external.
+    Thực hiện embed duy nhất chuỗi ngữ nghĩa của dòng này và lưu vào Qdrant (0% re-chunking).
+    """
+    try:
+        data = request.json or {}
+        workspace_id = data.get("workspace_id")
+        if not workspace_id:
+            return jsonify({"statusCode": 400, "message": "Trường 'workspace_id' là bắt buộc"}), 400
+
+        record = data.get("record") or data
+        doc_id = record.get("id") or record.get("document_id")
+        if not doc_id:
+            return jsonify({"statusCode": 400, "message": "Record phải có trường 'id' hoặc 'document_id'"}), 400
+
+        rag_service.index_document_record(record=record, workspace_id=workspace_id)
+
+        return jsonify({
+            "statusCode": 201,
+            "message": "Đã đồng bộ văn bản đến vào tri thức RAG thành công",
+            "data": {
+                "document_id": doc_id,
+                "workspace_id": workspace_id,
+                "arrivalNo": record.get("arrivalNo"),
+                "documentNo": record.get("documentNo")
+            }
+        }), 201
+    except Exception as e:
+        Log.error(f"[RAG-API] create_document_record error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@rag_bp.route('/api/rag/records/<document_id>/metadata', methods=['PATCH'])
+@require_auth
+def patch_document_record_metadata(document_id):
+    """
+    Cập nhật metadata động (status, priority, security, assignees, deadline...)
+    cho 1 dòng văn bản đến mà KHÔNG re-embed (0% tài nguyên embedding, tốc độ < 2ms).
+    """
+    try:
+        data = request.json or {}
+        workspace_id = data.get("workspace_id") or request.args.get("workspace_id")
+        if not workspace_id:
+            return jsonify({"statusCode": 400, "message": "Trường 'workspace_id' là bắt buộc"}), 400
+
+        # Lọc bỏ các trường metadata nếu được bọc trong 'updates' hoặc lấy thẳng từ body
+        updates = data.get("updates") if "updates" in data else data
+        updates = {k: v for k, v in updates.items() if k not in ["workspace_id", "document_id", "id"]}
+
+        if not updates:
+            return jsonify({"statusCode": 400, "message": "Không có trường metadata nào được cung cấp để cập nhật"}), 400
+
+        rag_service.patch_document_record_metadata(
+            workspace_id=workspace_id,
+            document_id=document_id,
+            updates=updates
+        )
+
+        return jsonify({
+            "statusCode": 200,
+            "message": "Cập nhật metadata văn bản thành công (0% re-embedding)",
+            "data": {
+                "document_id": document_id,
+                "workspace_id": workspace_id,
+                "updated_fields": list(updates.keys())
+            }
+        }), 200
+    except Exception as e:
+        Log.error(f"[RAG-API] patch_document_record_metadata error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@rag_bp.route('/api/rag/records/<document_id>', methods=['DELETE'])
+@require_auth
+def delete_document_record(document_id):
+    """
+    Xóa dòng dữ liệu văn bản đến khỏi Vector DB khi văn bản bị hủy/xóa ở hệ thống chính.
+    """
+    try:
+        workspace_id = request.args.get("workspace_id") or (request.json or {}).get("workspace_id")
+        if not workspace_id:
+            return jsonify({"statusCode": 400, "message": "Query param hoặc body 'workspace_id' là bắt buộc"}), 400
+
+        rag_service.delete_document_record(workspace_id=workspace_id, document_id=document_id)
+
+        return jsonify({
+            "statusCode": 200,
+            "message": f"Đã xóa dòng văn bản '{document_id}' khỏi tri thức RAG thành công",
+            "data": {
+                "document_id": document_id,
+                "workspace_id": workspace_id
+            }
+        }), 200
+    except Exception as e:
+        Log.error(f"[RAG-API] delete_document_record error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+@rag_bp.route('/api/rag/records/search', methods=['POST'])
+@require_auth
+def search_document_records():
+    """
+    Tìm kiếm thông minh kết hợp Exact Match Filter và Semantic Search cho văn bản đến.
+    Hỗ trợ lọc theo số đến, số ký hiệu, trạng thái, độ khẩn, độ mật, người xử lý...
+    """
+    try:
+        data = request.json or {}
+        workspace_id = data.get("workspace_id")
+        if not workspace_id:
+            return jsonify({"statusCode": 400, "message": "Trường 'workspace_id' là bắt buộc"}), 400
+
+        query = data.get("query")
+        arrival_no = data.get("arrivalNo")
+        document_no = data.get("documentNo")
+        status = data.get("status")
+        priority = data.get("priority")
+        security = data.get("security")
+        current_dept = data.get("currentDeptName")
+        current_user = data.get("currentUserName")
+        limit = data.get("limit", 10)
+
+        results = rag_service.search_document_records(
+            workspace_id=workspace_id,
+            query=query,
+            arrival_no=arrival_no,
+            document_no=document_no,
+            status=status,
+            priority=priority,
+            security=security,
+            current_dept=current_dept,
+            current_user=current_user,
+            limit=limit
+        )
+
+        return jsonify({
+            "statusCode": 200,
+            "message": "Tìm kiếm văn bản đến thành công",
+            "data": {
+                "total": len(results),
+                "items": results
+            }
+        }), 200
+    except Exception as e:
+        Log.error(f"[RAG-API] search_document_records error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+
 
