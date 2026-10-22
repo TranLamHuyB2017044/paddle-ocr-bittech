@@ -275,6 +275,9 @@ def public_chat_with_chatbot(chatbot_id):
         if not is_contact_info_reply:
             accounts_repo.increment_usage(chatbot["account_id"])
         
+        from src.modules.rag.rag_service import sanitize_chat_answer
+        result["answer"] = sanitize_chat_answer(result.get("answer", ""))
+
         chat_history_repo.save_message(
             workspace_id=chatbot.get("workspace_id"),
             user_id="anonymous",

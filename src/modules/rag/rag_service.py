@@ -52,6 +52,70 @@ def extract_document_identifiers(text: str) -> dict:
 
     return res
 
+def clean_friendly_text(val) -> str:
+    """Loại bỏ mã code kỹ thuật/enum trong ngoặc đơn dạng (DANG_XU_LY) và chuẩn hóa sang tiếng Việt tự nhiên"""
+    if not val:
+        return ""
+    val_str = str(val).strip()
+    val_str = re.sub(r'\s*\([A-Z0-9_\-]+\)', '', val_str).strip()
+    enum_maps = {
+        "DANG_XU_LY": "Đang xử lý",
+        "MOI_NHAN": "Mới nhận",
+        "MOI_TIEP_NHAN": "Mới nhận",
+        "CHO_Y_KIEN": "Chờ ý kiến",
+        "CHO_KY": "Chờ ký",
+        "DA_KY": "Đã ký",
+        "HOAN_THANH": "Hoàn thành",
+        "LUU_TRU": "Đã lưu trữ",
+        "QUA_HAN": "Quá hạn",
+        "HOA_TOC": "Hỏa tốc",
+        "THUONG_KHAN": "Thượng khẩn",
+        "KHAN": "Khẩn",
+        "THUONG": "Thường",
+        "TUYET_MAT": "Tuyệt mật",
+        "TOI_MAT": "Tối mật",
+        "MAT": "Mật",
+        "CHU_TRI": "Chủ trì",
+        "PHOI_HOP": "Phối hợp",
+    }
+    return enum_maps.get(val_str, val_str)
+
+def sanitize_chat_answer(answer: str) -> str:
+    """
+    Hậu xử lý câu trả lời của chatbot:
+    1. Loại bỏ triệt để các mã enum kỹ thuật trong ngoặc đơn như (DANG_XU_LY), (MOI_NHAN), (HOA_TOC)...
+    2. Chuyển đổi các mã enum đứng độc lập thành tên tiếng Việt thân thiện chuẩn mực.
+    """
+    if not answer:
+        return answer
+    
+    # 1. Xóa các mã enum trong ngoặc đơn dạng (DANG_XU_LY), (MOI_NHAN), (MAT)...
+    parens_pattern = r'\s*\((?:DANG_XU_LY|MOI_NHAN|MOI_TIEP_NHAN|CHO_Y_KIEN|CHO_KY|DA_KY|HOAN_THANH|LUU_TRU|QUA_HAN|HOA_TOC|THUONG_KHAN|KHAN|THUONG|TUYET_MAT|TOI_MAT|MAT|CHU_TRI|PHOI_HOP|[A-Z]+_[A-Z0-9_]+)\)'
+    clean = re.sub(parens_pattern, '', str(answer))
+    
+    # 2. Thay thế các mã enum đứng độc lập sang tiếng Việt
+    standalone_maps = {
+        r'\bDANG_XU_LY\b': 'Đang xử lý',
+        r'\bMOI_NHAN\b': 'Mới nhận',
+        r'\bMOI_TIEP_NHAN\b': 'Mới nhận',
+        r'\bCHO_Y_KIEN\b': 'Chờ ý kiến',
+        r'\bCHO_KY\b': 'Chờ ký',
+        r'\bDA_KY\b': 'Đã ký',
+        r'\bHOAN_THANH\b': 'Hoàn thành',
+        r'\bLUU_TRU\b': 'Đã lưu trữ',
+        r'\bQUA_HAN\b': 'Quá hạn',
+        r'\bHOA_TOC\b': 'Hỏa tốc',
+        r'\bTHUONG_KHAN\b': 'Thượng khẩn',
+        r'\bTUYET_MAT\b': 'Tuyệt mật',
+        r'\bTOI_MAT\b': 'Tối mật',
+        r'\bCHU_TRI\b': 'Chủ trì',
+        r'\bPHOI_HOP\b': 'Phối hợp',
+    }
+    for pat, rep in standalone_maps.items():
+        clean = re.sub(pat, rep, clean)
+        
+    return clean
+
 def format_record_as_context(payload: dict) -> str:
     """Format payload của 1 dòng dữ liệu văn bản đến thành block context chuẩn từ tài liệu gốc cho LLM"""
     parts = ["--- NGUỒN: VĂN BẢN ĐẾN (BẢN GỐC TỪ HỆ THỐNG) ---"]
@@ -78,8 +142,11 @@ def format_record_as_context(payload: dict) -> str:
     else:
         parts.append("- Hạn xử lý (Thời hạn giải quyết): Không đặt hạn")
         
-    parts.append(f"- Trạng thái xử lý hiện tại: {payload.get('status', 'Mới nhận')}")
-    parts.append(f"- Mức độ khẩn: {payload.get('priority', 'Thường')} | Mức độ mật: {payload.get('security', 'Thường')}")
+    status_clean = clean_friendly_text(payload.get('status', 'Mới nhận'))
+    priority_clean = clean_friendly_text(payload.get('priority', 'Thường'))
+    security_clean = clean_friendly_text(payload.get('security', 'Thường'))
+    parts.append(f"- Trạng thái xử lý hiện tại: {status_clean}")
+    parts.append(f"- Mức độ khẩn: {priority_clean} | Mức độ mật: {security_clean}")
     
     dept = payload.get("currentDeptName") or "Chưa phân luồng"
     user = payload.get("currentUserName") or "Chưa giao"
@@ -88,7 +155,7 @@ def format_record_as_context(payload: dict) -> str:
     
     assignees = payload.get("assignees")
     if assignees and isinstance(assignees, list):
-        ass_str = ", ".join([f"{a.get('fullName', '')} ({a.get('role', '')})" for a in assignees if isinstance(a, dict)])
+        ass_str = ", ".join([f"{a.get('fullName', '')} ({clean_friendly_text(a.get('role', ''))})" for a in assignees if isinstance(a, dict)])
         if ass_str:
             parts.append(f"- Cán bộ phối hợp: {ass_str}")
             
@@ -288,6 +355,7 @@ class RagService:
         
         prompt = f"DỰA TRÊN NGỮ CẢNH SAU:\n{context}\n\nCÂU HỎI: {question}"
         answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
+        answer = sanitize_chat_answer(answer)
         
         # Filter sources with minimum relevance score
         min_score = getattr(config, "RAG_SOURCE_MIN_SCORE", 0.35)
@@ -465,6 +533,7 @@ class RagService:
                     "QUY TẮC BẮT BUỘC:\n"
                     "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN VÀ METADATA HỆ THỐNG được cung cấp bên dưới.\n"
                     "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số đến (nếu có), Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có.\n"
+                    "- QUY CHUẨN HIỂN THỊ: Tuyệt đối KHÔNG trả về các mã enum/mã code nội bộ trong ngoặc đơn như (DANG_XU_LY), (MOI_NHAN), (HOA_TOC), (MAT)... Bắt buộc chỉ hiển thị tên gọi tiếng Việt tự nhiên chuẩn mực (ví dụ: 'Đang xử lý', 'Mới nhận', 'Hỏa tốc').\n"
                     "- ƯU TIÊN METADATA KHI CÓ MÂU THUẪN: Nếu nội dung file gốc và metadata cập nhật (Độ khẩn, Độ mật, Trạng thái, Cán bộ phụ trách) có mâu thuẫn, LUÔN ƯU TIÊN thông tin metadata mới nhất.\n"
                     "- XỬ LÝ QUÁ HẠN: Chỉ xác định quá hạn nếu có ngày hạn cụ thể < ngày hôm nay và chưa hoàn thành. Nếu ghi 'Không đặt hạn', tuyệt đối không báo quá hạn.\n"
                     "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa có trong dữ liệu được cung cấp.\n"
@@ -486,6 +555,7 @@ class RagService:
         
         prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI: {question}"
         answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
+        answer = sanitize_chat_answer(answer)
         Log.info(f"[RAG Store Chat] ✅ Answer generated using provider: {used_provider}")
         
         # Check no-info keywords
@@ -605,6 +675,7 @@ class RagService:
                         "QUY TẮC BẮT BUỘC:\n"
                         "- CHỈ trả lời dựa TRỰC TIẾP trên NỘI DUNG VĂN BẢN VÀ METADATA HỆ THỐNG được cung cấp bên dưới.\n"
                         "- NÊU RÕ CĂN CỨ VĂN BẢN: Trích dẫn rõ Số đến (nếu có), Số/Ký hiệu văn bản, Cơ quan ban hành, Ngày ban hành, và Điều/Khoản/Điểm cụ thể nếu có.\n"
+                        "- QUY CHUẨN HIỂN THỊ: Tuyệt đối KHÔNG trả về các mã enum/mã code nội bộ trong ngoặc đơn như (DANG_XU_LY), (MOI_NHAN), (HOA_TOC), (MAT)... Bắt buộc chỉ hiển thị tên gọi tiếng Việt tự nhiên chuẩn mực (ví dụ: 'Đang xử lý', 'Mới nhận', 'Hỏa tốc').\n"
                         "- ƯU TIÊN METADATA KHI CÓ MÂU THUẪN: Nếu nội dung file gốc và metadata cập nhật (Độ khẩn, Độ mật, Trạng thái, Cán bộ phụ trách) có mâu thuẫn, LUÔN ƯU TIÊN thông tin metadata mới nhất.\n"
                         "- XỬ LÝ QUÁ HẠN: Chỉ xác định quá hạn nếu có ngày hạn cụ thể < ngày hôm nay và chưa hoàn thành. Nếu ghi 'Không đặt hạn', tuyệt đối không báo quá hạn.\n"
                         "- Nếu thông tin không có trong tài liệu, hãy nói một cách lịch sự rằng nội dung này chưa có trong dữ liệu được cung cấp.\n"
@@ -621,6 +692,7 @@ class RagService:
             
             prompt = f"DỰA TRÊN NỘI DUNG TÀI LIỆU SAU:\n{context}\n\nCÂU HỎI: {question}"
             llm_answer, used_provider = llm_service.chat(prompt, system_instruction, provider=provider)
+            llm_answer = sanitize_chat_answer(llm_answer)
             llm_time_ms = round((time.time() - t_llm_start) * 1000, 2)
             
         no_answer_patterns = [

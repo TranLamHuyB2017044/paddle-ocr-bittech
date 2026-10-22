@@ -915,6 +915,7 @@
             #chatbot-bubble-container {
                 position: fixed;
                 bottom: 24px;
+                right: 24px;
                 z-index: 999999;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
                 display: flex;
@@ -929,7 +930,7 @@
                 align-items: flex-start !important;
             }
             
-            /* Premium Trigger Bubble */
+            /* Draggable & Snappable Trigger Bubble */
             #chatbot-trigger-bubble {
                 width: 60px;
                 height: 60px;
@@ -937,22 +938,32 @@
                 background: linear-gradient(135deg, ${CONFIG.themeColor}, ${darkenColor(CONFIG.themeColor, 15)});
                 color: white;
                 border: none;
-                cursor: pointer;
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+                cursor: grab;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
                 outline: none;
-                position: relative;
+                position: fixed;
                 font-size: 28px;
                 animation: cb-bubble-pop 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                user-select: none;
+                -webkit-user-select: none;
+                touch-action: none;
+                z-index: 1000000;
             }
-            #chatbot-trigger-bubble:hover {
+            #chatbot-trigger-bubble.cb-dragging {
+                cursor: grabbing !important;
+                transform: scale(1.08) !important;
+                box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28) !important;
+                transition: none !important;
+            }
+            #chatbot-trigger-bubble:hover:not(.cb-dragging) {
                 transform: scale(1.05) translateY(-2px);
                 box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
             }
-            #chatbot-trigger-bubble:active {
+            #chatbot-trigger-bubble:active:not(.cb-dragging) {
                 transform: scale(0.95);
             }
 
@@ -987,21 +998,21 @@
             @keyframes cb-slide-in {
                 from {
                     opacity: 0;
-                    transform: translateY(20px) scale(0.85);
+                    transform: scale(0.85);
                 }
                 to {
                     opacity: 1;
-                    transform: translateY(0) scale(1);
+                    transform: scale(1);
                 }
             }
             @keyframes cb-slide-out {
                 from {
                     opacity: 1;
-                    transform: translateY(0) scale(1);
+                    transform: scale(1);
                 }
                 to {
                     opacity: 0;
-                    transform: translateY(24px) scale(0.75);
+                    transform: scale(0.8);
                 }
             }
             
@@ -1501,14 +1512,280 @@
         const trigger = document.getElementById('chatbot-trigger-bubble');
         const windowDiv = document.getElementById('chatbot-window');
         const closeBtn = document.getElementById('chatbot-close-btn');
+        const container = document.getElementById('chatbot-bubble-container');
 
         let isChatOpen = false;
         let isTransitioning = false;
+
+        // Drag & Snap to 4 edges logic for trigger bubble
+        const BUBBLE_SIZE = 60;
+        const PADDING = 20;
+        const BUBBLE_STORAGE_KEY = 'cb_bubble_position';
+
+        let currentSnapX = 0;
+        let currentSnapY = 0;
+        let currentEdge = 'right';
+
+        function applyBubblePosition(x, y, animate = false) {
+            if (!trigger) return;
+            trigger.style.transition = animate ? 'all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)' : 'none';
+            trigger.style.left = `${x}px`;
+            trigger.style.top = `${y}px`;
+            trigger.style.right = 'auto';
+            trigger.style.bottom = 'auto';
+        }
+
+        function snapToClosestEdge(curX, curY, animate = true) {
+            const W = window.innerWidth;
+            const H = window.innerHeight;
+            const maxLeft = Math.max(PADDING, W - BUBBLE_SIZE - PADDING);
+            const maxTop = Math.max(PADDING, H - BUBBLE_SIZE - PADDING);
+
+            const distLeft = curX - PADDING;
+            const distRight = maxLeft - curX;
+            const distTop = curY - PADDING;
+            const distBottom = maxTop - curY;
+
+            const minDist = Math.min(distLeft, distRight, distTop, distBottom);
+            let edge = 'right';
+            let targetX = curX;
+            let targetY = curY;
+
+            if (minDist === distLeft) {
+                edge = 'left';
+                targetX = PADDING;
+                targetY = Math.max(PADDING, Math.min(curY, maxTop));
+            } else if (minDist === distRight) {
+                edge = 'right';
+                targetX = maxLeft;
+                targetY = Math.max(PADDING, Math.min(curY, maxTop));
+            } else if (minDist === distTop) {
+                edge = 'top';
+                targetY = PADDING;
+                targetX = Math.max(PADDING, Math.min(curX, maxLeft));
+            } else {
+                edge = 'bottom';
+                targetY = maxTop;
+                targetX = Math.max(PADDING, Math.min(curX, maxLeft));
+            }
+
+            currentSnapX = targetX;
+            currentSnapY = targetY;
+            currentEdge = edge;
+
+            applyBubblePosition(targetX, targetY, animate);
+
+            try {
+                localStorage.setItem(BUBBLE_STORAGE_KEY, JSON.stringify({
+                    edge,
+                    x: targetX,
+                    y: targetY,
+                    ratioX: W > 0 ? targetX / W : 1,
+                    ratioY: H > 0 ? targetY / H : 1
+                }));
+            } catch (e) {}
+        }
+
+        // Initialize bubble position from localStorage or default
+        function initBubblePosition() {
+            if (!trigger) return;
+            const W = window.innerWidth;
+            const H = window.innerHeight;
+            const maxLeft = Math.max(PADDING, W - BUBBLE_SIZE - PADDING);
+            const maxTop = Math.max(PADDING, H - BUBBLE_SIZE - PADDING);
+
+            let saved = null;
+            try {
+                const raw = localStorage.getItem(BUBBLE_STORAGE_KEY);
+                if (raw) saved = JSON.parse(raw);
+            } catch (e) {}
+
+            if (saved && saved.edge) {
+                currentEdge = saved.edge;
+                let targetX = saved.x;
+                let targetY = saved.y;
+
+                if (saved.edge === 'left') {
+                    targetX = PADDING;
+                    targetY = saved.ratioY ? Math.max(PADDING, Math.min(saved.ratioY * H, maxTop)) : Math.max(PADDING, Math.min(saved.y, maxTop));
+                } else if (saved.edge === 'right') {
+                    targetX = maxLeft;
+                    targetY = saved.ratioY ? Math.max(PADDING, Math.min(saved.ratioY * H, maxTop)) : Math.max(PADDING, Math.min(saved.y, maxTop));
+                } else if (saved.edge === 'top') {
+                    targetY = PADDING;
+                    targetX = saved.ratioX ? Math.max(PADDING, Math.min(saved.ratioX * W, maxLeft)) : Math.max(PADDING, Math.min(saved.x, maxLeft));
+                } else if (saved.edge === 'bottom') {
+                    targetY = maxTop;
+                    targetX = saved.ratioX ? Math.max(PADDING, Math.min(saved.ratioX * W, maxLeft)) : Math.max(PADDING, Math.min(saved.x, maxLeft));
+                }
+                currentSnapX = targetX;
+                currentSnapY = targetY;
+                applyBubblePosition(targetX, targetY, false);
+            } else {
+                if (CONFIG.position === 'bottom-left') {
+                    snapToClosestEdge(PADDING, maxTop, false);
+                } else {
+                    snapToClosestEdge(maxLeft, maxTop, false);
+                }
+            }
+        }
+
+        initBubblePosition();
+
+        window.addEventListener('resize', () => {
+            if (trigger && trigger.style.display !== 'none') {
+                snapToClosestEdge(currentSnapX, currentSnapY, false);
+            }
+        });
+
+        // Pointer / Touch drag handling
+        let isPointerDown = false;
+        let isDragging = false;
+        let startPointerX = 0;
+        let startPointerY = 0;
+        let startBubbleX = 0;
+        let startBubbleY = 0;
+        let ignoreClick = false;
+
+        function onPointerStart(clientX, clientY) {
+            isPointerDown = true;
+            isDragging = false;
+            startPointerX = clientX;
+            startPointerY = clientY;
+            const rect = trigger.getBoundingClientRect();
+            startBubbleX = rect.left;
+            startBubbleY = rect.top;
+        }
+
+        function onPointerMove(clientX, clientY, e) {
+            if (!isPointerDown) return;
+            const dx = clientX - startPointerX;
+            const dy = clientY - startPointerY;
+
+            if (!isDragging && Math.hypot(dx, dy) > 6) {
+                isDragging = true;
+                trigger.classList.add('cb-dragging');
+                trigger.style.transition = 'none';
+            }
+
+            if (isDragging) {
+                if (e && e.cancelable) e.preventDefault();
+                const W = window.innerWidth;
+                const H = window.innerHeight;
+                let nextX = startBubbleX + dx;
+                let nextY = startBubbleY + dy;
+
+                nextX = Math.max(PADDING, Math.min(nextX, W - BUBBLE_SIZE - PADDING));
+                nextY = Math.max(PADDING, Math.min(nextY, H - BUBBLE_SIZE - PADDING));
+
+                trigger.style.left = `${nextX}px`;
+                trigger.style.top = `${nextY}px`;
+                trigger.style.right = 'auto';
+                trigger.style.bottom = 'auto';
+            }
+        }
+
+        function onPointerEnd() {
+            if (!isPointerDown) return;
+            isPointerDown = false;
+
+            if (isDragging) {
+                isDragging = false;
+                trigger.classList.remove('cb-dragging');
+
+                const rect = trigger.getBoundingClientRect();
+                snapToClosestEdge(rect.left, rect.top, true);
+
+                ignoreClick = true;
+                setTimeout(() => {
+                    ignoreClick = false;
+                }, 200);
+            }
+        }
+
+        if (trigger) {
+            // Mouse listeners
+            trigger.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                onPointerStart(e.clientX, e.clientY);
+
+                const onMouseMove = (moveEvent) => {
+                    onPointerMove(moveEvent.clientX, moveEvent.clientY, moveEvent);
+                };
+
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    onPointerEnd();
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            // Touch listeners
+            trigger.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 0) {
+                    onPointerStart(e.touches[0].clientX, e.touches[0].clientY);
+                }
+            }, { passive: true });
+
+            trigger.addEventListener('touchmove', (e) => {
+                if (e.touches.length > 0) {
+                    onPointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
+                }
+            }, { passive: false });
+
+            trigger.addEventListener('touchend', () => {
+                onPointerEnd();
+            });
+
+            trigger.addEventListener('touchcancel', () => {
+                onPointerEnd();
+            });
+        }
+
+        function adjustContainerForOpenWindow() {
+            if (!container) return;
+            const curX = currentSnapX;
+            const curY = currentSnapY;
+            const isLeft = curX < window.innerWidth / 2;
+            const isTop = curY < window.innerHeight / 2;
+
+            if (isLeft) {
+                container.style.left = '20px';
+                container.style.right = 'auto';
+                container.style.alignItems = 'flex-start';
+            } else {
+                container.style.right = '20px';
+                container.style.left = 'auto';
+                container.style.alignItems = 'flex-end';
+            }
+
+            if (isTop) {
+                container.style.top = '20px';
+                container.style.bottom = 'auto';
+                if (windowDiv) {
+                    windowDiv.style.marginBottom = '0';
+                    windowDiv.style.marginTop = '0';
+                    windowDiv.style.transformOrigin = isLeft ? 'top left' : 'top right';
+                }
+            } else {
+                container.style.bottom = '20px';
+                container.style.top = 'auto';
+                if (windowDiv) {
+                    windowDiv.style.marginBottom = '0';
+                    windowDiv.style.marginTop = '0';
+                    windowDiv.style.transformOrigin = isLeft ? 'bottom left' : 'bottom right';
+                }
+            }
+        }
 
         function openChat() {
             if (isChatOpen || isTransitioning) return;
             isChatOpen = true;
             isTransitioning = true;
+            adjustContainerForOpenWindow();
             windowDiv.classList.remove('cb-closing');
             windowDiv.classList.add('cb-open');
             windowDiv.style.display = 'flex';
@@ -1535,7 +1812,10 @@
             setTimeout(() => {
                 windowDiv.style.display = 'none';
                 windowDiv.classList.remove('cb-closing');
-                if (trigger) trigger.style.display = 'flex';
+                if (trigger) {
+                    trigger.style.display = 'flex';
+                    applyBubblePosition(currentSnapX, currentSnapY, false);
+                }
                 isTransitioning = false;
             }, 175);
         }
@@ -1549,7 +1829,14 @@
         }
 
         if (trigger) {
-            trigger.addEventListener('click', toggleChat);
+            trigger.addEventListener('click', (e) => {
+                if (ignoreClick) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                toggleChat();
+            });
         }
         if (closeBtn) {
             closeBtn.addEventListener('click', closeChat);

@@ -1514,8 +1514,14 @@ def patch_document_record_metadata(document_id):
             }
         }), 200
     except Exception as e:
-        Log.error(f"[RAG-API] patch_document_record_metadata error: {e}")
-        return jsonify({"statusCode": 500, "message": str(e)}), 500
+        err_msg = str(e)
+        Log.error(f"[RAG-API] patch_document_record_metadata error: {err_msg}")
+        if "404" in err_msg or "Not found" in err_msg:
+            return jsonify({
+                "statusCode": 404,
+                "message": f"Không tìm thấy bản ghi văn bản có document_id='{document_id}' trong cơ sở dữ liệu Qdrant. Vui lòng kiểm tra lại ID hoặc đảm bảo văn bản đã được đồng bộ qua POST /api/rag/records trước khi cập nhật metadata."
+            }), 404
+        return jsonify({"statusCode": 500, "message": err_msg}), 500
 
 
 @rag_bp.route('/api/rag/records/<document_id>', methods=['DELETE'])
