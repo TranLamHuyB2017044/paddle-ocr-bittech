@@ -84,6 +84,8 @@ def convert_excel_to_markdown_string(file_input: Union[str, BinaryIO, bytes], sh
     df_renamed = df.rename(columns=col_mapping)
     total_docs = len(df_renamed)
 
+    from src.modules.rag.rag_service import clean_friendly_text
+
     records: List[Dict[str, Any]] = []
     for _, row in df_renamed.iterrows():
         records.append({
@@ -95,10 +97,10 @@ def convert_excel_to_markdown_string(file_input: Union[str, BinaryIO, bytes], sh
             "issue_date": parse_date_str(row.get("issue_date")),
             "receive_date": parse_date_str(row.get("receive_date")),
             "deadline": parse_date_str(row.get("deadline")),
-            "priority": clean_val(row.get("priority"), "Thường"),
-            "security": clean_val(row.get("security"), "Thường"),
+            "priority": clean_friendly_text(clean_val(row.get("priority"), "Thường")),
+            "security": clean_friendly_text(clean_val(row.get("security"), "Thường")),
             "category": clean_val(row.get("category"), "Chưa phân loại"),
-            "status": clean_val(row.get("status"), "Mới nhận"),
+            "status": clean_friendly_text(clean_val(row.get("status"), "Mới nhận")),
             "dept": clean_val(row.get("dept"), "Chưa phân luồng"),
             "user": clean_val(row.get("user"), "Chưa giao"),
             "note": clean_val(row.get("note")),
