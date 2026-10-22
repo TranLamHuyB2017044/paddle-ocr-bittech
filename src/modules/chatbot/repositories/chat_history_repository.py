@@ -53,10 +53,24 @@ class ChatHistoryRepository(BaseRepository):
                 h["timestamp"] = h["timestamp"].isoformat()
         return history
 
+    def get_recent_messages(self, session_id, limit=3):
+        """
+        Lấy N tin nhắn gần nhất của phiên chat theo thứ tự thời gian tăng dần
+        để phục vụ việc nhận diện ngữ cảnh và đại từ thay thế (Coreference).
+        """
+        if not session_id:
+            return []
+        items = list(self.collection.find({"session_id": session_id}).sort("timestamp", -1).limit(limit))
+        items.reverse()
+        for h in items:
+            h["_id"] = str(h["_id"])
+            if "workspace_id" in h: h["workspace_id"] = str(h["workspace_id"])
+        return items
+
     def get_message_count_by_period(self, workspace_id, period="day"):
         wid = ObjectId(workspace_id) if isinstance(workspace_id, str) else workspace_id
         
-        now = datetime.utcnow()
+        now = datetime.now()
         if period == "day":
             start_date = now - timedelta(days=1)
         elif period == "week":
@@ -186,7 +200,7 @@ class ChatHistoryRepository(BaseRepository):
         """Get message stats by period"""
         from datetime import datetime, timedelta
         
-        now = datetime.utcnow()
+        now = datetime.now()
         stats = []
         
         if period == "day":
@@ -333,7 +347,7 @@ class ChatHistoryRepository(BaseRepository):
         """Get messages count for a specific period"""
         from datetime import datetime, timedelta
         
-        now = datetime.utcnow()
+        now = datetime.now()
         
         if period == "today":
             start = datetime(now.year, now.month, now.day)

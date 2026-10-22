@@ -54,7 +54,7 @@ class WorkspacesRepository(BaseRepository):
         return workspace
 
     def update_workspace(self, workspace_id, name=None, description=None):
-        update_data = {"updated_at": datetime.utcnow()}
+        update_data = {"updated_at": datetime.now()}
         if name:
             update_data["name"] = name
         if description is not None:

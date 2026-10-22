@@ -253,7 +253,8 @@ def public_chat_with_chatbot(chatbot_id):
                         chatbot_name=chatbot.get("name", "Chatbot"),
                         domain=domain,
                         category=category,
-                        include_sources=show_sources
+                        include_sources=show_sources,
+                        session_id=session_id
                     )
                     
                     no_info_keywords = ["không có thông tin", "không tìm thấy", "không biết"]

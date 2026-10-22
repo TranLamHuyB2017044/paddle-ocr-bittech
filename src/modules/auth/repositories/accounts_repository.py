@@ -14,9 +14,9 @@ class AccountRepository(BaseRepository):
 
     def create(self, account: dict):
         if 'created_at' not in account:
-            account['created_at'] = datetime.utcnow()
+            account['created_at'] = datetime.now()
         if 'reset_at' not in account:
-            account['reset_at'] = datetime.utcnow() + timedelta(days=30)
+            account['reset_at'] = datetime.now() + timedelta(days=30)
         
         result = self.collection.insert_one(account)
         return result.inserted_id
@@ -34,7 +34,7 @@ class AccountRepository(BaseRepository):
     def reset_quota(self, account_id):
         if isinstance(account_id, str):
             account_id = ObjectId(account_id)
-        next_reset = datetime.utcnow() + timedelta(days=30)
+        next_reset = datetime.now() + timedelta(days=30)
         return self.collection.update_one(
             {"_id": account_id}, 
             {"$set": {"used_requests": 0, "reset_at": next_reset}}

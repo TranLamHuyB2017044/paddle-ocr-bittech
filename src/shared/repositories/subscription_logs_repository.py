@@ -16,7 +16,7 @@ class SubscriptionLogsRepository(BaseRepository):
             "from_plan": from_plan,
             "to_plan": to_plan,
             "details": details,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now()
         }
         return self.create(log_entry)
 

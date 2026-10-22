@@ -20,9 +20,88 @@ def clean_question(question: str) -> str:
         return ""
     return re.sub(r'^\s*[\d\.\-\*\•]+\s*', '', question).strip()
 
+def extract_document_identifiers(text: str) -> dict:
+    """
+    Trích xuất mã định danh cụ thể từ câu hỏi:
+    - arrival_no (Số đến): Số 68, số đến 68, công văn số 68...
+    - document_no (Ký hiệu): 157/CV-2026, 148/UBND-2026, BG260819B404...
+    """
+    res = {"arrival_no": None, "document_no": None}
+    if not text:
+        return res
+    
+    # 1. Bắt số đến: "số đến 68", "công văn số 68", "số 68"
+    arrival_match = re.search(r'(?:công văn|văn bản|cv|vb)?\s*(?:số\s+đến|số)\s*[:#]?\s*(\d+)\b', text, re.IGNORECASE)
+    if arrival_match:
+        try:
+            num = int(arrival_match.group(1))
+            if num < 1900 or num > 2100:  # Tránh bắt nhầm năm 2024, 2026
+                res["arrival_no"] = num
+        except:
+            pass
+
+    # 2. Bắt số ký hiệu có dấu gạch chéo: ví dụ "157/CV-2026", "148/UBND-2026"
+    doc_no_match = re.search(r'\b(\d+/[A-Z0-9\-_]+)\b', text, re.IGNORECASE)
+    if doc_no_match:
+        res["document_no"] = doc_no_match.group(1).upper()
+    else:
+        # 3. Bắt mã ký hiệu chữ + số dạng đặc thù: ví dụ "BG260819B404", "BG260819B40433"
+        code_match = re.search(r'\b([A-Z]{2,}\d+[A-Z0-9]*)\b', text)
+        if code_match:
+            res["document_no"] = code_match.group(1)
+
+    return res
+
+def format_record_as_context(payload: dict) -> str:
+    """Format payload của 1 dòng dữ liệu văn bản đến thành block context chuẩn từ tài liệu gốc cho LLM"""
+    parts = ["--- NGUỒN: VĂN BẢN ĐẾN (BẢN GỐC TỪ HỆ THỐNG) ---"]
+    if payload.get("arrivalNo"):
+        parts.append(f"- Số đến (Số công văn đến): Số {payload.get('arrivalNo')}")
+    if payload.get("documentNo"):
+        parts.append(f"- Số ký hiệu văn bản: {payload.get('documentNo')}")
+    if payload.get("title"):
+        parts.append(f"- Tiêu đề (Trích yếu nội dung): {payload.get('title')}")
+    if payload.get("senderOrg"):
+        parts.append(f"- Cơ quan ban hành / Đơn vị gửi: {payload.get('senderOrg')}")
+    if payload.get("categoryName") or payload.get("category"):
+        parts.append(f"- Lĩnh vực: {payload.get('categoryName') or payload.get('category')}")
+    if payload.get("bookNo"):
+        parts.append(f"- Sổ văn bản: {payload.get('bookNo')}")
+    
+    rec_date = payload.get("receiveDate") or "Chưa có"
+    iss_date = payload.get("issueDate") or "Chưa có"
+    parts.append(f"- Ngày đến (Ngày nhận): {rec_date} | Ngày ban hành: {iss_date}")
+    
+    deadline = payload.get("deadline")
+    if deadline:
+        parts.append(f"- Hạn xử lý (Thời hạn giải quyết): {deadline}")
+    else:
+        parts.append("- Hạn xử lý (Thời hạn giải quyết): Không đặt hạn")
+        
+    parts.append(f"- Trạng thái xử lý hiện tại: {payload.get('status', 'Mới nhận')}")
+    parts.append(f"- Mức độ khẩn: {payload.get('priority', 'Thường')} | Mức độ mật: {payload.get('security', 'Thường')}")
+    
+    dept = payload.get("currentDeptName") or "Chưa phân luồng"
+    user = payload.get("currentUserName") or "Chưa giao"
+    parts.append(f"- Đơn vị thụ lý: {dept}")
+    parts.append(f"- Cán bộ phụ trách: {user}")
+    
+    assignees = payload.get("assignees")
+    if assignees and isinstance(assignees, list):
+        ass_str = ", ".join([f"{a.get('fullName', '')} ({a.get('role', '')})" for a in assignees if isinstance(a, dict)])
+        if ass_str:
+            parts.append(f"- Cán bộ phối hợp: {ass_str}")
+            
+    if payload.get("note"):
+        parts.append(f"- Ghi chú: {payload.get('note')}")
+        
+    return "\n".join(parts)
+
+
 class RagService:
     @staticmethod
     def _chunk_worker(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+
         """
         Worker function for multiprocessing chunking.
         """
@@ -288,17 +367,75 @@ class RagService:
     def chat_store(self, question: str, workspace_id: str, provider: str = "auto", 
                    telegram_bot_token: str | None = None, telegram_chat_id: str | None = None, 
                    chatbot_name: str = "Chatbot", domain: str = "ecommerce",
-                   category: str | None = None, include_sources: bool = False) -> Dict:
+                   category: str | None = None, include_sources: bool = False,
+                   session_id: str | None = None) -> Dict:
         """
-        Chat for store: optionally includes verified source citations when requested.
-        Sends Telegram notification if no information is found.
+        Chat for store:
+        1. Nhận diện mã định danh cụ thể (Số đến, Số ký hiệu) để gọi thẳng bộ lọc Qdrant Filter (bỏ qua tính vector).
+        2. Nhận diện ngữ cảnh câu hỏi nối tiếp (Follow-up Context) để xác định đúng văn bản mục tiêu mà KHÔNG làm lẫn tài liệu.
+        3. TUYỆT ĐỐI KHÔNG dùng câu trả lời trước của bot làm Ground Truth (luôn đối chiếu lại tài liệu/record gốc).
         """
         cleaned_q = clean_question(question)
-        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}' (Domain: '{domain}', Category: '{category}')")
-        question_vector = embedding_service.embed_text([cleaned_q])[0]
+        Log.info(f"[RAG Store Chat] 🔍 Querying for: '{cleaned_q}' (original: '{question}') in Workspace '{workspace_id}' (Domain: '{domain}', Category: '{category}', Session: '{session_id}')")
         
-        retrieval_limit = 7 if domain == "administrative_doc" else 5
-        context, sources, results = self._retrieve_context(question_vector, workspace_id, category=category, limit=retrieval_limit)
+        # 1. Trích xuất mã định danh từ câu hỏi hiện tại
+        target_ids = extract_document_identifiers(cleaned_q)
+        is_exact_match = False
+        
+        # 2. Xử lý Follow-up Context: Nếu câu hỏi hiện tại không có mã định danh, kiểm tra tin nhắn trước trong session
+        if not target_ids["arrival_no"] and not target_ids["document_no"] and session_id:
+            try:
+                from src.modules.chatbot.repositories.chat_history_repository import chat_history_repo
+                recent_msgs = chat_history_repo.get_recent_messages(session_id, limit=2)
+                if recent_msgs:
+                    # Quét câu hỏi của tin nhắn trước để xác định văn bản mục tiêu (Coreference Resolution)
+                    prev_q = recent_msgs[-1].get("question", "")
+                    prev_ids = extract_document_identifiers(prev_q)
+                    if prev_ids["arrival_no"] or prev_ids["document_no"]:
+                        target_ids = prev_ids
+                        Log.info(f"[RAG Store Chat] 🔗 Follow-up detected! Context linked to document: {target_ids}")
+            except Exception as hist_err:
+                Log.debug(f"[RAG Store Chat] Could not fetch recent history: {hist_err}")
+
+        context = ""
+        sources = []
+        results = []
+
+        # 3. NẾU CÓ MÃ ĐỊNH DANH CỤ THỂ: GỌI THẲNG BỘ LỌC QDRANT (BỎ QUA TÍNH TOÁN VECTOR)
+        if target_ids["arrival_no"] or target_ids["document_no"]:
+            Log.info(f"[RAG Store Chat] ⚡ Exact Match Triggered: arrivalNo={target_ids['arrival_no']}, documentNo={target_ids['document_no']} -> Skipping Vector Embedding!")
+            try:
+                exact_points = qdrant_service.search_document_records(
+                    workspace_id=workspace_id,
+                    vector=None, # KHÔNG TÍNH VECTOR EMBEDDING
+                    arrival_no=target_ids["arrival_no"],
+                    document_no=target_ids["document_no"],
+                    limit=3
+                )
+                if exact_points:
+                    is_exact_match = True
+                    results = exact_points
+                    payload = exact_points[0].payload or {}
+                    # Luôn format context trực tiếp từ RECORD GỐC của hệ thống để chống ảo giác
+                    context = format_record_as_context(payload)
+                    sources = [{
+                        "document_id": payload.get("document_id"),
+                        "document_name": payload.get("documentNo") or f"Số đến {payload.get('arrivalNo')}",
+                        "page_num": 1,
+                        "section_title": "Chi tiết văn bản đến",
+                        "score": 1.0,
+                        "category": payload.get("categoryName") or payload.get("category"),
+                        "snippet": payload.get("title")
+                    }]
+                    Log.info(f"[RAG Store Chat] 🎯 Exact Record Found: '{payload.get('documentNo')}' (arrivalNo: {payload.get('arrivalNo')})")
+            except Exception as ex_err:
+                Log.warning(f"[RAG Store Chat] Exact search failed, falling back to vector search: {ex_err}")
+
+        # 4. NẾU KHÔNG CÓ MÃ ĐỊNH DANH HOẶC EXACT MATCH KHÔNG RA: CHẠY VECTOR SEARCH BÌNH THƯỜNG
+        if not is_exact_match:
+            question_vector = embedding_service.embed_text([cleaned_q])[0]
+            retrieval_limit = 7 if domain == "administrative_doc" else 5
+            context, sources, results = self._retrieve_context(question_vector, workspace_id, category=category, limit=retrieval_limit)
         
         domain_prompt = get_chatbot_prompt(domain)
         if len(results) == 0:
