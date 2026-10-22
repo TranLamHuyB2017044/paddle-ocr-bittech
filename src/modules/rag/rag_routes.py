@@ -1593,5 +1593,61 @@ def search_document_records():
         return jsonify({"statusCode": 500, "message": str(e)}), 500
 
 
+@rag_bp.route('/api/rag/convert-excel-to-markdown', methods=['POST'])
+@require_auth
+def convert_excel_to_markdown_endpoint():
+    """
+    API tiếp nhận file Excel sổ văn bản đến và tự động chuyển đổi thành
+    tài liệu Markdown có cấu trúc chuẩn (Báo cáo thống kê + Bảng tra cứu + Chi tiết từng văn bản).
+    """
+    try:
+        from src.modules.rag.excel_converter import convert_excel_to_markdown_string
+
+        # 1. Lấy file từ multipart/form-data hoặc từ đường dẫn file_path trong JSON
+        if 'file' in request.files:
+            uploaded_file = request.files['file']
+            file_bytes = uploaded_file.read()
+            filename = uploaded_file.filename
+            markdown_content = convert_excel_to_markdown_string(file_bytes)
+        else:
+            data = request.json or {}
+            file_path = data.get('file_path')
+            if not file_path or not os.path.exists(file_path):
+                return jsonify({"statusCode": 400, "message": "Vui lòng upload 'file' hoặc cung cấp 'file_path' hợp lệ"}), 400
+            filename = os.path.basename(file_path)
+            markdown_content = convert_excel_to_markdown_string(file_path)
+
+        # 2. Tùy chọn: Tự động nạp luôn vào RAG nếu có workspace_id và auto_index=True
+        workspace_id = request.form.get('workspace_id') or (request.json or {}).get('workspace_id')
+        auto_index = (request.form.get('auto_index') or str((request.json or {}).get('auto_index', '')).lower()) in ('true', '1')
+
+        indexed_chunks = None
+        if auto_index and workspace_id:
+            doc_name = filename.rsplit('.', 1)[0] + ".md"
+            indexed_chunks = rag_service.index_text(
+                data=markdown_content,
+                workspace_id=workspace_id,
+                document_name=doc_name,
+                category="Văn bản đến"
+            )
+
+        return jsonify({
+            "statusCode": 200,
+            "message": "Chuyển đổi Excel sang Markdown thành công",
+            "data": {
+                "filename": filename,
+                "markdown_length": len(markdown_content),
+                "markdown_content": markdown_content,
+                "auto_indexed": auto_index,
+                "indexed_chunks": indexed_chunks
+            }
+        }), 200
+
+    except Exception as e:
+        Log.error(f"[RAG-API] convert_excel_to_markdown error: {e}")
+        return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+
 
 
