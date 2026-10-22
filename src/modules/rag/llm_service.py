@@ -4,38 +4,19 @@ from src.shared.utils.logger import Log
 from google.genai import types
 
 class LLMService:
-    def chat(self, prompt, system_instruction="You are a helpful assistant.", provider="auto"):
+    def chat(self, prompt, system_instruction="You are a helpful assistant.", provider="openai"):
         """
-        Generic chat method that prioritizes Gemini, falls back to OpenAI.
+        Chat method chỉ sử dụng OpenAI (tạm thời bỏ qua Gemini).
+        Nếu OpenAI lỗi, ném lỗi chi tiết rõ ràng để debug/kiểm tra.
         Returns: (answer_text, provider_name)
         """
-        if provider == "gemini":
-            try:
-                return self._chat_gemini(prompt, system_instruction), "gemini"
-            except Exception as e:
-                Log.error(f"[LLM] ⚠️ Gemini failed: {e}")
-                raise Exception("Hệ thống đã hết quota, vui lòng thử lại sau")
-        
-        if provider == "openai":
-            try:
-                return self._chat_openai(prompt, system_instruction), "openai"
-            except Exception as e:
-                Log.error(f"[LLM] ⚠️ OpenAI failed: {e}")
-                raise Exception("Hệ thống đã hết quota, vui lòng thử lại sau")
-        
-        # Auto: Try Gemini first, fallback to OpenAI
         try:
-            Log.info("[LLM] 🤖 Attempting chat with Gemini...")
-            return self._chat_gemini(prompt, system_instruction), "gemini"
+            Log.info("[LLM] 🤖 Chatting with OpenAI...")
+            return self._chat_openai(prompt, system_instruction), "openai"
         except Exception as e:
-            Log.error(f"[LLM] ⚠️ Gemini failed: {e}. Falling back to OpenAI...")
-            try:
-                Log.info("[LLM] 🤖 Attempting chat with OpenAI...")
-                return self._chat_openai(prompt, system_instruction), "openai"
-            except Exception as e2:
-                Log.error(f"[LLM] ⚠️ OpenAI failed: {e2}")
-                # Both failed, throw quota exceed error in Vietnamese
-                raise Exception("Hệ thống đã hết quota, vui lòng thử lại sau")
+            err_msg = str(e)
+            Log.error(f"[LLM] ❌ OpenAI chat failed: {err_msg}")
+            raise Exception(f"Lỗi OpenAI: {err_msg}")
 
     def _chat_gemini(self, prompt, system_instruction):
         if not gemini_extractor.is_configured or gemini_extractor.client is None:

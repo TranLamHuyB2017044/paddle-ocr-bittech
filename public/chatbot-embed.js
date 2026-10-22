@@ -1638,110 +1638,103 @@
             }
         });
 
-        // Pointer / Touch drag handling
+        // Unified Pointer Events Drag & Drop for trigger bubble
         let isPointerDown = false;
         let isDragging = false;
+        let hasMoved = false;
         let startPointerX = 0;
         let startPointerY = 0;
         let startBubbleX = 0;
         let startBubbleY = 0;
-        let ignoreClick = false;
-
-        function onPointerStart(clientX, clientY) {
-            isPointerDown = true;
-            isDragging = false;
-            startPointerX = clientX;
-            startPointerY = clientY;
-            const rect = trigger.getBoundingClientRect();
-            startBubbleX = rect.left;
-            startBubbleY = rect.top;
-        }
-
-        function onPointerMove(clientX, clientY, e) {
-            if (!isPointerDown) return;
-            const dx = clientX - startPointerX;
-            const dy = clientY - startPointerY;
-
-            if (!isDragging && Math.hypot(dx, dy) > 6) {
-                isDragging = true;
-                trigger.classList.add('cb-dragging');
-                trigger.style.transition = 'none';
-            }
-
-            if (isDragging) {
-                if (e && e.cancelable) e.preventDefault();
-                const W = window.innerWidth;
-                const H = window.innerHeight;
-                let nextX = startBubbleX + dx;
-                let nextY = startBubbleY + dy;
-
-                nextX = Math.max(PADDING, Math.min(nextX, W - BUBBLE_SIZE - PADDING));
-                nextY = Math.max(PADDING, Math.min(nextY, H - BUBBLE_SIZE - PADDING));
-
-                trigger.style.left = `${nextX}px`;
-                trigger.style.top = `${nextY}px`;
-                trigger.style.right = 'auto';
-                trigger.style.bottom = 'auto';
-            }
-        }
-
-        function onPointerEnd() {
-            if (!isPointerDown) return;
-            isPointerDown = false;
-
-            if (isDragging) {
-                isDragging = false;
-                trigger.classList.remove('cb-dragging');
-
-                const rect = trigger.getBoundingClientRect();
-                snapToClosestEdge(rect.left, rect.top, true);
-
-                ignoreClick = true;
-                setTimeout(() => {
-                    ignoreClick = false;
-                }, 200);
-            }
-        }
 
         if (trigger) {
-            // Mouse listeners
-            trigger.addEventListener('mousedown', (e) => {
-                if (e.button !== 0) return;
-                onPointerStart(e.clientX, e.clientY);
-
-                const onMouseMove = (moveEvent) => {
-                    onPointerMove(moveEvent.clientX, moveEvent.clientY, moveEvent);
-                };
-
-                const onMouseUp = () => {
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
-                    onPointerEnd();
-                };
-
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
+            trigger.setAttribute('draggable', 'false');
+            trigger.addEventListener('dragstart', (e) => {
+                e.preventDefault();
+                return false;
             });
 
-            // Touch listeners
-            trigger.addEventListener('touchstart', (e) => {
-                if (e.touches.length > 0) {
-                    onPointerStart(e.touches[0].clientX, e.touches[0].clientY);
-                }
-            }, { passive: true });
+            trigger.addEventListener('pointerdown', (e) => {
+                if (e.button !== 0 && e.pointerType === 'mouse') return;
+                
+                isPointerDown = true;
+                isDragging = false;
+                hasMoved = false;
+                startPointerX = e.clientX;
+                startPointerY = e.clientY;
 
-            trigger.addEventListener('touchmove', (e) => {
-                if (e.touches.length > 0) {
-                    onPointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
-                }
-            }, { passive: false });
+                const rect = trigger.getBoundingClientRect();
+                startBubbleX = rect.left;
+                startBubbleY = rect.top;
 
-            trigger.addEventListener('touchend', () => {
-                onPointerEnd();
+                try {
+                    trigger.setPointerCapture(e.pointerId);
+                } catch (err) {}
             });
 
-            trigger.addEventListener('touchcancel', () => {
-                onPointerEnd();
+            trigger.addEventListener('pointermove', (e) => {
+                if (!isPointerDown) return;
+                const dx = e.clientX - startPointerX;
+                const dy = e.clientY - startPointerY;
+
+                if (!isDragging && Math.hypot(dx, dy) > 5) {
+                    isDragging = true;
+                    hasMoved = true;
+                    trigger.classList.add('cb-dragging');
+                    trigger.style.transition = 'none';
+                }
+
+                if (isDragging) {
+                    if (e.cancelable) e.preventDefault();
+                    const W = window.innerWidth;
+                    const H = window.innerHeight;
+                    let nextX = startBubbleX + dx;
+                    let nextY = startBubbleY + dy;
+
+                    nextX = Math.max(PADDING, Math.min(nextX, W - BUBBLE_SIZE - PADDING));
+                    nextY = Math.max(PADDING, Math.min(nextY, H - BUBBLE_SIZE - PADDING));
+
+                    trigger.style.left = `${nextX}px`;
+                    trigger.style.top = `${nextY}px`;
+                    trigger.style.right = 'auto';
+                    trigger.style.bottom = 'auto';
+                }
+            });
+
+            trigger.addEventListener('pointerup', (e) => {
+                if (!isPointerDown) return;
+                isPointerDown = false;
+
+                try {
+                    trigger.releasePointerCapture(e.pointerId);
+                } catch (err) {}
+
+                if (isDragging) {
+                    isDragging = false;
+                    trigger.classList.remove('cb-dragging');
+
+                    const rect = trigger.getBoundingClientRect();
+                    snapToClosestEdge(rect.left, rect.top, true);
+                } else {
+                    // Click thuần túy khi không kéo di chuyển
+                    toggleChat();
+                }
+            });
+
+            trigger.addEventListener('pointercancel', (e) => {
+                isPointerDown = false;
+                if (isDragging) {
+                    isDragging = false;
+                    trigger.classList.remove('cb-dragging');
+                    const rect = trigger.getBoundingClientRect();
+                    snapToClosestEdge(rect.left, rect.top, true);
+                }
+            });
+
+            // Chặn click native bị kích hoạt đúp
+            trigger.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
             });
         }
 
@@ -1828,16 +1821,6 @@
             }
         }
 
-        if (trigger) {
-            trigger.addEventListener('click', (e) => {
-                if (ignoreClick) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return;
-                }
-                toggleChat();
-            });
-        }
         if (closeBtn) {
             closeBtn.addEventListener('click', closeChat);
             closeBtn.addEventListener('touchend', closeChat);
