@@ -18,6 +18,8 @@ services:
     restart: unless-stopped          
     networks:
       - ocr-network
+    ports:
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data                            
     security_opt:
@@ -57,22 +59,20 @@ services:
     container_name: paddle-ocr-worker
     user: "1000:1000"
     command: python src/core/run_worker.py
-    
+    network_mode: "host"
     restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
-    networks:
-      - ocr-network
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0  
-      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0  
+      - QDRANT_URL=http://127.0.0.1:6333
       - QDRANT_API_KEY=
-      - PRODUCT_QDRANT_URL=http://qdrant:6333
+      - PRODUCT_QDRANT_URL=http://127.0.0.1:6333
       - PRODUCT_QDRANT_API_KEY=
     volumes:
       - uploads-data:/app/uploads                     
@@ -100,17 +100,13 @@ services:
       dockerfile: Dockerfile
     container_name: paddle-ocr-app
     user: "1000:1000"
-   
+    network_mode: "host"
     restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
-    networks:
-      - ocr-network
-    ports:
-      - "${API_BIND_IP:-127.0.0.1:}9000:8080" 
     volumes:
       - uploads-data:/app/uploads
       - logs-data:/app/logs
@@ -121,13 +117,23 @@ services:
     env_file:
       - .env
     environment:
-      - PORT=8080
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - QDRANT_URL=http://qdrant:6333
+      - PORT=9000
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0
+      - QDRANT_URL=http://127.0.0.1:6333
       - QDRANT_API_KEY=
-      - PRODUCT_QDRANT_URL=http://qdrant:6333
+      - PRODUCT_QDRANT_URL=http://127.0.0.1:6333
       - PRODUCT_QDRANT_API_KEY=
       - PYTHONUNBUFFERED=1
+    command: >
+      gunicorn
+      --config src/core/config/gunicorn.conf.py
+      --bind 0.0.0.0:9000
+      --workers 2
+      --threads 4
+      --timeout 600
+      --worker-class gthread
+      --preload
+      app:app
     security_opt:
       - no-new-privileges:true 
     ulimits:
@@ -135,7 +141,7 @@ services:
         soft: 65535
         hard: 65535
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/"]
       interval: 30s
       timeout: 10s
       retries: 3
