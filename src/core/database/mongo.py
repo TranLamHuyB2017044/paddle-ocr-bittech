@@ -1,19 +1,24 @@
 
+import logging
 from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
 from src.core.config import MONGODB_URI
-import certifi
+
+logger = logging.getLogger(__name__)
 
 uri = MONGODB_URI
 
 # Create a new client and connect to the server
-client = MongoClient(uri, server_api=ServerApi('1'), tlsCAFile=certifi.where(), tls=True,
-    tlsAllowInvalidCertificates=False,
-    serverSelectionTimeoutMS=30000)
+# Pymongo will automatically parse connection options directly from the URI
+client = MongoClient(
+    uri,
+    serverSelectionTimeoutMS=10000,
+    connectTimeoutMS=10000,
+    socketTimeoutMS=20000,
+)
 
 # Send a ping to confirm a successful connection
 try:
     client.admin.command('ping')
     print("Pinged your deployment. You successfully connected to MongoDB!")
 except Exception as e:
-    print(e)
+    print(f"MongoDB connection warning: {e}")
