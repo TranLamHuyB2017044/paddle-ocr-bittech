@@ -19,13 +19,25 @@ from src.shared.repositories.audit_log_repository import audit_log_repo
 rag_bp = Blueprint('rag_bp', __name__)
 
 def _can_access_workspace(workspace):
-    """Kiểm tra quyền truy cập workspace: chủ sở hữu hoặc admin (role 0)"""
+    """Kiểm tra quyền truy cập workspace: chủ sở hữu, cùng account_id hoặc admin (role 0)"""
     if not workspace:
         return False
     user = getattr(g, 'user', None)
     if user and user.get('role') == 0:
         return True
-    return workspace.get('user_id') == g.user_id
+    
+    # So sánh user_id (ép kiểu chuỗi để tương thích cả ObjectId và string)
+    ws_user_id = str(workspace.get('user_id')) if workspace.get('user_id') else None
+    if ws_user_id and ws_user_id == str(g.user_id):
+        return True
+
+    # Cho phép truy cập nếu cùng account_id (tài khoản công ty/tổ chức)
+    user_account_id = str(user.get('account_id')) if user and user.get('account_id') else None
+    ws_account_id = str(workspace.get('account_id')) if workspace.get('account_id') else None
+    if user_account_id and ws_account_id and user_account_id == ws_account_id:
+        return True
+
+    return False
 
 def _can_access_document(doc):
     """Kiểm tra quyền truy cập document: chủ sở hữu hoặc admin (role 0)"""
@@ -47,7 +59,9 @@ def create_workspace():
         if not name:
             return jsonify({"statusCode": 400, "message": "Workspace name is required"}), 400
             
-        workspace_id = workspaces_repo.create_workspace(name, g.user_id, description)
+        user = getattr(g, 'user', None)
+        account_id = user.get('account_id') if user else None
+        workspace_id = workspaces_repo.create_workspace(name, g.user_id, description, account_id=account_id)
         
         return jsonify({
             "statusCode": 201,
@@ -1335,7 +1349,7 @@ def playground_search():
         if not question or not str(question).strip():
             return jsonify({"statusCode": 400, "message": "query hoặc question không được để trống"}), 400
 
-        workspace = workspaces_repo.find_by_id(workspace_id)
+        workspace = workspaces_repo.find_workspace_by_id(workspace_id)
         if not workspace or not _can_access_workspace(workspace):
             return jsonify({"statusCode": 403, "message": "Không có quyền truy cập workspace này"}), 403
 

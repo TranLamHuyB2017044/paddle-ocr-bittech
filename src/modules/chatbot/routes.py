@@ -383,8 +383,18 @@ def create_chatbot():
         if not greeting_input and domain == "administrative_doc":
             greeting_input = "Xin chào! Tôi là trợ lý tư vấn tài liệu và văn bản hành chính. Tôi có thể hỗ trợ bạn tra cứu quy định, thủ tục, hồ sơ và thời hạn giải quyết theo các văn bản đã ban hành."
 
-        ws_name = f"Workspace-{str(name).strip()}"
-        ws_id = workspaces_repo.create_workspace(ws_name, user_id=g.user_id, account_id=account_id)
+        existing_ws_id = payload.get("workspace_id")
+        if existing_ws_id and str(existing_ws_id).strip():
+            ws_id = str(existing_ws_id).strip()
+            ws = workspaces_repo.find_workspace_by_id(ws_id)
+            if not ws:
+                return jsonify({"statusCode": 404, "message": "Workspace không tồn tại"}), 404
+            ws_user_id = str(ws.get('user_id')) if ws.get('user_id') else None
+            if g.user.get('role') != 0 and ws_user_id != str(g.user_id):
+                return jsonify({"statusCode": 403, "message": "Không có quyền sử dụng workspace này"}), 403
+        else:
+            ws_name = f"Workspace-{str(name).strip()}"
+            ws_id = workspaces_repo.create_workspace(ws_name, user_id=g.user_id, account_id=account_id)
 
         bot_id = chatbot_repo.create_chatbot(
             account_id=account_id,
@@ -401,6 +411,41 @@ def create_chatbot():
             collect_contact_info=collect_contact_info,
             show_sources=show_sources
         )
+
+        # Xử lý các file tài liệu upload đính kèm ở bước 'Thêm kiến thức' khi tạo chatbot
+        uploaded_files = request.files.getlist('files') if 'files' in request.files else []
+        valid_files = [f for f in uploaded_files if f and getattr(f, 'filename', None)]
+        if valid_files:
+            from src.shared.utils.file_utils import save_uploaded_file_list
+            from src.shared.utils.redis_client import publish_event
+            from src.shared.tasks.document_tasks import process_document_task
+
+            saved_paths = save_uploaded_file_list(valid_files)
+            for idx, file_path in enumerate(saved_paths):
+                original_filename = valid_files[idx].filename
+                doc_id = documents_repo.save_document(
+                    user_id=g.user_id,
+                    workspace_id=str(ws_id),
+                    filename=original_filename,
+                    status=DocStatus.UPLOADED,
+                    source_files=[{
+                        "file_name": os.path.basename(file_path),
+                        "storage_path": file_path.replace("\\", "/")
+                    }]
+                )
+                publish_event(g.user_id, "document_status", {
+                    "document_id": doc_id,
+                    "status": DocStatus.UPLOADED,
+                    "filename": original_filename,
+                    "workspace_id": str(ws_id),
+                    "message": "Document uploaded and enqueued during chatbot creation"
+                })
+                rag_queue.enqueue(
+                    process_document_task,
+                    args=(doc_id, str(ws_id), file_path, original_filename, g.user_id),
+                    kwargs={"vision_extract": False, "category": None},
+                    job_timeout='30m'
+                )
 
         bot = chatbot_repo.find_by_id(bot_id)
         return jsonify({"statusCode": 201, "message": "Chatbot created successfully", "data": format_chatbot(bot)}), 201

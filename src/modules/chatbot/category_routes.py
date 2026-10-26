@@ -15,13 +15,25 @@ from src.shared.utils.logger import Log
 category_bp = Blueprint('category_bp', __name__)
 
 def _can_access_workspace(workspace):
-    """Kiểm tra quyền sở hữu workspace hoặc quyền admin (role 0)"""
+    """Kiểm tra quyền sở hữu workspace, cùng account_id hoặc quyền admin (role 0)"""
     if not workspace:
         return False
     user = getattr(g, 'user', None)
     if user and user.get('role') == 0:
         return True
-    return workspace.get('user_id') == g.user_id
+    
+    # So sánh user_id (ép kiểu chuỗi để tương thích cả ObjectId và string)
+    ws_user_id = str(workspace.get('user_id')) if workspace.get('user_id') else None
+    if ws_user_id and ws_user_id == str(g.user_id):
+        return True
+
+    # Cho phép truy cập nếu cùng account_id (tài khoản công ty/tổ chức)
+    user_account_id = str(user.get('account_id')) if user and user.get('account_id') else None
+    ws_account_id = str(workspace.get('account_id')) if workspace.get('account_id') else None
+    if user_account_id and ws_account_id and user_account_id == ws_account_id:
+        return True
+
+    return False
 
 # ── 1. GET WORKSPACE CATEGORIES ──────────────────────────────────────────────
 @category_bp.route('/api/chatbot/workspaces/<workspace_id>/categories', methods=['GET'])
