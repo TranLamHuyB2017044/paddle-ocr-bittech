@@ -6,12 +6,15 @@ Gunicorn lifecycle hooks.
 def post_fork(server, worker):
     from src.shared.models.model_loader import model_loader
 
-    # Đóng kết nối kế thừa từ master process sau khi fork để tránh xung đột file descriptor/socket
+    # Đóng kết nối kế thừa từ master process và khởi tạo kết nối mới riêng cho worker
+    # để tránh xung đột file descriptor / socket giữa các tiến trình
     try:
-        from src.core.database.mongo import client
-        client.close()
+        from src.core.database.mongo import close_mongo_client, init_mongo_client
+        close_mongo_client()
+        init_mongo_client(ping=False)
+        worker.log.info("Initialized fresh MongoDB client for worker pid=%s", worker.pid)
     except Exception as e:
-        worker.log.warning("Could not close master mongo client: %s", e)
+        worker.log.warning("Could not re-init worker mongo client: %s", e)
 
     try:
         from src.shared.utils.redis_client import redis_conn

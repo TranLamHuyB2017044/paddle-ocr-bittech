@@ -1,16 +1,23 @@
 from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from pymongo.results import InsertOneResult, UpdateResult, DeleteResult
-from src.core.database.mongo import client
+from src.core.database.mongo import get_database, get_client, client, DB_NAME
 import os
-
-# Get DB Name from Env or Default
-DB_NAME = os.getenv("MONGODB_DB_NAME", "ocr_bittech_db")
 
 class BaseRepository:
     def __init__(self, collection_name: str):
-        self.db = client[DB_NAME]
-        self.collection = self.db[collection_name]
+        self.collection_name = collection_name
+
+    @property
+    def db(self):
+        """Dynamically get the MongoDB database for current process."""
+        return get_database()
+
+    @property
+    def collection(self):
+        """Dynamically get the collection for current process."""
+        return self.db[self.collection_name]
+
 
     def find_all(self, filter: Dict = {}) -> List[Dict[str, Any]]:
         """Find all documents matching the filter"""
