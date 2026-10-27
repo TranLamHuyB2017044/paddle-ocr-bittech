@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 import numpy as np
 import os
 import json
@@ -11,9 +11,58 @@ from src.modules.product_recognition.utils.image_utils import download_image
 from src.modules.product_recognition.utils.qdrant_service import product_qdrant_service
 from src.core.config import FILES_API_URL, FILES_API_UPLOAD_ENDPOINT, FILES_API_SYSTEM_ID, FILES_API_USER_ID, FILES_API_ALIAS, FILES_API_KEY
 from src.shared.utils.logger import Log
-from src.shared.utils.auth_middleware import require_auth
+from src.shared.utils.auth_middleware import require_auth, require_role
+from src.modules.auth.repositories.accounts_repository import accounts_repo
+from src.modules.product_recognition.repositories.farm_accounts_repository import farm_accounts_repo
 
 product_bp = Blueprint("product_bp", __name__)
+
+
+def _farm_access_error(farm_id):
+    """Farm IDs supplied by clients are identifiers, never authorization grants."""
+    if g.user.get("role") == 0:
+        return None
+    account_id = g.user.get("account_id")
+    link = farm_accounts_repo.find_by_farm(farm_id)
+    if not account_id or not link or str(link.get("account_id")) != str(account_id):
+        return jsonify({"statusCode": 403, "message": "Farm is not assigned to your account"}), 403
+    return None
+
+
+@product_bp.route("/admin/farms/<farm_id>/account", methods=["PUT"])
+@require_auth
+@require_role(0)
+def assign_farm_account(farm_id):
+    data = request.get_json(silent=True)
+    account_id = data.get("account_id") if isinstance(data, dict) else None
+    if not isinstance(account_id, str) or not account_id.strip():
+        return jsonify({"statusCode": 400, "message": "account_id is required"}), 400
+    account = accounts_repo.find_by_id(account_id)
+    if not account:
+        return jsonify({"statusCode": 404, "message": "Account not found"}), 404
+    account_id = str(account["_id"])
+    farm_accounts_repo.assign(farm_id, account_id, g.user_id)
+    Log.info(f"[Farm access] Admin {g.user_id} assigned farm {farm_id} to account {account_id}")
+    return jsonify({"statusCode": 200, "data": {"farm_id": farm_id, "account_id": account_id}})
+
+
+@product_bp.route("/admin/farms/<farm_id>/account", methods=["GET"])
+@require_auth
+@require_role(0)
+def get_farm_account(farm_id):
+    link = farm_accounts_repo.find_by_farm(farm_id)
+    if not link:
+        return jsonify({"statusCode": 404, "message": "Farm assignment not found"}), 404
+    return jsonify({"statusCode": 200, "data": {"farm_id": farm_id, "account_id": str(link["account_id"])}})
+
+
+@product_bp.route("/admin/farms/<farm_id>/account", methods=["DELETE"])
+@require_auth
+@require_role(0)
+def revoke_farm_account(farm_id):
+    farm_accounts_repo.revoke(farm_id)
+    Log.info(f"[Farm access] Admin {g.user_id} revoked farm {farm_id}")
+    return jsonify({"statusCode": 200, "message": "Farm assignment revoked"})
 
 # Helper function to upload image to FILES_API
 def upload_to_files_api(img, filename: str = "product.jpg", farm_id = None):
@@ -114,6 +163,10 @@ def train_product():
         if not farm_id:
             return jsonify({"error": "Missing farm_id"}), 400
             
+        access_error = _farm_access_error(farm_id)
+        if access_error is not None:
+            return access_error
+
         if isinstance(overwrite, str):
             overwrite = overwrite.lower() in ("true", "1", "yes")
         else:
@@ -339,6 +392,10 @@ def detect_product():
         Log.info("[DETECT] Missing farm_id in request")
         return jsonify({"error": "Missing farm_id"}), 400
         
+    access_error = _farm_access_error(farm_id)
+    if access_error is not None:
+        return access_error
+
     Log.info(f"[DETECT] Running product detection for Farm={farm_id}")
     from PIL import Image
     
@@ -424,6 +481,10 @@ def update_embedding():
         
     if not farm_id:
         return jsonify({"error": "Missing farm_id"}), 400
+
+    access_error = _farm_access_error(farm_id)
+    if access_error is not None:
+        return access_error
 
     if not product_id or not files:
         Log.warning(f"[UPDATE] Missing parameters in request: product_id={product_id}, image_files={len(files) if files else 0}")
@@ -565,6 +626,10 @@ def delete_product():
         if not product_id or not farm_id:
             return jsonify({"error": "Missing product_id or farm_id"}), 400
             
+        access_error = _farm_access_error(farm_id)
+        if access_error is not None:
+            return access_error
+
         product_id = str(product_id)
         
         success = product_qdrant_service.delete_product(product_id, farm_id)

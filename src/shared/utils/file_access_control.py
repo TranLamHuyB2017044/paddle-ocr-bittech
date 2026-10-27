@@ -62,7 +62,7 @@ def check_file_access(
     doc_account_id   = str(doc.get("account_id", "")) if doc.get("account_id") else ""
 
     # ── Role 2: User (Owner only) ──────────────────────────────────────────────
-    if actor_role == ROLE_USER:
+    if actor_role in (ROLE_USER, 4):
         if actor_user_id == doc_owner_id:
             return FileAccessResult.ok()
         return FileAccessResult.denied(

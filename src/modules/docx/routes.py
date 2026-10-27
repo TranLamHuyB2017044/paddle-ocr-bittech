@@ -15,7 +15,7 @@ from google.oauth2.credentials import Credentials
 import cloudinary
 import cloudinary.uploader
 
-from src.shared.utils.auth_middleware import require_auth, require_role
+from src.shared.utils.auth_middleware import require_auth, require_role, optional_auth
 from src.shared.utils.logger import Log
 from src.shared.utils.rate_limit import get_limiter, limiter
 from src.shared.utils.file_utils import validate_image_file
@@ -141,6 +141,9 @@ def submit_correction():
         if not doc:
             return jsonify({"statusCode": 404, "message": "Document not found"}), 404
         
+        if g.user.get("role") != 0 and str(doc.get("user_id")) != str(g.user_id):
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+
         old_result = doc.get("result", {})
         doc_type = doc.get("document_type", "unknown")
         user_id = getattr(g, 'user_id', None)
@@ -192,14 +195,13 @@ def report_extraction():
             return jsonify({"statusCode": 400, "message": "Missing document_id or reason"}), 400
 
         user_id = getattr(g, 'user_id', None)
-        doc_type = None
-        try:
-            doc_info = documents_repo.find_by_id(doc_id)
-            if doc_info:
-                doc_type = doc_info.get("document_type")
-        except:
-            pass
-        
+        doc_info = documents_repo.find_by_id(doc_id)
+        if not doc_info:
+            return jsonify({"statusCode": 404, "message": "Document not found"}), 404
+        if g.user.get('role') != 0 and str(doc_info.get('user_id')) != str(g.user_id):
+            return jsonify({"statusCode": 403, "message": "Access denied"}), 403
+        doc_type = doc_info.get('document_type')
+
         report_id = extraction_reports_repo.create_report(
             document_id=doc_id,
             user_id=user_id,
@@ -440,6 +442,9 @@ def update_user_by_id(user_id):
             return jsonify({"statusCode": 403, "message": "Bạn không có quyền chỉnh sửa tài khoản của người dùng khác"}), 403
 
         data = request.json or {}
+        if not is_admin and {"email", "username", "role", "active", "plan", "reset_device", "account_id"}.intersection(data):
+            return jsonify({"statusCode": 403, "message": "Cannot modify privileged account fields"}), 403
+
         update_data = {}
 
         # 1. Cập nhật Họ và tên
@@ -505,6 +510,8 @@ def update_user_by_id(user_id):
             if "role" in data and data["role"] is not None:
                 try:
                     update_data["role"] = int(data["role"])
+                    if isinstance(data["role"], bool) or update_data["role"] not in (0, 1, 2, 4):
+                        raise ValueError("Unsupported role")
                 except (ValueError, TypeError):
                     return jsonify({"statusCode": 400, "message": "Role không hợp lệ"}), 400
 
@@ -559,65 +566,49 @@ def update_user_by_id(user_id):
 
 @docx_bp.route('/api/auth/register', methods=['POST'])
 @limiter.limit("5 per minute")
+@optional_auth
 def register():
     try:
-        data = request.json
-        username = data.get('username')
-        email = data.get('email')
-        password = data.get('password')
-        fullname = data.get('fullname')
-        phone = data.get('phone')
-        role = data.get('role', 2)
-        account_id = data.get('account_id')
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"statusCode": 400, "message": "JSON object is required"}), 400
+        actor = getattr(g, 'user', None)
+        role = data.get('role', 2 if actor and actor.get('role') == 1 else 4)
+        account_id = data.get('account_id') or None
         plan = data.get('plan')
+        if type(role) is not int or role not in (0, 1, 2, 4):
+            return jsonify({"statusCode": 400, "message": "Unsupported role"}), 400
+        if actor and actor.get('role') == 0:
+            if plan is not None and (type(plan) is not int or plan not in PLANS_CONFIG):
+                return jsonify({"statusCode": 400, "message": "Invalid plan"}), 400
+        elif actor and actor.get('role') == 1:
+            if role != 2 or plan is not None or (account_id and str(account_id) != str(actor.get('account_id'))):
+                return jsonify({"statusCode": 403, "message": "Cannot assign privileged role, plan or another account"}), 403
+            allowed, message = subscription_service.can_create_user(actor)
+            if not allowed:
+                return jsonify({"statusCode": 403, "message": message}), 403
+            account_id = actor.get('account_id')
+        elif role != 4 or account_id is not None or plan is not None:
+            return jsonify({"statusCode": 403, "message": "Public registration cannot choose role, account or plan"}), 403
 
-        api_key = request.headers.get("x-api-key")
-        if api_key:
-            try:
-                clean_key = api_key[3:] if api_key.startswith("ak_") else api_key
-                if "." in clean_key:
-                    access_key, plain_secret = clean_key.split(".", 1)
-                    creator = users_repo.find_by_api_key_access(access_key)
-                    if creator and creator.get("api_key"):
-                        stored_hash = creator["api_key"]["hashed_secret"]
-                        input_hash = hash_token(plain_secret)
-                        if input_hash == stored_hash:
-                            creator_role = creator.get('role', 2)
-                            if creator_role == 1:
-                                can_create, msg = subscription_service.can_create_user(creator)
-                                if not can_create:
-                                    return jsonify({"statusCode": 403, "message": msg}), 403
-                                role = 2
-                                account_id = creator.get('account_id')
-                                plan = None
-                            if creator_role != 0:
-                                plan = None
-                                role = 2
-            except Exception as e:
-                Log.error(f"[DocxAPI] Register permission check failed: {e}")
-        else:
-            plan = None
-            role = 2
-
-        if not email or not password or not username:
-            return jsonify({"statusCode": 400, "message": "Email, password and username are required"}), 400
-            
-        object_id, user_id_int = auth_service.register(username, email, password, fullname, phone, role=role, account_id=account_id, plan=plan)
-        
-        return jsonify({
-            "statusCode": 201,
-            "message": "User registered successfully",
-            "data": {
-                "id": str(object_id),
-                "user_id": user_id_int,
-                "created_plan": plan if not account_id else None
-            }
-        }), 201
-    except ValueError as e:
-        return jsonify({"statusCode": 400, "message": str(e)}), 400
-    except Exception as e:
-        Log.error(f"[DocxAPI] Register failed: {e}")
-        return jsonify({"statusCode": 500, "message": "Internal Server Error"}), 500
+        username, email, password = data.get('username'), data.get('email'), data.get('password')
+        if not username or not email or not isinstance(password, str) or len(password) < 6:
+            return jsonify({"statusCode": 400, "message": "Username, email and password (at least 6 characters) are required"}), 400
+        object_id, user_id_int = auth_service.register(
+            username, email, password, data.get('fullname'), data.get('phone'),
+            role=role, account_id=account_id, plan=plan, actor=actor,
+        )
+        return jsonify({"statusCode": 201, "message": "User registered successfully", "data": {
+            "id": str(object_id), "user_id": user_id_int,
+            "created_plan": plan if not account_id else None,
+        }}), 201
+    except PermissionError:
+        return jsonify({"statusCode": 403, "message": "Registration is not permitted"}), 403
+    except ValueError as error:
+        return jsonify({"statusCode": 400, "message": str(error)}), 400
+    except Exception:
+        Log.error("[DocxAPI] Registration failed")
+        return jsonify({"statusCode": 500, "message": "Internal server error"}), 500
 
 
 @docx_bp.route('/api/admin/accounts/reset-quota', methods=['POST'])
@@ -820,29 +811,40 @@ def send_email():
 
 
 @docx_bp.route('/api/save-to-sheet', methods=['POST'])
+@require_auth
 def save_to_sheet():
     try:
         data = request.json
         ocr_data = data.get("data")
         doc_type = data.get("doc_type", "document")
-        email = data.get("email")
-        token = None
-        
+        email = g.user.get("email")
+        if not isinstance(email, str) or not email:
+            return jsonify({"statusCode": 403, "message": "Account email is required"}), 403
+        requested_email = data.get("email")
+        if requested_email is not None and (not isinstance(requested_email, str) or requested_email.casefold() != email.casefold()):
+            return jsonify({"statusCode": 403, "message": "Cannot access another user's Google connection"}), 403
         auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-            if not email:
-                try:
-                    user_info = oauth_service.get_user_info_from_token(token)
-                    email = user_info.get("email")
-                except:
-                    pass
-
-        if not email:
-            return jsonify({"statusCode": 400, "message": "Missing email or valid token"}), 400
+        if auth_header:
+            if not auth_header.startswith("Bearer "):
+                return jsonify({"statusCode": 401, "message": "Invalid Google token"}), 401
+            try:
+                google_user = oauth_service.get_user_info_from_token(auth_header[7:])
+            except Exception:
+                return jsonify({"statusCode": 401, "message": "Invalid Google token"}), 401
+            if str(google_user.get("email", "")).casefold() != email.casefold():
+                return jsonify({"statusCode": 403, "message": "Google token belongs to another user"}), 403
+        document_id = data.get("document_id")
+        if document_id:
+            doc = documents_repo.find_by_id(document_id)
+            if not doc:
+                return jsonify({"statusCode": 404, "message": "Document not found"}), 404
+            if g.user.get("role") != 0 and str(doc.get("user_id")) != str(g.user_id):
+                return jsonify({"statusCode": 403, "message": "Access denied to document"}), 403
 
         creds = None
         stored_tokens = token_service.get_user_tokens(email)
+        if stored_tokens and str(stored_tokens.get('owner_user_id')) != str(g.user_id):
+            return jsonify({"statusCode": 403, "message": "Reconnect Google Drive to verify ownership"}), 403
         if stored_tokens:
             creds = Credentials(
                 token=stored_tokens.get("token"),

@@ -1,129 +1,100 @@
+"""API-key authentication and explicit role authorization."""
 from functools import wraps
+from hmac import compare_digest
+
 from flask import request, jsonify, g
-from src.shared.utils.security import decode_access_token, hash_token
-from src.shared.utils.logger import Log
+
+from src.shared.utils.security import hash_token
+
+
+SUPPORTED_ROLES = frozenset({0, 1, 2, 4})  # 1/2 remain valid for existing manager/member accounts.
+
 
 def _get_repos():
     from src.modules.auth.repositories.users_repository import users_repo
     from src.modules.auth.repositories.accounts_repository import accounts_repo
     return users_repo, accounts_repo
 
-def require_auth(f):
-    @wraps(f)
+
+def authenticate_api_key(api_key):
+    """Return an active, known-role user, or None. Never trust role from a request."""
+    if not isinstance(api_key, str) or not api_key or len(api_key) > 512:
+        return None
+    clean_key = api_key[3:] if api_key.startswith("ak_") else api_key
+    if clean_key.count(".") != 1:
+        return None
+    access_key, secret = clean_key.split(".", 1)
+    if not access_key or not secret:
+        return None
+    users_repo, _ = _get_repos()
+    user = users_repo.find_by_api_key_access(access_key)
+    if not user:
+        user = users_repo.find_by_api_key_access("ak_" + access_key)
+    if not user or not user.get("_id") or user.get("active", True) is not True:
+        return None
+    role = user.get("role")
+    if type(role) is not int or role not in SUPPORTED_ROLES:
+        return None
+    stored_hash = (user.get("api_key") or {}).get("hashed_secret")
+    if not isinstance(stored_hash, str) or not compare_digest(hash_token(secret), stored_hash):
+        return None
+    return user
+
+
+def require_auth(view):
+    @wraps(view)
     def decorated(*args, **kwargs):
+        user = authenticate_api_key(request.headers.get("x-api-key"))
+        if user is None:
+            return jsonify({"statusCode": 401, "message": "Valid API key for an active account is required"}), 401
+        g.user_id = str(user["_id"])
+        g.user = user
+
         users_repo, accounts_repo = _get_repos()
-        api_key = None
-        
-        # 1. Check x-api-key Header ONLY
-        api_key = request.headers.get("x-api-key")
-        
-        if api_key:
-            # 1. Parse Key Structure (ak_ACCESS.SECRET)
-            if "." in api_key:
-                try:
-                    # Handle raw key from header (which might or might not have ak_ prefix)
-                    clean_key = api_key
-                    if api_key.startswith("ak_"):
-                         clean_key = api_key[3:]
-                    access_key, plain_secret = clean_key.split(".", 1)
-                    
-                    # 2. Find User by Access Key
-                    user = users_repo.find_by_api_key_access(access_key)
-                    
-                    # Legacy Support: If not found, try adding 'ak_' prefix (old key format in DB)
-                    if not user:
-                         user = users_repo.find_by_api_key_access("ak_" + access_key)
-                    
-                    if user and user.get("api_key"):
-                        # 3. Verify Secret
-                        stored_hash = user["api_key"]["hashed_secret"]
-                        input_hash = hash_token(plain_secret)
-                        
-                        if input_hash == stored_hash:
-                            g.user_id = str(user["_id"])
-                            g.user = user
-                            
-                            # Check if we need to skip device check
-                            skip_device_check = False
-                            
-                            # Skip for admin (role 0)
-                            if user.get("role") == 0:
-                                skip_device_check = True
-                            
-                            # Skip for chatbot routes
-                            if request.path.startswith('/api/chatbot'):
-                                skip_device_check = True
-                            
-                            # Skip for rag routes
-                            if request.path.startswith('/api/rag'):
-                                skip_device_check = True
-
-                            # Skip for crawl routes
-                            if request.path.startswith('/api/v1/crawl'):
-                                skip_device_check = True
-
-                            
-                            # Skip for plan 4 (Chatbot plan)
-                            if user.get("account_id"):
-                                account = accounts_repo.find_by_id(user.get("account_id"))
-                                if account and account.get("plan") == 4:
-                                    skip_device_check = True
-                            
-                            if not skip_device_check:
-                                # Device ID Logic: First time login assignment or mismatch check
-                                header_device_id = request.headers.get('x-device-id') or request.headers.get('X-Device-ID')
-                                    
-                                if not user.get('deviceId'):
-                                    if header_device_id:
-                                        users_repo.update(g.user_id, {"deviceId": header_device_id})
-                                        user['deviceId'] = header_device_id
-                                else:
-                                    # If deviceId exists, we MUST verify match (Security)
-                                    if header_device_id and user.get('deviceId') != header_device_id:
-                                        Log.warning(f"[Auth] ⛔ Device mismatch for user {user.get('username')}: {header_device_id} != {user.get('deviceId')}")
-                                        return jsonify({"statusCode": 401, "message": "Thiết bị không hợp lệ cho tài khoản này. Vui lòng đăng nhập lại."}), 401
-                            
-                            return f(*args, **kwargs)
-                        else:
-                            # Log invalid secret
-                            print(f"Invalid secret for key {access_key}")
-                    else:
-                        print(f"User not found for access key {access_key}")
-                except ValueError as e:
-                    print(f"ValueError parsing key: {e}")
-                    pass 
-            
-            Log.warning(f"[Auth] ❌ Access denied: Invalid API Key from {request.remote_addr}")
-            return jsonify({"statusCode": 401, "message": "Invalid API Key"}), 401
-
-        Log.warning(f"[Auth] ❌ Access denied: Authentication required for {request.path} from {request.remote_addr}")
-        return jsonify({"statusCode": 401, "message": "Authentication required"}), 401
-        
+        # Preserve device exemptions used by existing machine-to-machine APIs.
+        skip_device = user["role"] in (0, 4) or request.path.startswith(("/api/chatbot", "/api/rag", "/api/v1/crawl"))
+        if not skip_device and user.get("account_id"):
+            account = accounts_repo.find_by_id(user["account_id"])
+            skip_device = bool(account and account.get("plan") == 4)
+        if not skip_device:
+            device_id = request.headers.get("x-device-id")
+            if not device_id or (user.get("deviceId") and user["deviceId"] != device_id):
+                return jsonify({"statusCode": 401, "message": "Valid device ID is required"}), 401
+            if not user.get("deviceId"):
+                if not users_repo.update(g.user_id, {"deviceId": device_id}):
+                    return jsonify({"statusCode": 401, "message": "Device could not be verified"}), 401
+        return view(*args, **kwargs)
     return decorated
 
+
+def optional_auth(view):
+    """Anonymous access is allowed; a supplied invalid key must fail closed."""
+    protected = require_auth(view)
+
+    @wraps(view)
+    def decorated(*args, **kwargs):
+        if "x-api-key" in request.headers:
+            return protected(*args, **kwargs)
+        return view(*args, **kwargs)
+    return decorated
+
+
 def require_role(roles):
-    """Decorator to restrict access to specific roles."""
-    if isinstance(roles, str):
+    if isinstance(roles, (int, str)):
         roles = [roles]
-        
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if not hasattr(g, 'user'):
-                Log.warning(f"[Auth] ❌ Role check failed: User context missing for {request.path}")
+    allowed = frozenset(int(role) for role in roles)
+    if not allowed or not allowed <= SUPPORTED_ROLES:
+        raise ValueError("Unknown allowed role")
+
+    def decorator(view):
+        @wraps(view)
+        def decorated(*args, **kwargs):
+            user = getattr(g, "user", None)
+            if not user:
                 return jsonify({"statusCode": 401, "message": "Authentication required"}), 401
-            
-            user_role = g.user.get('role', 2)
-            if user_role == 0: # Admin can do everything
-                return f(*args, **kwargs)
-                
-            if user_role not in roles:
-                Log.warning(f"[Auth] ❌ Permission denied: User {getattr(g, 'user_id', 'Unknown')} with role {user_role} tried to access {request.path}. Required: {roles}")
-                return jsonify({
-                    "statusCode": 403, 
-                    "message": f"Role '{user_role}' does not have permission to access this resource. Required: {roles}"
-                }), 403
-                
-            return f(*args, **kwargs)
-        return decorated_function
+            role = user.get("role")
+            if type(role) is not int or (role != 0 and role not in allowed):
+                return jsonify({"statusCode": 403, "message": "Insufficient permissions"}), 403
+            return view(*args, **kwargs)
+        return decorated
     return decorator

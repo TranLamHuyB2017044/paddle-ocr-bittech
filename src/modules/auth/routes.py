@@ -91,6 +91,7 @@ def google_login():
 
 
 @auth_bp.route('/api/auth/google/drive-connect', methods=['POST'])
+@require_auth
 def google_drive_connect():
     try:
         data = request.json
@@ -107,8 +108,12 @@ def google_drive_connect():
         
         if not email:
             return jsonify({"statusCode": 400, "message": "Could not retrieve user email"}), 400
+        if str(email).casefold() != str(g.user.get('email', '')).casefold():
+            return jsonify({"statusCode": 403, "message": "Google account does not belong to the authenticated user"}), 403
+        email = g.user['email']
 
         token_data = {
+            "owner_user_id": str(g.user_id),
             "token": credentials.token,
             "refresh_token": getattr(credentials, 'refresh_token', None),
             "token_uri": getattr(credentials, 'token_uri', None),
@@ -144,6 +149,9 @@ def google_drive_disconnect():
         email = user_data.get('email')
         if not email:
             return jsonify({"statusCode": 400, "message": "User email not found"}), 400
+        stored_tokens = token_service.get_user_tokens(email)
+        if stored_tokens and str(stored_tokens.get('owner_user_id')) != str(g.user_id):
+            return jsonify({"statusCode": 403, "message": "Reconnect Google Drive to verify ownership"}), 403
         
         data = request.json or {}
         should_revoke = data.get('revoke', False)
@@ -329,6 +337,10 @@ def upload_document_route():
         
         if not all([request_user_id, system_id, payload]):
             return jsonify({"statusCode": 400, "message": "Missing user_id, system_id, payload"}), 400
+        # External connection IDs must come from the authenticated local user.
+        if g.user.get('user_id') is None or str(request_user_id) != str(g.user['user_id']):
+            return jsonify({"statusCode": 403, "message": "Cannot use another user's connection"}), 403
+        request_user_id = g.user['user_id']
         
         auth_record = auth_service_repo.collection.find_one({"user_id": request_user_id, "uuid": system_id})
         if not auth_record:

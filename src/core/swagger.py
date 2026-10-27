@@ -7,6 +7,12 @@ import yaml
 
 DOCS_DIR = Path(__file__).resolve().parents[2] / "docs" / "api"
 
+# Admin-only handlers whose URLs do not contain an /admin/ segment.
+HIDDEN_API_ENDPOINTS = frozenset({
+    "file_bp.admin_view_file",
+    "file_bp.get_audit_log",
+})
+
 
 def load_api_specs():
     """Read reviewed operation specs, keyed by Flask endpoint name."""
@@ -21,15 +27,16 @@ def load_api_specs():
     return specs
 
 
-def _api_rules(app):
-    """Exclude rules fully shadowed by earlier URL/method registrations."""
+def _api_rules(app, hidden_endpoints=HIDDEN_API_ENDPOINTS):
+    """Select public documentation rules, preserving Flask's first handler."""
     rules = set()
     seen = set()
     for rule in app.url_map.iter_rules():
         if not (rule.rule == "/" or rule.rule.startswith("/api/") or rule.rule == "/send-email"):
             continue
         operations = {(rule.rule, method) for method in rule.methods - {"HEAD", "OPTIONS"}}
-        if operations - seen:
+        hidden = rule.endpoint in hidden_endpoints or "admin" in rule.rule.lower().split("/")
+        if not hidden and operations - seen:
             rules.add(id(rule))
         seen.update(operations)
     return rules
@@ -37,14 +44,19 @@ def _api_rules(app):
 
 def init_swagger(app):
     """Expose Swagger UI and its JSON specification on the Flask app."""
-    for endpoint, operation in load_api_specs().items():
-        if endpoint in app.view_functions:
+    specs = load_api_specs()
+    hidden_endpoints = HIDDEN_API_ENDPOINTS | {
+        endpoint for endpoint, operation in specs.items()
+        if "Admin" in operation.get("tags", []) or operation.get("x-internal") is True
+    }
+    for endpoint, operation in specs.items():
+        if endpoint in app.view_functions and endpoint not in hidden_endpoints:
             documented_view = swag_from(operation)(app.view_functions[endpoint])
             # Flasgger otherwise merges the original prose docstring over the
             # reviewed summary/description. The original remains on __wrapped__.
             documented_view.__doc__ = ""
             app.view_functions[endpoint] = documented_view
-    rules = _api_rules(app)
+    rules = _api_rules(app, hidden_endpoints)
     return Swagger(
         app,
         config={
@@ -58,21 +70,22 @@ def init_swagger(app):
             "static_url_path": "/flasgger_static",
             "swagger_ui": True,
             "specs_route": "/api-doc/",
+            "ui_params": {
+                "persistAuthorization": False,
+                "queryConfigEnabled": False,
+                "validatorUrl": None,
+            },
         },
         template={
             "swagger": "2.0",
             "info": {
                 "title": "Bittech OCR API",
                 "version": "1.0.0",
-                "description": "Bittech API: authentication, OCR, photos, TTS, chatbot, RAG, integrations and administration. Most protected APIs use x-api-key; public chatbot APIs use x-public-token.",
+                "description": "Bittech API: authentication, OCR, photos, TTS, chatbot, RAG and integrations. Most protected APIs use x-api-key; public chatbot APIs use x-public-token.",
             },
             "securityDefinitions": {
                 "ApiKeyAuth": {"type": "apiKey", "name": "x-api-key", "in": "header"},
                 "PublicTokenAuth": {"type": "apiKey", "name": "x-public-token", "in": "header"},
-                "GoogleBearerAuth": {
-                    "type": "apiKey", "name": "Authorization", "in": "header",
-                    "description": "Google access token for saving to Sheets. Enter: Bearer <token>.",
-                },
             },
             "definitions": {
                 "ApiError": {
@@ -101,7 +114,6 @@ def init_swagger(app):
                 {"name": "RAG", "description": "Workspaces, documents and retrieval"},
                 {"name": "Records", "description": "External document record synchronization"},
                 {"name": "Subscriptions", "description": "Plans, quotas and usage"},
-                {"name": "Admin", "description": "Administration; role restrictions apply"},
                 {"name": "Integrations", "description": "Crawling, email and Google Sheets"},
                 {"name": "Products", "description": "Product recognition and training"},
                 {"name": "Events", "description": "Server-sent event stream"},

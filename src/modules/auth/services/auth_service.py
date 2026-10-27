@@ -13,7 +13,19 @@ from src.shared.utils.logger import Log
 from src.core.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 class AuthService:
-    def register(self, username, email, password, fullname=None, phone=None, role: Literal[0, 4] = 4, account_id=None, plan=None):
+    def register(self, username, email, password, fullname=None, phone=None, role: Literal[0, 1, 2, 4] = 4, account_id=None, plan=None, actor=None):
+        # Authorization belongs here as well as at the HTTP boundary: future
+        # callers cannot create privileged users by supplying role/account_id.
+        if actor is None or actor.get('role') not in (0, 1):
+            if role != 4 or account_id is not None or plan is not None:
+                raise PermissionError("Public registration cannot choose role, account or plan")
+        elif actor.get('active', True) is not True:
+            raise PermissionError("Inactive creator")
+        elif actor.get('role') == 1:
+            if role != 2 or not actor.get('account_id') or str(account_id) != str(actor['account_id']) or plan is not None:
+                raise PermissionError("Managers can only create members of their own account")
+        if type(role) is not int or role not in (0, 1, 2, 4):
+            raise ValueError("Unsupported role")
         if users_repo.find_by_username(username):
             raise ValueError("Username already exists")
         if users_repo.find_by_email(email):
@@ -23,6 +35,8 @@ class AuthService:
             
         # 1. Handle Account creation (Every new self-registered user gets an account)
         from src.modules.auth.repositories.accounts_repository import accounts_repo
+        if account_id is not None and not accounts_repo.find_by_id(str(account_id)):
+            raise ValueError("Account not found")
         
         # Set default plan based on role if plan is not provided
         if plan is None:
@@ -81,6 +95,8 @@ class AuthService:
         user_data = users_repo.find_by_username(username)
         if not user_data:
             raise ValueError("Sai tài khoản hoặc mật khẩu")
+        if user_data.get('active', True) is not True:
+            raise ValueError("Account is inactive")
             
         # 2. Verify Pass
         # Parse về Pydantic model để dễ truy cập field
@@ -99,7 +115,7 @@ class AuthService:
             if account and account.get("plan") == 4:
                 skip_device_check = True
         
-        if not is_dev and not skip_device_check:
+        if not skip_device_check:
             users_repo.check_device_id(str(user.id), device_id)
 
         # 4. Create Session & Tokens
@@ -173,6 +189,8 @@ class AuthService:
         return self._create_login_response(user, user_agent, ip, device_id)
 
     def _create_login_response(self, user, user_agent, ip, device_id):
+        if user.active is not True:
+            raise ValueError("Account is inactive")
         # 1. Tạo Tokens
         access_token = create_access_token(str(user.id))
         refresh_token = create_refresh_token()
@@ -284,6 +302,10 @@ class AuthService:
         if session.expires_at < datetime.now():
             raise ValueError("Refresh token expired")
             
+        user = users_repo.find_by_id(session.user_id)
+        if not user or user.get('active', True) is not True:
+            raise ValueError("Account is inactive")
+
         # 4. Revoke token Cũ (Rotation)
         auth_repo.revoke_session(old_hash)
         

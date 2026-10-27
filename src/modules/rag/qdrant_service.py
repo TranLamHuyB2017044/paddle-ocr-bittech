@@ -28,6 +28,7 @@ class QdrantService:
             ("workspace_id", models.PayloadSchemaType.KEYWORD),
             ("document_name", models.PayloadSchemaType.KEYWORD),
             ("document_id", models.PayloadSchemaType.KEYWORD),
+            ("is_record", models.PayloadSchemaType.BOOL),
             ("category", models.PayloadSchemaType.KEYWORD),
             ("page_num", models.PayloadSchemaType.INTEGER),
             ("arrivalNo", models.PayloadSchemaType.INTEGER),
@@ -347,52 +348,48 @@ class QdrantService:
             Log.error(f"[Qdrant] Lỗi khi scroll chunks cho trang {page_num}: {e}")
             return []
 
+    def _record_filter(self, workspace_id, document_id):
+        return models.Filter(must=[
+            models.FieldCondition(key="workspace_id", match=models.MatchValue(value=str(workspace_id))),
+            models.FieldCondition(key="document_id", match=models.MatchValue(value=str(document_id))),
+            models.FieldCondition(key="is_record", match=models.MatchValue(value=True)),
+        ])
+
     def upsert_document_record(self, workspace_id: str, document_id: str, semantic_text: str, vector: list, record_meta: dict):
-        """
-        Lưu 1 dòng dữ liệu văn bản đến vào Qdrant (1 Vector Point duy nhất).
-        Sử dụng uuid5 từ document_id để đảm bảo idempotent.
-        """
+        """Use workspace-scoped IDs; safely reuse legacy records within that workspace."""
+        import json
         import uuid
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(document_id)))
-        payload = {
-            "workspace_id": str(workspace_id),
-            "document_id": str(document_id),
-            "text": semantic_text,
-            "is_record": True,
-            **record_meta
-        }
-        point = models.PointStruct(
-            id=point_id,
-            vector=vector,
-            payload=payload
+        record_filter = self._record_filter(workspace_id, document_id)
+        existing, _ = self.client.scroll(
+            collection_name=self.collection_name, scroll_filter=record_filter,
+            limit=1, with_payload=False, with_vectors=False,
         )
-        Log.info(f"[Qdrant] 📥 Upserting document record '{document_id}' (arrivalNo: {record_meta.get('arrivalNo')})")
-        return self.upsert_points([point])
+        # Legacy point IDs depended on document_id alone. Reuse only after a
+        # scoped lookup, so no migration or cross-workspace overwrite is needed.
+        point_id = existing[0].id if existing else str(uuid.uuid5(
+            uuid.NAMESPACE_DNS, json.dumps([str(workspace_id), str(document_id)]),
+        ))
+        payload = {
+            **record_meta,
+            "workspace_id": str(workspace_id), "document_id": str(document_id),
+            "text": semantic_text, "is_record": True,
+        }
+        return self.upsert_points([models.PointStruct(id=point_id, vector=vector, payload=payload)])
 
     def patch_document_metadata(self, workspace_id: str, document_id: str, payload_updates: dict):
-        """
-        Cập nhật metadata động (priority, security, status, assignees, deadline...)
-        cho 1 dòng dữ liệu văn bản đến mà KHÔNG re-embed (0% tài nguyên embedding).
-        """
-        import uuid
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(document_id)))
-        Log.info(f"[Qdrant] ⚡ Patching payload for document record '{document_id}': {list(payload_updates.keys())}")
+        reserved = {"id", "workspace_id", "document_id", "is_record", "text"}
+        updates = {k: v for k, v in payload_updates.items() if k not in reserved}
+        if not updates:
+            raise ValueError("No editable metadata supplied")
         return self.client.set_payload(
-            collection_name=self.collection_name,
-            payload=payload_updates,
-            points=[point_id]
+            collection_name=self.collection_name, payload=updates,
+            points=models.FilterSelector(filter=self._record_filter(workspace_id, document_id)),
         )
 
     def delete_document_record(self, workspace_id: str, document_id: str):
-        """
-        Xóa bỏ vector point của 1 dòng văn bản đến.
-        """
-        import uuid
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(document_id)))
-        Log.info(f"[Qdrant] 🗑️ Deleting document record point '{document_id}'")
         return self.client.delete(
             collection_name=self.collection_name,
-            points_selector=models.PointIdsList(points=[point_id])
+            points_selector=models.FilterSelector(filter=self._record_filter(workspace_id, document_id)),
         )
 
     def search_document_records(self, workspace_id: str, vector: list = None,
@@ -404,7 +401,8 @@ class QdrantService:
         Tìm kiếm thông minh kết hợp Exact Match Filter và Semantic Search cho văn bản đến.
         """
         must_conditions = [
-            models.FieldCondition(key="workspace_id", match=models.MatchValue(value=str(workspace_id)))
+            models.FieldCondition(key="workspace_id", match=models.MatchValue(value=str(workspace_id))),
+            models.FieldCondition(key="is_record", match=models.MatchValue(value=True)),
         ]
         
         # Exact match filters

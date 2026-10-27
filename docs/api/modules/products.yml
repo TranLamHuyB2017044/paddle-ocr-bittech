@@ -2,9 +2,10 @@ product_bp.train_product:
   tags:
   - Products
   summary: Train product
-  description: Provide id, name, farm_id (alias farmId), and images as multipart files or a JSON array of image
-    URLs. Up to 5 images are retained. overwrite controls replacement of existing images. Swagger UI demonstrates
-    multipart; JSON clients can submit an images array.
+  description: Farm must be assigned by an admin to the authenticated user's account. Unassigned farms or farms
+    in another account return 403. Admin access is allowed. Provide id, name, farm_id (alias farmId), and images
+    as multipart files or a JSON array of image URLs. Up to 5 images are retained. overwrite controls replacement
+    of existing images. Swagger UI demonstrates multipart; JSON clients can submit an images array.
   produces:
   - application/json
   security:
@@ -75,12 +76,17 @@ product_bp.train_product:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Farm is not assigned to the authenticated account.
+      schema:
+        $ref: '#/definitions/ApiError'
 product_bp.detect_product:
   tags:
   - Products
   summary: Detect product
-  description: Provide image and farm_id (alias farmId); the farm identifier may also be supplied in query. Returns
-    the closest matching product or 404.
+  description: Farm must be assigned by an admin to the authenticated user's account. Unassigned farms or farms
+    in another account return 403. Admin access is allowed. Provide image and farm_id (alias farmId); the farm identifier
+    may also be supplied in query. Returns the closest matching product or 404.
   produces:
   - application/json
   security:
@@ -142,12 +148,17 @@ product_bp.detect_product:
       description: Not Found
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Farm is not assigned to the authenticated account.
+      schema:
+        $ref: '#/definitions/ApiError'
 product_bp.update_embedding:
   tags:
   - Products
   summary: Update embedding
-  description: Provide product_id, farm_id (alias farmId) and repeated image_files. Optional name and price update
-    product metadata. At most 5 images are retained.
+  description: Farm must be assigned by an admin to the authenticated user's account. Unassigned farms or farms
+    in another account return 403. Admin access is allowed. Provide product_id, farm_id (alias farmId) and repeated
+    image_files. Optional name and price update product metadata. At most 5 images are retained.
   produces:
   - application/json
   security:
@@ -215,12 +226,17 @@ product_bp.update_embedding:
       description: Missing or invalid credentials, or device mismatch.
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Farm is not assigned to the authenticated account.
+      schema:
+        $ref: '#/definitions/ApiError'
 product_bp.delete_product:
   tags:
   - Products
   summary: Delete product
-  description: Provide product_id (alias id) and farm_id (alias farmId). Accepts JSON, form or query parameters.
-    Both POST and DELETE are supported.
+  description: Farm must be assigned by an admin to the authenticated user's account. Unassigned farms or farms
+    in another account return 403. Admin access is allowed. Provide product_id (alias id) and farm_id (alias farmId).
+    Accepts JSON, form or query parameters. Both POST and DELETE are supported.
   produces:
   - application/json
   security:
@@ -269,5 +285,9 @@ product_bp.delete_product:
         $ref: '#/definitions/ApiError'
     '500':
       description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Farm is not assigned to the authenticated account.
       schema:
         $ref: '#/definitions/ApiError'

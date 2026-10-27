@@ -9,6 +9,7 @@ from flask import Blueprint, request, jsonify, g
 from flasgger import swag_from
 from src.core.swagger import DOCS_DIR
 from src.shared.utils.auth_middleware import require_auth
+from src.shared.utils.auth_middleware import require_role
 from src.shared.utils.logger import Log
 from src.shared.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
 from src.shared.utils.rate_limit import get_limiter
@@ -32,9 +33,11 @@ ALLOWED_DOC_TYPES = {'idCard', 'driverLicense', 'invoice', 'vehicleDocuments', '
 
 
 @file_bp.route('/uploads/<path:filename>', methods=['GET'])
+@require_auth
+@require_role(0)
 def serve_uploaded_file(filename):
     """
-    Serve file từ uploads/: truy cập công khai (public).
+    Raw upload access is admin-only; users use authorized signed file URLs.
     """
     from flask import send_from_directory, current_app
 
@@ -91,7 +94,7 @@ def view_file(doc_id: str):
         if not doc:
             return jsonify({"statusCode": 404, "message": "Document không tồn tại."}), 404
 
-        if not doc.get("account_id") and g.user.get("account_id"):
+        if not doc.get("account_id") and g.user.get("account_id") and str(doc.get("user_id")) == str(g.user_id):
             doc["account_id"] = g.user.get("account_id")
 
         actor_role = g.user.get("role", 2)

@@ -162,6 +162,10 @@ docx_bp.submit_correction:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Document belongs to another user.
+      schema:
+        $ref: '#/definitions/ApiError'
 docx_bp.report_extraction:
   tags:
   - Documents
@@ -226,6 +230,10 @@ docx_bp.report_extraction:
         $ref: '#/definitions/ApiError'
     '500':
       description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Document belongs to another user.
       schema:
         $ref: '#/definitions/ApiError'
 docx_bp.update_user_avatar:
@@ -443,8 +451,8 @@ docx_bp.update_user_by_id:
   tags:
   - Users
   summary: Update user by id
-  description: Self, admin or permitted manager access. Available fields and password checks depend on the caller's
-    role. See response errors for denied updates.
+  description: Update your own profile (fullname, phone, avatar_url) or password. Password changes require old_password/current_password
+    and a new password of at least 6 characters.
   produces:
   - application/json
   security:
@@ -478,25 +486,13 @@ docx_bp.update_user_by_id:
         password:
           type: string
           format: password
-        reset_device:
-          type: boolean
         old_password:
           type: string
           format: password
         current_password:
           type: string
           format: password
-        role:
-          type: integer
-        active:
-          type: boolean
-        plan:
-          type: integer
         fullname:
-          type: string
-        username:
-          type: string
-        email:
           type: string
       additionalProperties: true
   responses:
@@ -537,8 +533,9 @@ docx_bp.register:
   tags:
   - Auth
   summary: Register
-  description: 'Public registration. An optional x-api-key identifies the creator; role, account and plan permissions
-    depend on that creator. Rate limit: 5 per minute.'
+  description: Public registration creates a regular user (role 4) with a server-selected account/plan. Privileged
+    role/account/plan assignment is forbidden. An optional API key must be valid; a manager can create legacy members
+    (role 2) only in their own account.
   produces:
   - application/json
   security:
@@ -560,17 +557,13 @@ docx_bp.register:
         password:
           type: string
           format: password
+          minLength: 6
         fullname:
           type: string
         phone:
           type: string
-        role:
-          type: integer
-          default: 2
         account_id:
           type: string
-        plan:
-          type: integer
       additionalProperties: true
       required:
       - username
@@ -610,137 +603,20 @@ docx_bp.register:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
-docx_bp.admin_reset_quota:
-  tags:
-  - Admin
-  summary: Admin reset quota
-  description: 'Admin reset quota. Current middleware limitation: require_role(0) raises an unhandled TypeError
-    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  consumes:
-  - application/json
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  - name: body
-    in: body
-    required: true
-    schema:
-      type: object
-      properties:
-        account_id:
-          type: string
-      additionalProperties: true
-      required:
-      - account_id
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          message: {}
-        additionalProperties: true
-    '400':
-      description: Bad Request
-      schema:
-        $ref: '#/definitions/ApiError'
     '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
-docx_bp.admin_upgrade_plan_account:
-  tags:
-  - Admin
-  summary: Admin upgrade plan account
-  description: 'Admin upgrade plan account. Current middleware limitation: require_role(0) raises an unhandled TypeError
-    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  consumes:
-  - application/json
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  - name: body
-    in: body
-    required: true
-    schema:
-      type: object
-      properties:
-        account_id:
-          type: string
-        plan:
-          type: integer
-      additionalProperties: true
-      required:
-      - account_id
-      - plan
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          message: {}
-        additionalProperties: true
-    '400':
-      description: Bad Request
-      schema:
-        $ref: '#/definitions/ApiError'
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
+      description: A supplied API key is invalid or belongs to an inactive account.
       schema:
         $ref: '#/definitions/ApiError'
 docx_bp.get_quota:
   tags:
   - Auth
   summary: Get quota
-  description: Get quota.
+  description: Returns quota information for the authenticated user's account.
   produces:
   - application/json
   security:
   - ApiKeyAuth: []
   parameters:
-  - name: account_id
-    in: query
-    required: false
-    type: string
   - name: x-device-id
     in: header
     required: false
@@ -773,90 +649,6 @@ docx_bp.get_quota:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
-docx_bp.admin_get_accounts:
-  tags:
-  - Admin
-  summary: Admin get accounts
-  description: 'Admin get accounts. Current middleware limitation: require_role(0) raises an unhandled TypeError
-    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          data: {}
-        additionalProperties: true
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
-docx_bp.admin_get_users:
-  tags:
-  - Admin
-  summary: Admin get users
-  description: 'Admin get users. Current middleware limitation: require_role(0) raises an unhandled TypeError for
-    authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  parameters:
-  - name: role
-    in: query
-    required: false
-    type: integer
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          data: {}
-        additionalProperties: true
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
 docx_bp.login:
   tags:
   - Auth
@@ -884,9 +676,6 @@ docx_bp.login:
         password:
           type: string
           format: password
-        isDev:
-          type: boolean
-          default: false
       additionalProperties: true
       required:
       - username
@@ -1096,13 +885,13 @@ docx_bp.save_to_sheet:
   tags:
   - Integrations
   summary: Save to sheet
-  description: Provide email or a Google Bearer token from which the email can be resolved. The user must have a
-    stored Google Drive connection. This endpoint does not use x-api-key.
+  description: Requires x-api-key. Uses only the authenticated user's Google connection, verified and bound through
+    drive-connect. Legacy unbound connections must reconnect. Optional email must match the caller; optional document_id
+    must be owned by the caller or accessible to an admin.
   produces:
   - application/json
   security:
-  - {}
-  - GoogleBearerAuth: []
+  - ApiKeyAuth: []
   consumes:
   - application/json
   parameters:
@@ -1123,6 +912,11 @@ docx_bp.save_to_sheet:
           type: string
           description: Document identifier.
       additionalProperties: true
+  - name: Authorization
+    in: header
+    required: false
+    type: string
+    description: Optional Google Bearer token. If supplied it must identify the same user; it does not replace x-api-key.
   responses:
     '200':
       description: OK
@@ -1153,6 +947,14 @@ docx_bp.save_to_sheet:
         $ref: '#/definitions/ApiError'
     '500':
       description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing/invalid local API key or invalid optional Google token.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Document not found.
       schema:
         $ref: '#/definitions/ApiError'
 docx_bp.get_my_usage:
@@ -1197,16 +999,12 @@ docx_bp.get_manager_sub_users_usage:
   tags:
   - Subscriptions
   summary: Get manager sub users usage
-  description: Admin or manager access (roles 0 and 1). Managers are restricted to their own account.
+  description: 'Manager access: lists usage of users within the manager''s own account.'
   produces:
   - application/json
   security:
   - ApiKeyAuth: []
   parameters:
-  - name: account_id
-    in: query
-    required: false
-    type: string
   - name: x-device-id
     in: header
     required: false
@@ -1297,47 +1095,6 @@ docx_bp.cancel_subscription:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
-docx_bp.get_admin_overview:
-  tags:
-  - Admin
-  summary: Get admin overview
-  description: 'Admin access required. Get admin overview. Current middleware limitation: require_role(0) raises
-    an unhandled TypeError for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is
-    unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          data: {}
-        additionalProperties: true
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
 docx_bp.get_plans:
   tags:
   - Subscriptions
@@ -1357,150 +1114,6 @@ docx_bp.get_plans:
             example: 200
           data: {}
         additionalProperties: true
-docx_bp.admin_upgrade_plan_subscription:
-  tags:
-  - Admin
-  summary: Admin upgrade plan subscription
-  description: 'Admin only. Provide account_id or user_id. Omit plan to renew the current paid plan; providing plan
-    changes the plan and resets quota. Current middleware limitation: require_role(0) raises an unhandled TypeError
-    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  consumes:
-  - application/json
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  - name: body
-    in: body
-    required: true
-    schema:
-      type: object
-      properties:
-        user_id:
-          description: External numeric user ID, or MongoDB user ID string when supported.
-        account_id:
-          type: string
-        plan:
-          type: integer
-      additionalProperties: true
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          message: {}
-          data:
-            type: object
-            properties:
-              account_id: {}
-              new_plan: {}
-              plan_name: {}
-              action: {}
-            additionalProperties: true
-        additionalProperties: true
-    '400':
-      description: Bad Request
-      schema:
-        $ref: '#/definitions/ApiError'
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '404':
-      description: Not Found
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
-docx_bp.admin_reset_account:
-  tags:
-  - Admin
-  summary: Admin reset account
-  description: 'Admin only. Provide account_id or user_id. Resets the account to the Free plan and clears usage.
-    Current middleware limitation: require_role(0) raises an unhandled TypeError for authenticated non-admin users,
-    returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  consumes:
-  - application/json
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  - name: body
-    in: body
-    required: true
-    schema:
-      type: object
-      properties:
-        user_id:
-          description: External numeric user ID, or MongoDB user ID string when supported.
-        account_id:
-          type: string
-      additionalProperties: true
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          message:
-            type: string
-            example: Account reset to Free plan with 0 usage.
-          data:
-            type: object
-            properties:
-              account_id: {}
-              new_plan:
-                type: integer
-                example: 0
-            additionalProperties: true
-        additionalProperties: true
-    '400':
-      description: Bad Request
-      schema:
-        $ref: '#/definitions/ApiError'
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '404':
-      description: Not Found
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
 docx_bp.handle_analyze_message:
   tags:
   - Documents

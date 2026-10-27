@@ -1339,8 +1339,8 @@ rag_bp.playground_search:
   tags:
   - RAG
   summary: Playground search
-  description: Provide workspace_id and query (alias question). Returns retrieved chunks, scores and optional LLM
-    answer. generate_answer defaults to true.
+  description: Search an accessible workspace using query (alias question). Returns retrieved chunks, similarity
+    scores and an optional generated answer.
   produces:
   - application/json
   security:
@@ -1487,8 +1487,9 @@ rag_bp.create_document_record:
   tags:
   - Records
   summary: Create document record
-  description: Provide workspace_id and record, or put record fields at the body root. The record must contain id
-    or document_id. Additional external record fields are preserved by the service.
+  description: 'Requires access to the workspace: owner, same account, or admin. Provide workspace_id and record,
+    or put record fields at the body root. The record must contain id or document_id. Additional external record
+    fields are preserved by the service.'
   produces:
   - application/json
   security:
@@ -1556,12 +1557,16 @@ rag_bp.create_document_record:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Access to the requested workspace is denied.
+      schema:
+        $ref: '#/definitions/ApiError'
 rag_bp.patch_document_record_metadata:
   tags:
   - Records
   summary: Patch document record metadata
-  description: Provide workspace_id in query or body, plus updates (or metadata at body root). Updates metadata
-    without re-embedding.
+  description: 'Requires access to the workspace: owner, same account, or admin. Provide workspace_id in query or
+    body, plus updates (or metadata at body root). Updates metadata without re-embedding.'
   produces:
   - application/json
   security:
@@ -1638,11 +1643,16 @@ rag_bp.patch_document_record_metadata:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Access to the requested workspace is denied.
+      schema:
+        $ref: '#/definitions/ApiError'
 rag_bp.delete_document_record:
   tags:
   - Records
   summary: Delete document record
-  description: Provide workspace_id in query or JSON body. Removes the record from vector storage.
+  description: 'Requires access to the workspace: owner, same account, or admin. Provide workspace_id in query or
+    JSON body. Removes the record from vector storage.'
   produces:
   - application/json
   security:
@@ -1704,11 +1714,16 @@ rag_bp.delete_document_record:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Access to the requested workspace is denied.
+      schema:
+        $ref: '#/definitions/ApiError'
 rag_bp.search_document_records:
   tags:
   - Records
   summary: Search document records
-  description: 'Tìm kiếm thông minh kết hợp Exact Match Filter và Semantic Search cho văn bản đến.
+  description: 'Requires access to the workspace: owner, same account, or admin. Tìm kiếm thông minh kết hợp Exact
+    Match Filter và Semantic Search cho văn bản đến.
 
     Hỗ trợ lọc theo số đến, số ký hiệu, trạng thái, độ khẩn, độ mật, người xử lý...'
   produces:
@@ -1785,12 +1800,16 @@ rag_bp.search_document_records:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
+    '403':
+      description: Access to the requested workspace is denied.
+      schema:
+        $ref: '#/definitions/ApiError'
 rag_bp.convert_excel_to_markdown_endpoint:
   tags:
   - RAG
   summary: Convert excel to markdown endpoint
-  description: Upload file as multipart, or submit JSON with file_path referring to a server-local Excel file. auto_index=true
-    indexes the Markdown when workspace_id is supplied. Swagger UI demonstrates the multipart variant.
+  description: Upload an Excel file using multipart/form-data (maximum 100 MB). Server file_path input is not supported.
+    auto_index=true requires workspace_id and access to that workspace. No server-local file is read from user input.
   produces:
   - application/json
   security:
@@ -1849,5 +1868,13 @@ rag_bp.convert_excel_to_markdown_endpoint:
         $ref: '#/definitions/ApiError'
     '500':
       description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Workspace belongs to another account.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '413':
+      description: Upload exceeds size limit.
       schema:
         $ref: '#/definitions/ApiError'

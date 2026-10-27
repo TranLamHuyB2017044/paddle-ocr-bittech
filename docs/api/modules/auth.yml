@@ -72,11 +72,12 @@ auth_bp.google_drive_connect:
   tags:
   - Auth
   summary: Google drive connect
-  description: Exchange a Google authorization code with Drive scopes and store the user's Google connection for
-    later Sheets/Drive operations.
+  description: Requires an active local API key and a Google authorization code for the same email. Stores the Google
+    connection bound to the authenticated local user ID.
   produces:
   - application/json
-  security: []
+  security:
+  - ApiKeyAuth: []
   consumes:
   - application/json
   parameters:
@@ -118,6 +119,14 @@ auth_bp.google_drive_connect:
         $ref: '#/definitions/ApiError'
     '500':
       description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid local API key.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Google account does not belong to the authenticated user.
       schema:
         $ref: '#/definitions/ApiError'
 auth_bp.google_drive_disconnect:
@@ -395,7 +404,8 @@ auth_bp.upload_document_route:
   tags:
   - Auth
   summary: Upload document route
-  description: Upload document route.
+  description: Uploads using the authenticated user's external system connection. user_id must match the server-stored
+    external user ID; another user's connection is forbidden.
   produces:
   - application/json
   security:
@@ -446,157 +456,7 @@ auth_bp.upload_document_route:
       description: Internal Server Error
       schema:
         $ref: '#/definitions/ApiError'
-auth_bp.admin_register_license:
-  tags:
-  - Admin
-  summary: Admin register license
-  description: 'Admin register license. Current middleware limitation: require_role(0) raises an unhandled TypeError
-    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  consumes:
-  - application/json
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  - name: body
-    in: body
-    required: true
-    schema:
-      type: object
-      properties:
-        label:
-          type: string
-        expired_at:
-          type: string
-        notes:
-          type: string
-          default: ''
-      additionalProperties: true
-      required:
-      - label
-      - expired_at
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          message:
-            type: string
-            example: Đăng ký license thành công.
-          data: {}
-        additionalProperties: true
-    '400':
-      description: Bad Request
-      schema:
-        $ref: '#/definitions/ApiError'
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
     '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
-auth_bp.admin_verify_license:
-  tags:
-  - Admin
-  summary: Admin verify license
-  description: 'Admin verify license. Current middleware limitation: require_role(0) raises an unhandled TypeError
-    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          message:
-            type: string
-            example: Xác thực và kích hoạt license thành công.
-          data: {}
-        additionalProperties: true
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
-      schema:
-        $ref: '#/definitions/ApiError'
-auth_bp.admin_license_status:
-  tags:
-  - Admin
-  summary: Admin license status
-  description: 'Admin license status. Current middleware limitation: require_role(0) raises an unhandled TypeError
-    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
-  produces:
-  - application/json
-  security:
-  - ApiKeyAuth: []
-  parameters:
-  - name: x-device-id
-    in: header
-    required: false
-    type: string
-    description: Device identifier; when supplied, it must match the stored device where enforced.
-  responses:
-    '200':
-      description: OK
-      schema:
-        type: object
-        properties:
-          statusCode:
-            type: integer
-            example: 200
-          data:
-            type: object
-            properties:
-              latest: {}
-              active: {}
-            additionalProperties: true
-        additionalProperties: true
-    '401':
-      description: Missing or invalid credentials, or device mismatch.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '403':
-      description: Caller role or access is not permitted.
-      schema:
-        $ref: '#/definitions/ApiError'
-    '500':
-      description: Internal error, including the current integer-role middleware failure for non-admin users. The
-        middleware error may return HTML.
+      description: External connection belongs to another user.
       schema:
         $ref: '#/definitions/ApiError'

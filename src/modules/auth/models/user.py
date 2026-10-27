@@ -57,7 +57,7 @@ class User(BaseModel):
     
     active: bool = True
     deviceId: Optional[str] = Field(default=None)
-    role: Literal[0, 4] = Field(default=4, description="0: admin, 4: user")
+    role: Literal[0, 1, 2, 4] = Field(default=4, description="0: admin, 1: legacy manager, 2: legacy member, 4: user")
     account_id: Optional[PyObjectId] = Field(default=None)
     group_key: GroupKey = Field(default=None)
 

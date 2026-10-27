@@ -366,6 +366,8 @@ def create_chatbot():
 
         user = g.user
         account_id = user.get("account_id")
+        if not account_id:
+            return jsonify({"statusCode": 403, "message": "An account is required to create a chatbot"}), 403
         domain = str(payload.get("domain", "ecommerce")).strip().lower()
 
         # Check if collect_contact_info is explicitly specified for this chatbot (supports any domain/type)
@@ -460,11 +462,20 @@ def get_my_chatbots():
     try:
         user = g.user
         account_id = user.get("account_id")
+        if not account_id:
+            return jsonify({"statusCode": 200, "data": []})
         bots = chatbot_repo.find_by_account_id(account_id)
         formatted = [format_chatbot(b) for b in bots]
         return jsonify({"statusCode": 200, "data": formatted})
     except Exception as e:
         return jsonify({"statusCode": 500, "message": str(e)}), 500
+
+
+def _can_access_chatbot(bot):
+    if g.user.get('role') == 0:
+        return True
+    account_id = g.user.get('account_id')
+    return bool(account_id and bot.get('account_id') and str(account_id) == str(bot['account_id']))
 
 
 @chatbot_bp.route('/api/chatbot/<chatbot_id>', methods=['GET'])
@@ -474,6 +485,8 @@ def get_chatbot_detail_user(chatbot_id):
         bot = chatbot_repo.find_by_id(chatbot_id)
         if not bot:
             return jsonify({"statusCode": 404, "message": "Chatbot not found"}), 404
+        if not _can_access_chatbot(bot):
+            return jsonify({"statusCode": 403, "message": "Access denied to chatbot"}), 403
         return jsonify({"statusCode": 200, "data": format_chatbot(bot)})
     except Exception as e:
         return jsonify({"statusCode": 500, "message": str(e)}), 500
@@ -486,6 +499,8 @@ def update_chatbot_user(chatbot_id):
         bot = chatbot_repo.find_by_id(chatbot_id)
         if not bot:
             return jsonify({"statusCode": 404, "message": "Chatbot not found"}), 404
+        if not _can_access_chatbot(bot):
+            return jsonify({"statusCode": 403, "message": "Access denied to chatbot"}), 403
 
         data = request.json or {}
         update_data = {}
@@ -517,6 +532,8 @@ def delete_chatbot_user(chatbot_id):
         bot = chatbot_repo.find_by_id(chatbot_id)
         if not bot:
             return jsonify({"statusCode": 404, "message": "Chatbot not found"}), 404
+        if not _can_access_chatbot(bot):
+            return jsonify({"statusCode": 403, "message": "Access denied to chatbot"}), 403
 
         success = chatbot_repo.delete_chatbot(chatbot_id)
         if success:
@@ -683,6 +700,8 @@ def update_admin_user(user_id):
         if "role" in data and data["role"] is not None:
             try:
                 update_data["role"] = int(data["role"])
+                if isinstance(data["role"], bool) or update_data["role"] not in (0, 1, 2, 4):
+                    raise ValueError("Unsupported role")
             except (ValueError, TypeError):
                 return jsonify({"statusCode": 400, "message": "Role không hợp lệ"}), 400
 
