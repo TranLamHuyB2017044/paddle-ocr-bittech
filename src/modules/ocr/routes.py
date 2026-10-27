@@ -6,6 +6,8 @@ import os
 import time
 import json
 from flask import Blueprint, request, jsonify, g
+from flasgger import swag_from
+from src.core.swagger import DOCS_DIR
 from src.shared.utils.auth_middleware import require_auth
 from src.shared.utils.logger import Log
 from src.shared.utils.file_access_control import check_file_access, get_request_context, ROLE_ADMIN
@@ -373,6 +375,7 @@ def detect_traditional():
 # ── GET /api/document/<doc_id> ─────────────────────────────────────────────────
 @file_bp.route("/api/document/<doc_id>", methods=["GET"])
 @require_auth
+@swag_from(str(DOCS_DIR / "ocr" / "document_status.yml"))
 def get_document_status(doc_id: str):
     """
     Get document status and results

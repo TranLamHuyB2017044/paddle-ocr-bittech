@@ -2,6 +2,7 @@
 # Core Web Framework
 # ============================================================
 flask
+flasgger==0.9.7.1
 setuptools<70.0.0
 flask-cors
 gunicorn

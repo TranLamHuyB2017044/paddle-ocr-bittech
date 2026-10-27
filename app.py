@@ -4,10 +4,12 @@ Main Flask application - Clean Architecture version
 """
 from flask import Flask
 from flask_cors import CORS
+from flasgger import swag_from
 import os
 
 import src.core.config as config
 from src.shared.utils.rate_limit import init_limiter
+from src.core.swagger import DOCS_DIR, init_swagger
 
 
 # ==================== FLASK APP SETUP ====================
@@ -20,6 +22,7 @@ init_limiter(app)
 
 # ==================== REGISTER ROUTES ====================
 @app.route("/", methods=["GET"])
+@swag_from(str(DOCS_DIR / "health.yml"))
 def health_check():
     from flask import jsonify
     return jsonify({"status": "ok", "message": "CCCD OCR API is running"}), 200
@@ -67,6 +70,8 @@ app.register_blueprint(rag_bp)
 app.register_blueprint(category_bp)
 app.register_blueprint(sse_bp)
 app.register_blueprint(product_bp, url_prefix='/api')
+
+init_swagger(app)
 
 
 # Explicit route to serve files from public folder (registered after all other routes)

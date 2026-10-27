@@ -1,0 +1,54 @@
+Get OCR document status and results
+---
+tags:
+  - OCR
+produces:
+  - application/json
+security:
+  - ApiKeyAuth: []
+parameters:
+  - name: doc_id
+    in: path
+    required: true
+    type: string
+    description: ID of a document owned by the authenticated user.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when provided, it must match the account device where enforced.
+responses:
+  200:
+    description: Current document status and available OCR results.
+    schema:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        data:
+          type: object
+          properties:
+            document_id:
+              type: string
+            status:
+              type: string
+              enum: [UPLOADED, PROCESSING, READY, FAILED]
+            type:
+              type: string
+              description: Document type.
+            result:
+              description: OCR result; structure depends on document type and may be null before completion.
+            error:
+              description: Processing error, or null.
+            created_at:
+              type: string
+              description: Creation timestamp serialized by Flask.
+  401:
+    description: Missing or invalid API key, or device mismatch.
+  403:
+    description: Document belongs to another user.
+  404:
+    description: Document not found.
+  500:
+    description: Failed to retrieve document status.

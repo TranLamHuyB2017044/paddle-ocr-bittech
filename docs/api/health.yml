@@ -1,0 +1,19 @@
+Check service health
+---
+tags:
+  - Health
+produces:
+  - application/json
+security: []
+responses:
+  200:
+    description: Service is running (does not check database or worker readiness).
+    schema:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        message:
+          type: string
+          example: CCCD OCR API is running

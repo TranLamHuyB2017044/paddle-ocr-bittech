@@ -63,6 +63,7 @@ RUN python -c "from rembg import new_session; new_session('u2net'); new_session(
 
 # Copy mã nguồn, license và public folder sau cùng (sửa code sẽ không bị tải lại model)
 COPY src ./src
+COPY docs/api ./docs/api
 COPY public ./public
 COPY .licensekek ./.licensekek
 COPY app.py .

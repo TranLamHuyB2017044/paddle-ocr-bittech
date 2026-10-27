@@ -57,6 +57,30 @@ Server sẽ khởi động tại: `http://localhost:5000`
 
 ## 📖 Sử dụng API
 
+### Tài liệu Swagger
+
+Sau khi cài `requirements.txt` và chạy server:
+
+- Swagger UI: [http://localhost:5000/api-doc/](http://localhost:5000/api-doc/)
+- Đặc tả JSON: [http://localhost:5000/api-doc/swagger.json](http://localhost:5000/api-doc/swagger.json)
+
+Khung hiện có tài liệu cho `GET /` và `GET /api/document/{doc_id}`.
+Health check chỉ xác nhận ứng dụng đang chạy, không kiểm tra database/worker.
+Với API OCR, bấm **Authorize** và nhập API key đầy đủ (`ak_ACCESS.SECRET`);
+Swagger sẽ gửi header `x-api-key`. Có thể nhập `x-device-id` nếu cần.
+
+Để bổ sung endpoint, tạo đặc tả Swagger 2.0 YAML trong `docs/api/<module>/`,
+rồi thêm `@swag_from(str(DOCS_DIR / "<module>" / "<file>.yml"))` dưới decorator
+xác thực và trên hàm xử lý. Import `swag_from` từ `flasgger` và `DOCS_DIR`
+từ `src.core.swagger`. Các decorator bọc hàm cần giữ metadata bằng `functools.wraps`.
+Chỉ các route `/` và `/api/…` có đặc tả mới xuất hiện trong tài liệu.
+
+Kiểm tra khung tài liệu độc lập với model AI/database:
+
+```bash
+python -m unittest discover -s tests -p "test_swagger.py"
+```
+
 ### Endpoint: `POST /api/detect`
 
 Gửi file ảnh để nhận diện và phân loại văn bản.
