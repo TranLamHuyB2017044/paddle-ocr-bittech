@@ -1,0 +1,542 @@
+file_bp.view_file:
+  tags:
+  - OCR
+  summary: View file
+  description: Returns short-lived signed source-file URLs after access checks; break_glass_reason is considered
+    for admin access.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: doc_id
+    in: path
+    required: true
+    type: string
+    description: OCR document identifier.
+  - name: break_glass_reason
+    in: query
+    required: false
+    type: string
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          message:
+            type: string
+          data:
+            type: object
+            properties:
+              document_id:
+                type: string
+              files:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+              note:
+                type: string
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+file_bp.admin_view_file:
+  tags:
+  - OCR
+  summary: Admin view file
+  description: Admin break-glass access. A non-empty reason is required and the access is recorded in the audit
+    log.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: doc_id
+    in: path
+    required: true
+    type: string
+    description: OCR document identifier.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        reason:
+          type: string
+      required:
+      - reason
+      additionalProperties: true
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          message:
+            type: string
+          data:
+            type: object
+            properties:
+              document_id:
+                type: string
+              files:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+              audit:
+                type: object
+                properties:
+                  reason:
+                    type: string
+                  actor:
+                    type: string
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+  consumes:
+  - application/json
+file_bp.get_audit_log:
+  tags:
+  - OCR
+  summary: Get audit log
+  description: Admin-only file access audit history, limited by the limit query parameter.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: doc_id
+    in: path
+    required: true
+    type: string
+    description: OCR document identifier.
+  - name: limit
+    in: query
+    required: false
+    type: integer
+    default: 50
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          data:
+            type: object
+            properties:
+              document_id:
+                type: string
+              logs:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+              count:
+                type: integer
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+file_bp.detect_traditional:
+  tags:
+  - OCR
+  summary: Detect traditional
+  description: 'Multipart form: type is required. Supply repeated files keys or first_image/second_image. Total
+    request limit is 10 MB. Rate limit: 30 per minute. Requires images; uses the traditional provider. Waits up
+    to 300 seconds: returns 200 when ready or 202 with document_id if still queued.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: files
+    in: formData
+    required: false
+    type: file
+    description: Source images/documents. Repeat the files key for multiple files; Swagger 2.0 UI selects one file.
+  - name: first_image
+    in: formData
+    required: false
+    type: file
+    description: First image, used when files is absent.
+  - name: second_image
+    in: formData
+    required: false
+    type: file
+    description: Second image, used when files is absent.
+  - name: type
+    in: formData
+    required: true
+    type: string
+    enum:
+    - idCard
+    - driverLicense
+    - invoice
+    - vehicleDocuments
+    - menu
+    - administrativeDocument
+    - survey_form
+  - name: detect_handwriting
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+    description: Set true to enable handwriting detection.
+  - name: vision_extract
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+    description: Set true to enable vision extraction; costs 3 quota units instead of 1.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          message:
+            type: string
+          data: {}
+          debug: {}
+        additionalProperties: true
+    '202':
+      description: Accepted
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          message:
+            type: string
+          data:
+            type: object
+            properties:
+              document_id:
+                type: string
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '413':
+      description: Total OCR request exceeds 10 MB.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+  consumes:
+  - multipart/form-data
+file_bp.detect_sync:
+  tags:
+  - OCR
+  summary: Detect sync
+  description: 'Multipart form: type is required. Supply repeated files keys or first_image/second_image. Total
+    request limit is 10 MB. Rate limit: 30 per minute. Alternatively supply raw_text without images. Waits up to
+    300 seconds: returns 200 when ready or 202 with document_id if still queued.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: files
+    in: formData
+    required: false
+    type: file
+    description: Source images/documents. Repeat the files key for multiple files; Swagger 2.0 UI selects one file.
+  - name: first_image
+    in: formData
+    required: false
+    type: file
+    description: First image, used when files is absent.
+  - name: second_image
+    in: formData
+    required: false
+    type: file
+    description: Second image, used when files is absent.
+  - name: type
+    in: formData
+    required: true
+    type: string
+    enum:
+    - idCard
+    - driverLicense
+    - invoice
+    - vehicleDocuments
+    - menu
+    - administrativeDocument
+    - survey_form
+  - name: detect_handwriting
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+    description: Set true to enable handwriting detection.
+  - name: vision_extract
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+    description: Set true to enable vision extraction; costs 3 quota units instead of 1.
+  - name: raw_text
+    in: formData
+    required: false
+    type: string
+    description: Existing text; can replace image uploads.
+  - name: provider
+    in: formData
+    required: false
+    type: string
+    default: openai
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          message:
+            type: string
+          data: {}
+          debug: {}
+        additionalProperties: true
+    '202':
+      description: Accepted
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          message:
+            type: string
+          data:
+            type: object
+            properties:
+              document_id:
+                type: string
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '413':
+      description: Total OCR request exceeds 10 MB.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+  consumes:
+  - multipart/form-data
+file_bp.detect:
+  tags:
+  - OCR
+  summary: Detect
+  description: 'Multipart form: type is required. Supply repeated files keys or first_image/second_image. Total
+    request limit is 10 MB. Rate limit: 30 per minute. Alternatively supply raw_text without images. Returns 202
+    with document_id; poll GET /api/document/{doc_id} or listen to /api/events.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: files
+    in: formData
+    required: false
+    type: file
+    description: Source images/documents. Repeat the files key for multiple files; Swagger 2.0 UI selects one file.
+  - name: first_image
+    in: formData
+    required: false
+    type: file
+    description: First image, used when files is absent.
+  - name: second_image
+    in: formData
+    required: false
+    type: file
+    description: Second image, used when files is absent.
+  - name: type
+    in: formData
+    required: true
+    type: string
+    enum:
+    - idCard
+    - driverLicense
+    - invoice
+    - vehicleDocuments
+    - menu
+    - administrativeDocument
+    - survey_form
+  - name: detect_handwriting
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+    description: Set true to enable handwriting detection.
+  - name: vision_extract
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+    description: Set true to enable vision extraction; costs 3 quota units instead of 1.
+  - name: raw_text
+    in: formData
+    required: false
+    type: string
+    description: Existing text; can replace image uploads.
+  - name: provider
+    in: formData
+    required: false
+    type: string
+    default: openai
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '202':
+      description: Accepted
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+          message:
+            type: string
+          data:
+            type: object
+            properties:
+              document_id:
+                type: string
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '413':
+      description: Total OCR request exceeds 10 MB.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+  consumes:
+  - multipart/form-data

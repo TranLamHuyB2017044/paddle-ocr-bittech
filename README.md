@@ -64,56 +64,89 @@ Sau khi cài `requirements.txt` và chạy server:
 - Swagger UI: [http://localhost:5000/api-doc/](http://localhost:5000/api-doc/)
 - Đặc tả JSON: [http://localhost:5000/api-doc/swagger.json](http://localhost:5000/api-doc/swagger.json)
 
-Khung hiện có tài liệu cho `GET /` và `GET /api/document/{doc_id}`.
+Tài liệu bao phủ các nhóm Auth, Users, Documents, OCR, Photos, TTS, Chatbot,
+Public Chatbot, Categories, RAG, Records, Subscriptions, Admin, Integrations,
+Products và Events, cùng health check. Các URL alias và HTTP method đều được liệt kê.
 Health check chỉ xác nhận ứng dụng đang chạy, không kiểm tra database/worker.
-Với API OCR, bấm **Authorize** và nhập API key đầy đủ (`ak_ACCESS.SECRET`);
+Với API có xác thực, bấm **Authorize** → **ApiKeyAuth** và nhập API key đầy đủ (`ak_ACCESS.SECRET`);
 Swagger sẽ gửi header `x-api-key`. Có thể nhập `x-device-id` nếu cần.
+API chatbot công khai dùng **PublicTokenAuth** (`x-public-token`).
+**GoogleBearerAuth** dành riêng cho thao tác lưu Sheets; nhập `Bearer <Google access token>`.
 
-Để bổ sung endpoint, tạo đặc tả Swagger 2.0 YAML trong `docs/api/<module>/`,
-rồi thêm `@swag_from(str(DOCS_DIR / "<module>" / "<file>.yml"))` dưới decorator
-xác thực và trên hàm xử lý. Import `swag_from` từ `flasgger` và `DOCS_DIR`
-từ `src.core.swagger`. Các decorator bọc hàm cần giữ metadata bằng `functools.wraps`.
-Chỉ các route `/` và `/api/…` có đặc tả mới xuất hiện trong tài liệu.
+Các đặc tả Swagger 2.0 nằm trong `docs/api/modules/*.yml`, khóa là tên Flask endpoint
+(ví dụ `file_bp.detect`, `tts.generate_speech`). `init_swagger(app)` gắn đặc tả sau khi
+đăng ký Blueprint; khi thêm endpoint, bổ sung mục vào YAML của module tương ứng.
+Mỗi module dùng một file, không cần tạo file cho từng endpoint. Khi thay đổi tham số
+hoặc response trong hàm xử lý, cập nhật mục tương ứng trong YAML cùng lần sửa code.
+Health check và trạng thái OCR vẫn dùng hai file YAML riêng qua `@swag_from`.
+Không khai báo cùng endpoint bằng cả hai cách. Các decorator bọc hàm cần giữ metadata
+bằng `functools.wraps`. Không bật validation request của Flasgger trong thay đổi này.
 
-Kiểm tra khung tài liệu độc lập với model AI/database:
+Swagger UI minh họa một kiểu request chính cho mỗi operation. Các API hỗ trợ cả JSON
+và multipart có mô tả kiểu thay thế trong operation. Swagger 2.0 chỉ có bộ chọn một file
+cho mỗi trường; gửi nhiều file bằng cách lặp lại khóa trong cURL/client:
 
 ```bash
+curl -X POST http://localhost:5000/api/detect \
+  -H "x-api-key: YOUR_API_KEY" \
+  -F "type=idCard" \
+  -F "files=@front.jpg" \
+  -F "files=@back.jpg"
+```
+
+Đọc SSE bằng client hỗ trợ header; kết nối sẽ giữ mở đến khi ngắt:
+
+```bash
+curl -N http://localhost:5000/api/events -H "x-api-key: YOUR_API_KEY"
+```
+
+Hiện mã nguồn có hai cặp route trùng: `GET /api/admin/users` và
+`POST /api/rag/documents/<document_id>/reindex`. Tài liệu dùng handler đăng ký đầu tiên,
+đúng với Flask; chưa thay đổi logic/đăng ký route. Route phục vụ file tĩnh và upload
+không nằm trong tài liệu API; `/send-email` được đưa vào nhóm Integrations.
+
+Lưu ý hành vi hiện tại: middleware `require_role(0)` nhận số nguyên nhưng kiểm tra
+quyền bằng phép `in`, nên tài khoản không phải admin có thể gặp HTTP 500 thay vì 403.
+Các operation liên quan có ghi chú và response 500; lần cập nhật tài liệu này chưa sửa middleware.
+
+Kiểm tra tài liệu độc lập với model AI/database (môi trường cần các thư viện phát triển):
+
+```bash
+pip install -r requirements-dev.txt
 python -m unittest discover -s tests -p "test_swagger.py"
 ```
 
+Bộ kiểm tra dựng URL map từ khai báo route thật, kiểm tra độ phủ URL/method,
+xác thực, path parameters, upload/SSE, tài nguyên UI và chuẩn Swagger 2.0.
+Các handler nghiệp vụ trong kiểm tra độ phủ được thay bằng stub để không gọi dịch vụ ngoài.
+
 ### Endpoint: `POST /api/detect`
 
-Gửi file ảnh để nhận diện và phân loại văn bản.
+Gửi ảnh hoặc `raw_text` để tạo tác vụ OCR bất đồng bộ.
 
 **Request (cURL):**
 
 ```bash
 curl -X POST http://localhost:5000/api/detect \
-  -F "file=@path/to/your/image.jpg"
+  -H "x-api-key: YOUR_API_KEY" \
+  -F "type=idCard" \
+  -F "files=@path/to/your/image.jpg"
 ```
 
-**Response (JSON):**
+**Response (HTTP 202):**
 
 ```json
 {
-  "success": true,
-  "filename": "20231203_160000_image.jpg",
-  "ocr_results": [
-    {
-      "original_text": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
-      "ocr_confidence": 0.998,
-      "classified_text": "QUỐC HIỆU TIÊU NGỮ",
-      "classification_score": 0.985
-    }
-  ],
-  "id_card_info": {
-    "id_number": "001234567890",
-    "full_name": "NGUYỄN VĂN A",
-    "date_of_birth": "01/01/1990",
-    ...
+  "statusCode": 202,
+  "message": "Detection task enqueued",
+  "data": {
+    "document_id": "YOUR_DOCUMENT_ID"
   }
 }
 ```
+
+Lấy kết quả bằng `GET /api/document/YOUR_DOCUMENT_ID` với cùng header `x-api-key`,
+hoặc theo dõi sự kiện ở `/api/events`.
 
 ---
 

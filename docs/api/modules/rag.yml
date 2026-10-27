@@ -1,0 +1,1853 @@
+rag_bp.create_workspace:
+  tags:
+  - RAG
+  summary: Create workspace
+  description: Create workspace.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          default: ''
+      additionalProperties: true
+      required:
+      - name
+      example:
+        name: Example workspace
+        description: Knowledge documents
+  responses:
+    '201':
+      description: Created
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 201
+          message:
+            type: string
+            example: Workspace created successfully
+          data:
+            type: object
+            properties:
+              workspace_id: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.list_workspaces:
+  tags:
+  - RAG
+  summary: List workspaces
+  description: List workspaces.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.get_workspace_details:
+  tags:
+  - RAG
+  summary: Get workspace details
+  description: Get workspace details.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.update_workspace:
+  tags:
+  - RAG
+  summary: Update workspace
+  description: Provide name and/or description.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Workspace updated successfully
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.delete_workspace:
+  tags:
+  - RAG
+  summary: Delete workspace
+  description: Delete workspace.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Workspace and all associated data deleted successfully
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.delete_all_workspaces:
+  tags:
+  - RAG
+  summary: Delete all workspaces
+  description: Delete all workspaces.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: All workspaces and associated data cleared successfully
+          data:
+            type: object
+            properties:
+              workspaces_deleted: {}
+              history_cleared:
+                type: boolean
+                example: true
+              logs_cleared:
+                type: boolean
+                example: true
+              documents_cleared:
+                type: boolean
+                example: true
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.upload_to_workspace:
+  tags:
+  - RAG
+  summary: Upload to workspace
+  description: Upload files using repeated files keys. Optional category must be an active workspace category. vision=true
+    enables vision extraction. Processing is queued; track status using the document status endpoint or SSE.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: files
+    in: formData
+    required: true
+    type: file
+    description: Upload a file. Repeat this field for multiple files (Swagger 2.0 UI selects one file per field).
+  - name: category
+    in: formData
+    required: false
+    type: string
+    description: Active category slug; omit when no category filter is needed.
+  - name: category
+    in: query
+    required: false
+    type: string
+    description: Active category slug; omit when no category filter is needed.
+  - name: vision
+    in: query
+    required: false
+    type: string
+    default: 'false'
+  - name: vision
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '202':
+      description: Accepted
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 202
+          message: {}
+          data:
+            type: object
+            properties:
+              documents: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '413':
+      description: Request Entity Too Large
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.list_documents:
+  tags:
+  - RAG
+  summary: List documents
+  description: List documents.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: category
+    in: query
+    required: false
+    type: string
+    description: Active category slug; omit when no category filter is needed.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.get_document_status:
+  tags:
+  - RAG
+  summary: Get document status
+  description: Get document status.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data:
+            type: object
+            properties:
+              document_id: {}
+              filename: {}
+              status: {}
+              total_chunks: {}
+              result: {}
+              debug: {}
+              error: {}
+              updated_at: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.chat_with_workspace:
+  tags:
+  - RAG
+  summary: Chat with workspace
+  description: Chat with workspace.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        question:
+          type: string
+        provider:
+          type: string
+          default: auto
+        category:
+          type: string
+          description: Active category slug; omit when no category filter is needed.
+      additionalProperties: true
+      required:
+      - question
+      example:
+        question: What is this document about?
+        provider: auto
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.suggest_workspace_questions:
+  tags:
+  - RAG
+  summary: Suggest workspace questions
+  description: Suggest workspace questions.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: category
+    in: query
+    required: false
+    type: string
+    description: Active category slug; omit when no category filter is needed.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data:
+            type: object
+            properties:
+              suggestions: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.get_workspace_chat_history:
+  tags:
+  - RAG
+  summary: Get workspace chat history
+  description: Get workspace chat history.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: limit
+    in: query
+    required: false
+    type: integer
+    default: 50
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data:
+            type: object
+            properties:
+              workspace_id: {}
+              history: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.delete_workspace_chat_history:
+  tags:
+  - RAG
+  summary: Delete workspace chat history
+  description: Delete workspace chat history.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              workspace_id: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.delete_document:
+  tags:
+  - RAG
+  summary: Delete document
+  description: "Xóa một document riêng lẻ trong workspace:\n  1. Verify quyền sở hữu workspace + document\n  2.\
+    \ Xóa tất cả vector trong Qdrant (theo workspace_id + document_name)\n  3. Xóa document record trong MongoDB"
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              document_id: {}
+              document_name: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.reindex_document:
+  tags:
+  - RAG
+  summary: Reindex document
+  description: "Reindex một document đã tồn tại:\n  1. Verify quyền sở hữu\n  2. Lấy raw_text từ MongoDB (ưu tiên)\
+    \ hoặc báo lỗi nếu không có\n  3. Xóa vectors cũ trong Qdrant\n  4. Index lại vào Qdrant\n  5. Cập nhật status\
+    \ trong MongoDB"
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              document_id: {}
+              document_name: {}
+              total_chunks: {}
+              category: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.upload_text_to_workspace:
+  tags:
+  - RAG
+  summary: Upload text to workspace
+  description: Creates and indexes a document directly from text. document_name is generated when omitted. Optional
+    category must exist in the workspace.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        category:
+          type: string
+          description: Active category slug; omit when no category filter is needed.
+        text:
+          type: string
+        document_name:
+          type: string
+          description: Display filename/title; generated from text if omitted.
+      additionalProperties: true
+      required:
+      - text
+      example:
+        text: Example document text
+        document_name: Example document
+  responses:
+    '201':
+      description: Created
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 201
+          message: {}
+          data:
+            type: object
+            properties:
+              document_id: {}
+              document_name: {}
+              category: {}
+              total_chunks: {}
+              status: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.get_document_content:
+  tags:
+  - RAG
+  summary: Get document content
+  description: Lấy toàn bộ nội dung văn bản (raw_text) đã được OCR của tài liệu để debug hoặc xem trước.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data:
+            type: object
+            properties:
+              document_id: {}
+              filename: {}
+              original_filename: {}
+              workspace_id: {}
+              category: {}
+              status: {}
+              total_chunks: {}
+              total_characters: {}
+              total_words: {}
+              raw_text: {}
+              source_files: {}
+              created_at: {}
+              updated_at: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.get_document_chunks:
+  tags:
+  - RAG
+  summary: Get document chunks
+  description: 'Lấy danh sách các chunk thực tế trong Qdrant của document để debug:
+
+    Xem phân bổ chunk, tiêu đề đề mục (section_title), số trang, nội dung từng chunk.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data:
+            type: object
+            properties:
+              document_id: {}
+              document_name: {}
+              category: {}
+              total_chunks: {}
+              chunks: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.update_document_text:
+  tags:
+  - RAG
+  summary: Update document text
+  description: Replaces stored text and reindexes vectors. Omit category to keep it, or send null/empty category
+    to clear it.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        category:
+          type: string
+          description: Active category slug; omit when no category filter is needed.
+        new_text:
+          type: string
+      additionalProperties: true
+      required:
+      - new_text
+      example:
+        new_text: Updated document text
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              document_id: {}
+              document_name: {}
+              category: {}
+              total_chunks: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.replace_document_file:
+  tags:
+  - RAG
+  summary: Replace document file
+  description: Replace the original file and queue extraction/reindexing. Optional category and vision may be supplied
+    in form or query.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: file
+    in: formData
+    required: true
+    type: file
+    description: File upload.
+  - name: category
+    in: formData
+    required: false
+    type: string
+    description: Active category slug; omit when no category filter is needed.
+  - name: category
+    in: query
+    required: false
+    type: string
+    description: Active category slug; omit when no category filter is needed.
+  - name: vision
+    in: query
+    required: false
+    type: string
+    default: 'false'
+  - name: vision
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '202':
+      description: Accepted
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 202
+          message: {}
+          data:
+            type: object
+            properties:
+              document_id: {}
+              new_filename: {}
+              category: {}
+              status: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '413':
+      description: Request Entity Too Large
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.reindex_all_documents:
+  tags:
+  - RAG
+  summary: Reindex all documents
+  description: Reindex toàn bộ document trong workspace (bỏ qua tài liệu is_deleted).
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              total: {}
+              succeeded: {}
+              skipped: {}
+              failed: {}
+              results: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.update_document_metadata:
+  tags:
+  - RAG
+  summary: Update document metadata
+  description: 'Cập nhật metadata của document (filename, description, tags, category).
+
+    Nếu đổi category, gọi Qdrant set_document_category payload mà không re-embed.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        filename:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+          description: Active category slug; omit when no category filter is needed.
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Cập nhật metadata thành công
+          data:
+            type: object
+            properties:
+              document_id: {}
+              updated_fields: {}
+              values: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.playground_search:
+  tags:
+  - RAG
+  summary: Playground search
+  description: Provide workspace_id and query (alias question). Returns retrieved chunks, scores and optional LLM
+    answer. generate_answer defaults to true.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Workspace identifier.
+        category:
+          type: string
+          description: Active category slug; omit when no category filter is needed.
+        domain:
+          type: string
+          default: administrative_doc
+        provider:
+          type: string
+          default: auto
+        query:
+          type: string
+        question:
+          type: string
+        limit:
+          type: integer
+          default: 7
+        min_score:
+          type: number
+          default: 0.35
+        generate_answer:
+          type: boolean
+          default: true
+      additionalProperties: true
+      required:
+      - workspace_id
+      example:
+        workspace_id: your_workspace_id
+        query: Example question
+        limit: 7
+        generate_answer: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Tìm kiếm RAG Playground thành công
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.reindex_document_endpoint:
+  tags:
+  - RAG
+  summary: Reindex document endpoint
+  description: 'Reindex document using the smart structure-aware chunker.
+
+    Uses stored raw_text from MongoDB, purges old Qdrant chunks, and re-embeds.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              document_id: {}
+              total_chunks: {}
+              document_name: {}
+              category: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.create_document_record:
+  tags:
+  - Records
+  summary: Create document record
+  description: Provide workspace_id and record, or put record fields at the body root. The record must contain id
+    or document_id. Additional external record fields are preserved by the service.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Workspace identifier.
+        record:
+          type: object
+          additionalProperties: true
+          description: External record object containing id or document_id; alternatively put its fields at body
+            root.
+      additionalProperties: true
+      required:
+      - workspace_id
+      example:
+        workspace_id: your_workspace_id
+        record:
+          id: external-record-id
+          documentNo: DOC-001
+  responses:
+    '201':
+      description: Created
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 201
+          message:
+            type: string
+            example: Đã đồng bộ văn bản đến vào tri thức RAG thành công
+          data:
+            type: object
+            properties:
+              document_id: {}
+              workspace_id: {}
+              arrivalNo: {}
+              documentNo: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.patch_document_record_metadata:
+  tags:
+  - Records
+  summary: Patch document record metadata
+  description: Provide workspace_id in query or body, plus updates (or metadata at body root). Updates metadata
+    without re-embedding.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: workspace_id
+    in: query
+    required: false
+    type: string
+    description: Workspace identifier.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Workspace identifier.
+        updates:
+          type: object
+          additionalProperties: true
+          description: Metadata fields to update; alternatively put metadata at body root.
+      additionalProperties: true
+      example:
+        workspace_id: your_workspace_id
+        updates:
+          status: processing
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Cập nhật metadata văn bản thành công (0% re-embedding)
+          data:
+            type: object
+            properties:
+              document_id: {}
+              workspace_id: {}
+              updated_fields: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.delete_document_record:
+  tags:
+  - Records
+  summary: Delete document record
+  description: Provide workspace_id in query or JSON body. Removes the record from vector storage.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: document_id
+    in: path
+    required: true
+    type: string
+    description: Document id.
+  - name: workspace_id
+    in: query
+    required: false
+    type: string
+    description: Workspace identifier.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: false
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Workspace identifier.
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              document_id: {}
+              workspace_id: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.search_document_records:
+  tags:
+  - Records
+  summary: Search document records
+  description: 'Tìm kiếm thông minh kết hợp Exact Match Filter và Semantic Search cho văn bản đến.
+
+    Hỗ trợ lọc theo số đến, số ký hiệu, trạng thái, độ khẩn, độ mật, người xử lý...'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: Workspace identifier.
+        query:
+          type: string
+        arrivalNo:
+          type: string
+        documentNo:
+          type: string
+        status:
+          type: string
+        priority:
+          type: string
+        security:
+          type: string
+        currentDeptName:
+          type: string
+        currentUserName:
+          type: string
+        limit:
+          type: integer
+          default: 10
+      additionalProperties: true
+      required:
+      - workspace_id
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Tìm kiếm văn bản đến thành công
+          data:
+            type: object
+            properties:
+              total: {}
+              items: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+rag_bp.convert_excel_to_markdown_endpoint:
+  tags:
+  - RAG
+  summary: Convert excel to markdown endpoint
+  description: Upload file as multipart, or submit JSON with file_path referring to a server-local Excel file. auto_index=true
+    indexes the Markdown when workspace_id is supplied. Swagger UI demonstrates the multipart variant.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: file
+    in: formData
+    required: true
+    type: file
+    description: File upload.
+  - name: workspace_id
+    in: formData
+    required: false
+    type: string
+    description: Workspace identifier.
+  - name: auto_index
+    in: formData
+    required: false
+    type: boolean
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Chuyển đổi Excel sang Markdown thành công
+          data:
+            type: object
+            properties:
+              filename: {}
+              markdown_length: {}
+              markdown_content: {}
+              auto_indexed: {}
+              indexed_chunks: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'

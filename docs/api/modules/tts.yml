@@ -1,0 +1,97 @@
+tts.get_preset_voices:
+  tags:
+  - TTS
+  summary: Get preset voices
+  description: 'API endpoint lấy danh sách giọng đọc mẫu (preset voices) của VieNeu-TTS. Rate limit: 30 per minute.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Lấy danh sách giọng đọc mẫu thành công
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+tts.generate_speech:
+  tags:
+  - TTS
+  summary: Generate speech
+  description: 'Provide text and optionally voice_name or voice_sample for voice cloning. Waits up to 180 seconds
+    for the worker and returns the upload service response containing audio URLs. Returns 504 on timeout. Rate limit:
+    5 per minute; 20 per hour.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: voice_sample
+    in: formData
+    required: false
+    type: file
+    description: File upload.
+  - name: text
+    in: formData
+    required: true
+    type: string
+    default: ''
+  - name: voice_name
+    in: formData
+    required: false
+    type: string
+    default: ''
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: Upload service response with generated audio file URLs.
+      schema:
+        type: object
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '504':
+      description: Gateway Timeout
+      schema:
+        $ref: '#/definitions/ApiError'

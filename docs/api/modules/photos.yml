@@ -1,0 +1,239 @@
+photo_routes.process_photo:
+  tags:
+  - Photos
+  summary: Process photo
+  description: 'Upload files (or file). size alone crops; bg_color (alias bg) alone changes background; both apply
+    both operations. With neither, defaults to crop size 3x4. Repeat files for a batch. auto_align and ignore_warnings
+    accept true/false. Rate limit: 20 per minute. Maximum 10 files, 5 MB per file and 30 MB per batch.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: files
+    in: formData
+    required: false
+    type: file
+    description: Upload a file. Repeat this field for multiple files (Swagger 2.0 UI selects one file per field).
+  - name: size
+    in: formData
+    required: false
+    type: string
+    enum:
+    - 2x3
+    - 3x4
+    - 4x6
+  - name: file
+    in: formData
+    required: false
+    type: file
+    description: File upload.
+  - name: bg_color
+    in: formData
+    required: false
+    type: string
+    description: 'Background color: blue, white, red, or a color accepted by Pillow (for example #ffffff).'
+  - name: bg
+    in: formData
+    required: false
+    type: string
+  - name: ignore_warnings
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+  - name: auto_align
+    in: formData
+    required: false
+    type: string
+    default: 'false'
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          session_id: {}
+          type: {}
+          size: {}
+          bg_color: {}
+          auto_align: {}
+          total: {}
+          success: {}
+          failed: {}
+          results: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '503':
+      description: Service Unavailable
+      schema:
+        $ref: '#/definitions/ApiError'
+photo_routes.clear_photo_session:
+  tags:
+  - Photos
+  summary: Clear photo session
+  description: Provide session_id in JSON or form data. Clears the authenticated user's temporary photo session.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        session_id:
+          type: string
+      additionalProperties: true
+      required:
+      - session_id
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+photo_routes.auto_crop_face:
+  tags:
+  - Photos
+  summary: Auto crop face
+  description: 'Provide image (aliases file or files). Returns crop coordinates and a signed preview URL, not image
+    bytes. aspect_ratio defaults to 3:4. Rate limit: 20 per minute.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: image
+    in: formData
+    required: false
+    type: file
+    description: File upload.
+  - name: file
+    in: formData
+    required: false
+    type: file
+    description: File upload.
+  - name: files
+    in: formData
+    required: false
+    type: file
+    description: Upload a file. Repeat this field for multiple files (Swagger 2.0 UI selects one file per field).
+  - name: aspect_ratio
+    in: formData
+    required: false
+    type: string
+    default: '3:4'
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          status:
+            type: string
+            example: success
+          data:
+            type: object
+            properties:
+              crop_box:
+                type: object
+                properties:
+                  x: {}
+                  y: {}
+                  width: {}
+                  height: {}
+                additionalProperties: true
+              confidence: {}
+              confidence_source:
+                type: string
+                example: not_available
+              message:
+                type: string
+                example: Phát hiện khuôn mặt thành công
+              session_id: {}
+              image_size:
+                type: object
+                properties:
+                  width: {}
+                  height: {}
+                additionalProperties: true
+              cropped_url: {}
+              url_expires_in_seconds: {}
+              retention_expires_at: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+    '503':
+      description: Service Unavailable
+      schema:
+        $ref: '#/definitions/ApiError'

@@ -1,0 +1,37 @@
+sse_bp.stream_events:
+  tags:
+  - Events
+  summary: Stream events
+  description: Long-lived text/event-stream authenticated by x-api-key. Emits connection, task events, error and
+    heartbeat comments. Use fetch streaming or curl -N to supply the header; native browser EventSource cannot set
+    custom headers. Swagger Try it out may remain pending until disconnected.
+  produces:
+  - text/event-stream
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: Continuous SSE stream, including heartbeat comments.
+      schema:
+        type: string
+      examples:
+        text/event-stream: 'event: connection
+
+          data: {"event":"connection","status":"connected"}
+
+
+          : heartbeat
+
+
+          '
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'

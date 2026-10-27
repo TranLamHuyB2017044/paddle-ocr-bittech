@@ -1,0 +1,490 @@
+category_bp.list_workspace_categories:
+  tags:
+  - Categories
+  summary: List workspace categories
+  description: List workspace categories.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+category_bp.create_workspace_category:
+  tags:
+  - Categories
+  summary: Create workspace category
+  description: Create workspace category.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        description:
+          type: string
+        icon:
+          type: string
+        name:
+          type: string
+      additionalProperties: true
+      required:
+      - name
+      example:
+        name: General
+        description: General documents
+  responses:
+    '201':
+      description: Created
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 201
+          message:
+            type: string
+            example: Tạo category thành công
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '409':
+      description: Conflict
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+category_bp.update_workspace_category:
+  tags:
+  - Categories
+  summary: Update workspace category
+  description: Update workspace category.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: slug
+    in: path
+    required: true
+    type: string
+    description: Slug.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        icon:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Cập nhật category thành công
+          data: {}
+          affected_documents: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '409':
+      description: Conflict
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+category_bp.delete_workspace_category:
+  tags:
+  - Categories
+  summary: Delete workspace category
+  description: Soft-deletes the category and its related documents/vectors. If documents exist, confirm=true is
+    required. Optional reason can be supplied in query or JSON body.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: slug
+    in: path
+    required: true
+    type: string
+    description: Slug.
+  - name: reason
+    in: query
+    required: false
+    type: string
+  - name: confirm
+    in: query
+    required: false
+    type: string
+    default: 'false'
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: false
+    schema:
+      type: object
+      properties:
+        reason:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              slug: {}
+              deleted_documents_count: {}
+              deleted_document_ids: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+category_bp.restore_category_admin:
+  tags:
+  - Admin
+  summary: Restore category admin
+  description: Admin only. Restores the category and its documents, then attempts reindexing. Inspect failed_reindex_count
+    in the response.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: slug
+    in: path
+    required: true
+    type: string
+    description: Slug.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              category: {}
+              restored_documents: {}
+              reindexed_count: {}
+              failed_reindex_count: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '409':
+      description: Conflict
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+category_bp.list_deleted_categories_admin:
+  tags:
+  - Admin
+  summary: List deleted categories admin
+  description: Admin access required. List deleted categories admin.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+category_bp.list_workspace_audit_logs:
+  tags:
+  - Categories
+  summary: List workspace audit logs
+  description: List workspace audit logs.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    type: string
+    description: Workspace id.
+  - name: action
+    in: query
+    required: false
+    type: string
+  - name: page
+    in: query
+    required: false
+    type: integer
+    default: 1
+  - name: limit
+    in: query
+    required: false
+    type: integer
+    default: 20
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data:
+            type: object
+            properties:
+              logs: {}
+              pagination:
+                type: object
+                properties:
+                  page: {}
+                  limit: {}
+                  total: {}
+                additionalProperties: true
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+category_bp.get_public_chatbot_categories:
+  tags:
+  - Public Chatbot
+  summary: Get public chatbot categories
+  description: Get public chatbot categories.
+  produces:
+  - application/json
+  security:
+  - PublicTokenAuth: []
+  parameters:
+  - name: chatbot_id
+    in: path
+    required: true
+    type: string
+    description: Chatbot id.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'

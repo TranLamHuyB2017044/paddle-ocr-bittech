@@ -1,0 +1,1559 @@
+docx_bp.get_user_stats:
+  tags:
+  - Documents
+  summary: Get user stats
+  description: Get user stats.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Success
+          data:
+            type: object
+            properties:
+              total_extractions: {}
+              today_extractions: {}
+              last_extraction_at: {}
+              breakdown: {}
+              doc_type_stats: {}
+              recent_extractions: {}
+              managed_members: {}
+            additionalProperties: true
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_user_extractions:
+  tags:
+  - Documents
+  summary: Get user extractions
+  description: Get user extractions.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: page
+    in: query
+    required: false
+    type: integer
+    default: 1
+  - name: limit
+    in: query
+    required: false
+    type: integer
+    default: 10
+  - name: document_type
+    in: query
+    required: false
+    type: string
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Success
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.submit_correction:
+  tags:
+  - Documents
+  summary: Submit correction
+  description: Submit correction.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        document_id:
+          type: string
+          description: Document identifier.
+        corrected_data:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      required:
+      - document_id
+      - corrected_data
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Correction submitted and learned successfully
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.report_extraction:
+  tags:
+  - Documents
+  summary: Report extraction
+  description: Report extraction.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        document_id:
+          type: string
+          description: Document identifier.
+        reason:
+          type: string
+        details:
+          type: string
+        extraction_result:
+          description: JSON value passed to the integration service.
+      additionalProperties: true
+      required:
+      - document_id
+      - reason
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Report submitted successfully
+          data:
+            type: object
+            properties:
+              report_id: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.update_user_avatar:
+  tags:
+  - Users
+  summary: Update user avatar
+  description: Update user avatar.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: avatar
+    in: formData
+    required: true
+    type: file
+    description: File upload.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Cập nhật ảnh đại diện thành công
+          data:
+            type: object
+            properties:
+              avatar_url: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_my_profile:
+  tags:
+  - Users
+  summary: Get my profile
+  description: Get my profile.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.update_profile:
+  tags:
+  - Users
+  summary: Update profile
+  description: Update at least one of fullname, phone or avatar_url.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        phone:
+          type: string
+        avatar_url:
+          type: string
+        fullname:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Cập nhật thông tin cá nhân thành công
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.change_password:
+  tags:
+  - Auth
+  summary: Change password
+  description: Provide old_password (alias current_password) and new_password (alias password).
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        old_password:
+          type: string
+          format: password
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+        password:
+          type: string
+          format: password
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Đổi mật khẩu thành công
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.update_user_by_id:
+  tags:
+  - Users
+  summary: Update user by id
+  description: Self, admin or permitted manager access. Available fields and password checks depend on the caller's
+    role. See response errors for denied updates.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: user_id
+    in: path
+    required: true
+    type: string
+    description: User id.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        phone:
+          type: string
+        avatar_url:
+          type: string
+        new_password:
+          type: string
+          format: password
+        password:
+          type: string
+          format: password
+        reset_device:
+          type: boolean
+        old_password:
+          type: string
+          format: password
+        current_password:
+          type: string
+          format: password
+        role:
+          type: integer
+        active:
+          type: boolean
+        plan:
+          type: integer
+        fullname:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Cập nhật tài khoản thành công
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.register:
+  tags:
+  - Auth
+  summary: Register
+  description: 'Public registration. An optional x-api-key identifies the creator; role, account and plan permissions
+    depend on that creator. Rate limit: 5 per minute.'
+  produces:
+  - application/json
+  security:
+  - {}
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+          format: password
+        fullname:
+          type: string
+        phone:
+          type: string
+        role:
+          type: integer
+          default: 2
+        account_id:
+          type: string
+        plan:
+          type: integer
+      additionalProperties: true
+      required:
+      - username
+      - email
+      - password
+  responses:
+    '201':
+      description: Created
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 201
+          message:
+            type: string
+            example: User registered successfully
+          data:
+            type: object
+            properties:
+              id: {}
+              user_id: {}
+              created_plan: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.admin_reset_quota:
+  tags:
+  - Admin
+  summary: Admin reset quota
+  description: 'Admin reset quota. Current middleware limitation: require_role(0) raises an unhandled TypeError
+    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        account_id:
+          type: string
+      additionalProperties: true
+      required:
+      - account_id
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal error, including the current integer-role middleware failure for non-admin users. The
+        middleware error may return HTML.
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.admin_upgrade_plan_account:
+  tags:
+  - Admin
+  summary: Admin upgrade plan account
+  description: 'Admin upgrade plan account. Current middleware limitation: require_role(0) raises an unhandled TypeError
+    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        account_id:
+          type: string
+        plan:
+          type: integer
+      additionalProperties: true
+      required:
+      - account_id
+      - plan
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal error, including the current integer-role middleware failure for non-admin users. The
+        middleware error may return HTML.
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_quota:
+  tags:
+  - Auth
+  summary: Get quota
+  description: Get quota.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: account_id
+    in: query
+    required: false
+    type: string
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.admin_get_accounts:
+  tags:
+  - Admin
+  summary: Admin get accounts
+  description: 'Admin get accounts. Current middleware limitation: require_role(0) raises an unhandled TypeError
+    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal error, including the current integer-role middleware failure for non-admin users. The
+        middleware error may return HTML.
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.admin_get_users:
+  tags:
+  - Admin
+  summary: Admin get users
+  description: 'Admin get users. Current middleware limitation: require_role(0) raises an unhandled TypeError for
+    authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: role
+    in: query
+    required: false
+    type: integer
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal error, including the current integer-role middleware failure for non-admin users. The
+        middleware error may return HTML.
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.login:
+  tags:
+  - Auth
+  summary: Login
+  description: 'Login. Rate limit: 10 per minute.'
+  produces:
+  - application/json
+  security: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        isDev:
+          type: boolean
+          default: false
+      additionalProperties: true
+      required:
+      - username
+      - password
+      example:
+        username: your_username
+        password: your_password
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Login successful
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.refresh:
+  tags:
+  - Auth
+  summary: Refresh
+  description: Refresh.
+  produces:
+  - application/json
+  security: []
+  consumes:
+  - application/json
+  parameters:
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      additionalProperties: true
+      required:
+      - refresh_token
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Token refreshed
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Unauthorized
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.logout:
+  tags:
+  - Auth
+  summary: Logout
+  description: Invalidate the supplied refresh_token. An empty JSON object also returns success without invalidating
+    a token.
+  produces:
+  - application/json
+  security: []
+  consumes:
+  - application/json
+  parameters:
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Logged out successfully
+        additionalProperties: true
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_me:
+  tags:
+  - Auth
+  summary: Get me
+  description: Get me.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.send_email:
+  tags:
+  - Integrations
+  summary: Send email
+  description: Sends subject and body using the configured email service.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        subject:
+          type: string
+        body:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          message:
+            type: string
+            example: Email sent successfully
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.save_to_sheet:
+  tags:
+  - Integrations
+  summary: Save to sheet
+  description: Provide email or a Google Bearer token from which the email can be resolved. The user must have a
+    stored Google Drive connection. This endpoint does not use x-api-key.
+  produces:
+  - application/json
+  security:
+  - {}
+  - GoogleBearerAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        data:
+          description: JSON value passed to the integration service.
+        doc_type:
+          type: string
+          default: document
+        email:
+          type: string
+        document_id:
+          type: string
+          description: Document identifier.
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Data saved successfully to User Drive
+          data:
+            type: object
+            properties:
+              spreadsheet_id: {}
+              sheet_url: {}
+              updated_cells: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Forbidden
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_my_usage:
+  tags:
+  - Subscriptions
+  summary: Get my usage
+  description: Get my usage.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_manager_sub_users_usage:
+  tags:
+  - Subscriptions
+  summary: Get manager sub users usage
+  description: Admin or manager access (roles 0 and 1). Managers are restricted to their own account.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: account_id
+    in: query
+    required: false
+    type: string
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data:
+            type: object
+            properties:
+              account_id: {}
+              total_users: {}
+              users: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.cancel_subscription:
+  tags:
+  - Subscriptions
+  summary: Cancel subscription
+  description: Cancel subscription.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Đã hủy gói dịch vụ thành công. Tài khoản của bạn đã được chuyển về gói Free.
+          data:
+            type: object
+            properties:
+              account_id: {}
+              new_plan:
+                type: integer
+                example: 0
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_admin_overview:
+  tags:
+  - Admin
+  summary: Get admin overview
+  description: 'Admin access required. Get admin overview. Current middleware limitation: require_role(0) raises
+    an unhandled TypeError for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is
+    unaffected.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal error, including the current integer-role middleware failure for non-admin users. The
+        middleware error may return HTML.
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.get_plans:
+  tags:
+  - Subscriptions
+  summary: Get plans
+  description: Get plans.
+  produces:
+  - application/json
+  security: []
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          data: {}
+        additionalProperties: true
+docx_bp.admin_upgrade_plan_subscription:
+  tags:
+  - Admin
+  summary: Admin upgrade plan subscription
+  description: 'Admin only. Provide account_id or user_id. Omit plan to renew the current paid plan; providing plan
+    changes the plan and resets quota. Current middleware limitation: require_role(0) raises an unhandled TypeError
+    for authenticated non-admin users, returning HTTP 500 instead of 403. Admin access is unaffected.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        user_id:
+          description: External numeric user ID, or MongoDB user ID string when supported.
+        account_id:
+          type: string
+        plan:
+          type: integer
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message: {}
+          data:
+            type: object
+            properties:
+              account_id: {}
+              new_plan: {}
+              plan_name: {}
+              action: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal error, including the current integer-role middleware failure for non-admin users. The
+        middleware error may return HTML.
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.admin_reset_account:
+  tags:
+  - Admin
+  summary: Admin reset account
+  description: 'Admin only. Provide account_id or user_id. Resets the account to the Free plan and clears usage.
+    Current middleware limitation: require_role(0) raises an unhandled TypeError for authenticated non-admin users,
+    returning HTTP 500 instead of 403. Admin access is unaffected.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        user_id:
+          description: External numeric user ID, or MongoDB user ID string when supported.
+        account_id:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Account reset to Free plan with 0 usage.
+          data:
+            type: object
+            properties:
+              account_id: {}
+              new_plan:
+                type: integer
+                example: 0
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '403':
+      description: Caller role or access is not permitted.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal error, including the current integer-role middleware failure for non-admin users. The
+        middleware error may return HTML.
+      schema:
+        $ref: '#/definitions/ApiError'
+docx_bp.handle_analyze_message:
+  tags:
+  - Documents
+  summary: Handle analyze message
+  description: Handle analyze message.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+        sender_name:
+          type: string
+      additionalProperties: true
+      required:
+      - message
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          statusCode:
+            type: integer
+            example: 200
+          message:
+            type: string
+            example: Success
+          data: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'

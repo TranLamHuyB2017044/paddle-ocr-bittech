@@ -1,0 +1,62 @@
+crawl_bp.crawl_url_endpoint:
+  tags:
+  - Integrations
+  summary: Crawl url endpoint
+  description: 'Extract article content from a URL. Check success in the body: extraction, URL validation and database-save
+    failures can return HTTP 200 with success=false. Rate limit: 100 per minute.'
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        url:
+          type: string
+      additionalProperties: true
+      required:
+      - url
+      example:
+        url: https://example.com/article
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          success:
+            type: boolean
+            example: true
+          data:
+            type: object
+            properties:
+              title: {}
+              description: {}
+              content: {}
+              thumbnail: {}
+              source_url: {}
+              source_domain: {}
+              crawl_at: {}
+            additionalProperties: true
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '429':
+      description: Rate limit exceeded; response may be JSON or HTML depending on the handler.

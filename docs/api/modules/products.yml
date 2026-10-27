@@ -1,0 +1,273 @@
+product_bp.train_product:
+  tags:
+  - Products
+  summary: Train product
+  description: Provide id, name, farm_id (alias farmId), and images as multipart files or a JSON array of image
+    URLs. Up to 5 images are retained. overwrite controls replacement of existing images. Swagger UI demonstrates
+    multipart; JSON clients can submit an images array.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: images
+    in: formData
+    required: false
+    type: file
+    description: Image upload; repeat the images key for multiple files. JSON variant accepts an array of image
+      URLs.
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: id
+    in: formData
+    required: true
+    type: string
+  - name: name
+    in: formData
+    required: true
+    type: string
+  - name: price
+    in: formData
+    required: false
+    type: number
+  - name: overwrite
+    in: formData
+    required: false
+    type: boolean
+  - name: farm_id
+    in: formData
+    required: false
+    type: string
+  - name: farmId
+    in: formData
+    required: false
+    type: string
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          id: {}
+          name: {}
+          price: {}
+          farm_id: {}
+          num_images: {}
+          is_embedded: {}
+          url: {}
+          urls: {}
+          upload_errors: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
+product_bp.detect_product:
+  tags:
+  - Products
+  summary: Detect product
+  description: Provide image and farm_id (alias farmId); the farm identifier may also be supplied in query. Returns
+    the closest matching product or 404.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: image
+    in: formData
+    required: true
+    type: file
+    description: File upload.
+  - name: farm_id
+    in: formData
+    required: false
+    type: string
+    description: Farm identifier; required unless farmId alias or query value is supplied.
+  - name: farmId
+    in: formData
+    required: false
+    type: string
+  - name: farm_id
+    in: query
+    required: false
+    type: string
+  - name: farmId
+    in: query
+    required: false
+    type: string
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          id: {}
+          name: {}
+          price: {}
+          farm_id: {}
+          url: {}
+          similarity: {}
+          num_images: {}
+          is_embedded: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '404':
+      description: Not Found
+      schema:
+        $ref: '#/definitions/ApiError'
+product_bp.update_embedding:
+  tags:
+  - Products
+  summary: Update embedding
+  description: Provide product_id, farm_id (alias farmId) and repeated image_files. Optional name and price update
+    product metadata. At most 5 images are retained.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - multipart/form-data
+  parameters:
+  - name: product_id
+    in: formData
+    required: true
+    type: string
+  - name: image_files
+    in: formData
+    required: true
+    type: file
+    description: Product image upload; repeat the image_files key for multiple files.
+  - name: name
+    in: formData
+    required: false
+    type: string
+  - name: price
+    in: formData
+    required: false
+    type: number
+  - name: farm_id
+    in: formData
+    required: false
+    type: string
+    description: Farm identifier; required unless farmId alias or query value is supplied.
+  - name: farmId
+    in: formData
+    required: false
+    type: string
+  - name: farm_id
+    in: query
+    required: false
+    type: string
+  - name: farmId
+    in: query
+    required: false
+    type: string
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          message: {}
+          num_images: {}
+          is_embedded: {}
+          url: {}
+          urls: {}
+          upload_errors: {}
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+product_bp.delete_product:
+  tags:
+  - Products
+  summary: Delete product
+  description: Provide product_id (alias id) and farm_id (alias farmId). Accepts JSON, form or query parameters.
+    Both POST and DELETE are supported.
+  produces:
+  - application/json
+  security:
+  - ApiKeyAuth: []
+  consumes:
+  - application/json
+  parameters:
+  - name: x-device-id
+    in: header
+    required: false
+    type: string
+    description: Device identifier; when supplied, it must match the stored device where enforced.
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      properties:
+        product_id:
+          type: string
+        id:
+          type: string
+        farm_id:
+          type: string
+        farmId:
+          type: string
+      additionalProperties: true
+  responses:
+    '200':
+      description: OK
+      schema:
+        type: object
+        properties:
+          message: {}
+          status:
+            type: string
+            example: success
+        additionalProperties: true
+    '400':
+      description: Bad Request
+      schema:
+        $ref: '#/definitions/ApiError'
+    '401':
+      description: Missing or invalid credentials, or device mismatch.
+      schema:
+        $ref: '#/definitions/ApiError'
+    '500':
+      description: Internal Server Error
+      schema:
+        $ref: '#/definitions/ApiError'
